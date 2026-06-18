@@ -1,0 +1,10 @@
+{
+  "name": "honclwd",
+  "description": "비개발자가 안전하게 만들도록 돕는 워크플로우 — 작업 카드·검증 게이트·구동 검증·쉬운 요약",
+  "version": "0.3.0",
+  "license": "MIT",
+  "dependencies": [
+    { "name": "superpowers", "marketplace": "claude-plugins-official", "version": "^6.0.0" }
+  ],
+  "keywords": ["workflow", "non-developer", "review", "korean"]
+}

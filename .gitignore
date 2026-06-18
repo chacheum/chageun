@@ -1,0 +1,8 @@
+# 내부 기획 산출물 — 공개하지 않음(실명·회사·홈경로 포함)
+docs/
+oracle/
+
+# OS/에디터 잡파일
+.DS_Store
+*.swp
+Thumbs.db

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "honclwd",
+  "owner": { "name": "honclwd" },
+  "allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"],
+  "plugins": [
+    { "name": "honclwd", "source": "./", "description": "비개발자용 안전 워크플로우", "category": "productivity" }
+  ]
+}
