@@ -61,6 +61,7 @@ flowchart TD
 | ⑪ | **멈춤 규칙** · Stop rules | 삭제·배포·비용·노출 같은 되돌리기 어려운 일 앞에서 멈춰 확인 / pauses before delete·deploy·cost·exposure |
 | ⑫ | **개인화 메모리** · Personalized memory | 도메인·선호를 학습해 개인화(자격증명·시크릿은 저장 안 함) / learns your domain & preferences (never credentials/secrets) |
 | ⑬ | **언어 적응형** · Language-adaptive | 사용자 언어로 응답(기본 한국어) / replies in your language (default Korean) |
+| ⑭ | **약속-미실행 자동 가드** · Promise-without-doing guard | 작업을 하겠다고 말만 하고 멈추면 자동으로 다시 하게 함 / auto-nudges Claude to actually do what it said |
 
 ---
 
@@ -153,6 +154,7 @@ This plugin uses the **Superpowers** methodology skills (brainstorming, planning
 ### 문제 해결
 
 - **세션 시작 안내가 안 보인다 / 게이트·스킬이 안 돈다:** 워크플로우가 안 켜진 것입니다. ① Superpowers 설치 확인(위 수동 설치) ② 이 플러그인은 `node`를 쓰므로 `node -v`로 node 설치 확인 ③ 이미 열린 세션은 `/reload-plugins` 하거나 새 세션을 연다.
+- honclwd와 fablize를 함께 always-on으로 쓰면 두 플러그인의 Stop 훅이 겹쳐 중복 안내가 날 수 있습니다 / Using honclwd and fablize both always-on may double up their Stop hooks.
 
 ---
 
@@ -165,6 +167,7 @@ This plugin uses the **Superpowers** methodology skills (brainstorming, planning
 - `agents/plan-validator.md` — 계획 검수 게이트 / plan review gate
 - `agents/pr-reviewer.md` — 코드 검수 게이트 / code review gate
 - `agents/code-implementer.md` — 단순·기계적 코드 구현 담당 / mechanical implementation worker
+- `hooks/finish-work.js` — 약속-미실행 차단 훅 / promise-without-doing guard (Stop hook)
 
 ## 라이선스 / License
 
