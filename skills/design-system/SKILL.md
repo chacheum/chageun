@@ -17,9 +17,11 @@ UI 작업을 시작하기 전, 프로젝트에 이미 디자인 규칙 파일이
 
 **스캔할 흔한 이름·위치:**
 - 마크다운 문서: `DESIGN.md`, `STYLEGUIDE.md`, `design-guidelines.md`, `docs/design*.md`
-- 코드형 권위: `tailwind.config.js`, `tailwind.config.ts`, theme 파일, 토큰 파일(`tokens.js`, `variables.css`, `design-tokens.*`)
+- 코드형 권위: `tailwind.config.*`, theme 파일, 토큰 파일(`tokens.js`, `variables.css`, `design-tokens.*`, `*.tokens.json`), styled-components/emotion `theme.ts`, MUI `createTheme`, Chakra theme, Vanilla Extract, Panda CSS 설정
 - 컴포넌트 문서: `.storybook/` 디렉터리
 - README 내 Figma 링크 (피그마가 공식 소스인 경우)
+
+> **"못 찾음"을 성급히 결론짓지 말 것.** 위 목록에 안 잡혀도 `package.json`에 UI 프레임워크/디자인 라이브러리 의존성(MUI·Chakra·Tailwind·styled-components·Ant Design 등)이 있으면 이미 디자인 시스템이 있을 가능성이 크다. 초안을 새로 만들기 전에 "기존 디자인 시스템을 못 찾았는데 정말 없나요? 어디에 있나요?"라고 한 번 더 확인한다. (경쟁하는 두 번째 규칙 파일이 생기면 규칙이 갈라진다.)
 
 > **오탐 가드 — 설계 문서 ≠ 디자인 규칙.** `2026-01-01-기능-design.md`처럼 이름 중간에 `design`이 든 파일은 보통 **브레인스토밍 spec(설계 문서)**이지 디자인 규칙이 아니다. 위 패턴 `docs/design*.md`는 `design`으로 **시작**하는 파일만 잡으므로 안전하지만, `*design*`처럼 넓게 매칭하지 말 것. 매칭된 파일을 채택하기 전 내용이 실제 디자인 규칙(토큰·컴포넌트·UX)인지 한 번 확인한다.
 
@@ -127,6 +129,6 @@ UI를 만들거나 변경한 뒤 실제 구동 검증 단계에서 화면과 규
 > 1. 코드에서 현재 색·컴포넌트를 추출해 초안 만들기 — 기존 코드를 스캔해 `docs/design-system.md` 초안을 만듭니다.
 > 2. 이번엔 그냥 진행 — 규칙 없이 작업하고 나중에 문서화합니다.
 
-**①번 선택 시:** 현재 코드(`tailwind.config`, CSS 변수, 컴포넌트 파일 등)를 스캔해 `docs/design-system.md` 초안을 만든다. 기본 파일 경로는 새로 만들 때만 `docs/design-system.md`를 사용한다.
+**①번 선택 시:** 현재 코드(`tailwind.config`, CSS 변수, 컴포넌트 파일 등)를 스캔해 `docs/design-system.md` 초안을 만든다. 기본 파일 경로는 새로 만들 때만 `docs/design-system.md`를 사용한다. **그 경로에 파일이 이미 있으면 덮어쓰지 않고 사용자에게 확인**한다(다른 용도의 파일일 수 있음).
 
 **②번 선택 시:** "규칙 문서 없어 대조 생략"을 한 줄로 보고하고 작업을 계속한다.

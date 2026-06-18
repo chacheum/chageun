@@ -17,18 +17,28 @@
 ## 설치
 
 ```
-/plugin marketplace add <이 저장소>
+/plugin marketplace add JasonKwak93/honclwd
 /plugin install honclwd
 ```
 
 설치하면 **새 세션이 시작될 때 워크플로우가 자동으로 켜집니다.** 따로 설정 파일을 편집할 필요가 없습니다.
+(세션 시작 시 "혼클로드 워크플로우 활성" 안내가 보이지 않으면 안 켜진 것이니 아래 "문제 해결"을 보세요.)
 
 ## 함께 설치되는 것 (중요)
 
-이 플러그인은 [Superpowers](https://github.com/obra/superpowers)의 방법론 스킬(아이디어 정리·계획·디버깅 등)을 사용합니다.
+이 플러그인은 `claude-plugins-official` 마켓플레이스의 **Superpowers** 방법론 스킬(아이디어 정리·계획·디버깅 등)을 사용합니다.
 - Superpowers는 **의존성으로 자동 설치**됩니다(직접 따로 설치하지 않아도 됩니다).
-- 안전을 위해, 설치 전 **`claude-plugins-official` 마켓플레이스가 등록**되어 있는 것을 권장합니다.
-- **Claude Code 최신 버전(권장 v2.1.143 이상)** 에서 자동 설치가 안정적으로 동작합니다. 구버전이면 Superpowers가 자동 설치되지 않을 수 있으며, 그 경우 워크플로우가 "Superpowers가 필요하다"고 안내합니다.
+- **Claude Code 최신 버전(권장 v2.1.143 이상)** 에서 자동 설치가 안정적으로 동작합니다.
+- **자동 설치가 안 됐을 때 수동 설치(이 순서 그대로):**
+  ```
+  /plugin marketplace add claude-plugins-official
+  /plugin install superpowers
+  ```
+  honclwd의 의존성과 **같은 출처(`claude-plugins-official`)**에서 설치해야 버전·마켓플레이스가 어긋나지 않습니다.
+
+## 문제 해결
+
+- **세션 시작 안내가 안 보인다 / 게이트·스킬이 안 돈다:** 워크플로우가 안 켜진 것입니다. ① Superpowers 설치 확인(위 수동 설치) ② 이 플러그인은 `node`를 쓰므로 `node -v`로 node 설치 확인 ③ 이미 열린 세션은 `/reload-plugins` 하거나 새 세션을 연다.
 
 ## 구성
 
