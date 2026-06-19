@@ -50,7 +50,7 @@ flowchart TD
 |---|------|---------------------------|
 | ① | **작업 시작 카드** · Task kickoff card | 착수 전에 목표·성공기준·범위를 합의 / agree on goal·success criteria·scope *before* building |
 | ② | **레퍼런싱** · Referencing | 기획 중 경쟁사·사례를 조사해 "남들은→우리는"으로 방향 잡기 / competitor & case research to steady the direction |
-| ③ | **제품 지도** · Product map | 기능 명세 + 화면 구조(IA)를 살아있는 문서로 유지 / a living feature spec + screen-structure (IA) map |
+| ③ | **제품 지도** · Product map | 기능 명세 + 화면 구조(IA)를 살아있는 문서로 유지 / a living feature spec + screen-structure (IA) map — 진행 중 프로젝트에 깔아도 OK — 코드에서 지도 뼈대를 뽑거나(부트스트랩) 건드리는 부분부터 점진적으로 채웁니다 / works mid-project — bootstrap a map skeleton from code, or fill it in incrementally. |
 | ④ | **계획 검증 게이트** · Plan gate | 독립 적대 심판(plan-validator, Opus)이 **통과 못 하면 멈춤** / adversarial Opus judge that blocks until the plan passes |
 | ⑤ | **모델 라우팅** · Model routing | 판단은 Opus, 기계적 작업은 Sonnet 병렬로 (느리고 비싼 "전부 Opus" 회피) / Opus for judgment, parallel Sonnet for mechanical work |
 | ⑥ | **실제 구동 검증** · Real run-through | 화면을 격리 Docker에서 직접 눌러봄, **운영 쓰기는 차단** / clicks real screens in an isolated Docker env; production writes are hard-blocked |
