@@ -64,6 +64,7 @@ flowchart TD
 | ⑭ | **약속-미실행 자동 가드** · Promise-without-doing guard | 작업을 하겠다고 말만 하고 멈추면 자동으로 다시 하게 함 / auto-nudges Claude to actually do what it said |
 | ⑮ | **최소 구현 우선** · Minimal-first | 군더더기 없이 꼭 필요한 만큼만 만들도록 점검(안전·검증은 그대로) / builds only what's needed, no over-engineering (safety/validation kept) |
 | ⑯ | **검수·작성·git 안전 강화** · Sharper review & git safety | 결함 클래스 점검, 증거 기반 완료, 위험한 git 명령 방지(스캐너가 아닌 점검 지침) / sharper review, evidence-based completion, git safety guards (guidance, not a scanner) |
+| ⑰ | **검증 체크리스트 등뼈** · Verification backbone | 기능마다 '작동 확인 체크리스트'를 IA 연결까지 포함해 지속 관리 — 끝 점검·정기 점검의 단일 기준 / per-feature verification checklist (incl. IA connections), reused for end-check & monitoring |
 
 ---
 
