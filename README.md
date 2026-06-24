@@ -51,7 +51,7 @@ chageun는 [Superpowers](#함께-설치되는-것-중요) 위에 얹혀 **기획
 ### 설치
 
 ```
-/plugin marketplace add JasonKwak93/chageun
+/plugin marketplace add non2xx/chageun
 /plugin install chageun
 ```
 
@@ -112,7 +112,7 @@ Plus **scheduled monitoring · security scans · design verification** for the o
 ### Install
 
 ```
-/plugin marketplace add JasonKwak93/chageun
+/plugin marketplace add non2xx/chageun
 /plugin install chageun
 ```
 
