@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "snapshot": "node test/snapshot-golden.mjs",
     "build": "node build/build.mjs",
-    "test": "node --test"
+    "test": "node --test test/*.test.mjs"
   }
 }
