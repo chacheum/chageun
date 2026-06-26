@@ -22,8 +22,16 @@ test("operating-rules는 두 플랫폼 공유(내용 동일)", () => {
   assert.equal(readFileSync(join(C,"rules/operating-rules.md"),"utf8"), readFileSync(join(X,"rules/operating-rules.md"),"utf8"));
 });
 test("플랫폼별 매니페스트·훅·게이트 산출물 존재", () => {
-  assert.ok(existsSync(join(C,".claude-plugin/plugin.json")) && existsSync(join(C,"hooks/finish-work.js")) && existsSync(join(C,"agents/plan-validator.md")));
-  assert.ok(existsSync(join(X,".codex-plugin/plugin.json")) && existsSync(join(X,"hooks/finish-work-codex.mjs")) && existsSync(join(X,"codex/gate-agents.md")));
+  // Claude platform
+  assert.ok(existsSync(join(C,".claude-plugin/plugin.json")), ".claude-plugin/plugin.json");
+  assert.ok(existsSync(join(C,"hooks/hooks.json")), "hooks/hooks.json");
+  assert.ok(existsSync(join(C,"hooks/finish-work.js")), "hooks/finish-work.js");
+  assert.ok(existsSync(join(C,"agents/plan-validator.md")), "agents/plan-validator.md");
+  // Codex platform
+  assert.ok(existsSync(join(X,".codex-plugin/plugin.json")), ".codex-plugin/plugin.json");
+  assert.ok(existsSync(join(X,"hooks/hooks-codex.json")), "hooks/hooks-codex.json");
+  assert.ok(existsSync(join(X,"hooks/finish-work-codex.mjs")), "hooks/finish-work-codex.mjs");
+  assert.ok(existsSync(join(X,"codex/gate-agents.md")), "codex/gate-agents.md");
 });
 test("dependencies: claude 있음 / codex 없음", () => {
   const cj = JSON.parse(readFileSync(join(C,".claude-plugin/plugin.json"),"utf8"));
