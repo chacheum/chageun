@@ -1,0 +1,10 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "chageun",
+  "description": "비개발자용 안전 워크플로우(차근) — Claude·Codex",
+  "owner": { "name": "chacheum", "url": "https://github.com/chacheum/chageun" },
+  "allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"],
+  "plugins": [
+    { "name": "chageun", "source": "./dist/claude", "description": "비개발자용 안전 워크플로우", "category": "productivity" }
+  ]
+}

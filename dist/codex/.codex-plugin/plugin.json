@@ -1,0 +1,32 @@
+{
+  "name": "chageun",
+  "version": "0.18.0",
+  "description": "Safe build workflow for non-developers — task cards, verification gates, real run-through, plain-language summaries (replies in your language; default Korean). 비개발자가 안전하게 만들도록 돕는 워크플로우.",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "non-developer",
+    "vibe-coding",
+    "review",
+    "safety",
+    "korean",
+    "english"
+  ],
+  "author": {
+    "name": "chacheum",
+    "url": "https://github.com/chacheum/chageun"
+  },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-codex.json",
+  "interface": {
+    "displayName": "차근 (chageun)",
+    "shortDescription": "비개발자용 안전 워크플로우 — 작업카드·검증 게이트·실제 구동 검증",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "developerName": "chacheum"
+  }
+}

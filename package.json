@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "node build/build.mjs",
+    "release": "node build/build.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs"
   }
 }

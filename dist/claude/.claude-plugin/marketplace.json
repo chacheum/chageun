@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "chageun",
+  "owner": { "name": "chageun" },
+  "allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"],
+  "plugins": [
+    { "name": "chageun", "source": "./", "description": "비개발자용 안전 워크플로우", "category": "productivity" }
+  ]
+}
