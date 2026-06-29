@@ -40,25 +40,6 @@ multi_agent = true
 
 ---
 
-## ⚠️ 옛 이름(honclwd)에서 마이그레이션
-
-차근의 옛 이름은 `honclwd`였습니다. `honclwd`로 마켓을 등록했던 환경은 **마켓 이름 불일치로 조용히 에러**가 날 수 있습니다(실제로 겪은 사례).
-
-해결 방법:
-
-1. 기존 `honclwd` 마켓을 제거합니다.
-   ```
-   /plugin marketplace remove honclwd
-   ```
-   (메뉴에서 직접 삭제해도 됩니다.)
-2. 새 이름으로 다시 추가합니다.
-   ```
-   /plugin marketplace add chacheum/chageun
-   /plugin install chageun
-   ```
-
----
-
 ## 개발 / 기여
 
 정본(소스)은 `src/`에 있습니다.
