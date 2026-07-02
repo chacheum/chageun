@@ -15,13 +15,14 @@
   },
   "components": {
     "rules": ["operating-rules.md"],
-    "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan"],
+    "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan", "unattended-loop"],
     "agents": ["plan-validator", "pr-reviewer", "code-implementer"],
     "hooks": ["activate.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js"],
     "assets": ["chageun-flow.png"]
   },
   "codex": {
     "skills": "./skills/",
+    "skillsExclude": ["unattended-loop"],
     "hooks": "./hooks/hooks-codex.json",
     "interface": {
       "displayName": "차근 (chageun)",
