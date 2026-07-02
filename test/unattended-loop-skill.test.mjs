@@ -57,6 +57,11 @@ test("code-implementer가 무인 금지 안내를 담는다", () => {
   assert.ok(/park|BLOCKED/.test(IMPL), "시도 말고 park/BLOCKED로 올리라는 지시");
 });
 
-test("무인 스킬: 질문 상한 표기가 4개로 통일(3~4 잔존 금지)", () => {
-  assert.ok(!SKILL.includes("3~4"), "질문 상한이 '4개'로 통일돼야 함(옛 '3~4' 표기 제거)");
+const RULES = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "src", "rules", "operating-rules.md"),
+  "utf8"
+);
+test("무인 스킬: 질문 상한 표기가 4개로 통일(스킬·operating-rules 모두 3~4 잔존 금지)", () => {
+  assert.ok(!SKILL.includes("3~4"), "SKILL.md: 질문 상한이 '4개'로 통일돼야 함");
+  assert.ok(!RULES.includes("3~4"), "operating-rules.md: 질문 상한이 '4개'로 통일돼야 함(두 문서 표류 방지)");
 });
