@@ -73,6 +73,38 @@ test("무인 게이트: .chageun/STOP 있으면 모든 도구 park", () => {
   assert.equal(r.code, 2);
   assert.match(r.stderr, /정지/);
 });
+test("STOP/통과표는 CHAGEUN_ROOT에 고정 — cwd가 딴 폴더여도 확실히 멈춘다", () => {
+  const root = mkdtempSync(join(tmpdir(), "root-"));
+  mkdirSync(join(root, ".chageun"), { recursive: true });
+  writeFileSync(join(root, ".chageun", "token"), JSON.stringify({ nonce: "n1" }));
+  const sub = join(root, "deep", "sub");
+  mkdirSync(sub, { recursive: true });
+  const env = { ...BASE, CHAGEUN_UNATTENDED: "1", CHAGEUN_UNATTENDED_TOKEN: "n1", CHAGEUN_ROOT: root };
+  const spawn = () => spawnSync(process.execPath, [HOOK], { input: JSON.stringify(bash("ls")), env, cwd: sub, encoding: "utf8" });
+  // (1) cwd에 .chageun이 없어도 CHAGEUN_ROOT의 통과표로 정상 통과
+  assert.equal(spawn().status, 0, "루트 통과표를 cwd 밖(하위폴더)에서도 인식");
+  // (2) 사람이 루트에 STOP을 두면 cwd가 딴 폴더여도 멈춘다
+  writeFileSync(join(root, ".chageun", "STOP"), "");
+  const r = spawn();
+  rmSync(root, { recursive: true, force: true });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr || "", /정지/);
+});
+
+test("STOP: CHAGEUN_ROOT 없으면 상위 폴더로 .chageun을 찾아 멈춘다(find-up 안전망)", () => {
+  const root = mkdtempSync(join(tmpdir(), "root2-"));
+  mkdirSync(join(root, ".chageun"), { recursive: true });
+  writeFileSync(join(root, ".chageun", "token"), JSON.stringify({ nonce: "n2" }));
+  writeFileSync(join(root, ".chageun", "STOP"), "");
+  const sub = join(root, "a", "b");
+  mkdirSync(sub, { recursive: true });
+  const env = { ...BASE, CHAGEUN_UNATTENDED: "1", CHAGEUN_UNATTENDED_TOKEN: "n2" }; // CHAGEUN_ROOT 없음
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(bash("ls")), env, cwd: sub, encoding: "utf8" });
+  rmSync(root, { recursive: true, force: true });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr || "", /정지/);
+});
+
 test("PreToolUse matcher가 MultiEdit 등 편집 도구 포함(훅 우회 방지)", () => {
   const cfg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "hooks.claude.json"), "utf8"));
   const m = cfg.hooks.PreToolUse[0].matcher;
