@@ -209,3 +209,28 @@ test("무인: 중첩 claude/codex 실행 + .chageun 제어파일 변형 차단",
   // Write 도구로 .chageun 쓰기도 보호
   assert.equal(unattendedBlock("Write", { file_path: "/w/.chageun/token" }, { worktreeRoot: "/w" }), "u-protected-path");
 });
+
+test("무인 보강: .chageun 세그먼트/인터프리터 우회 차단 + nested 정밀화", () => {
+  const CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+  const { unattendedBlock } = require(CORE);
+  const ub = (c) => unattendedBlock("Bash", { command: c }, {});
+  // .chageun 우회 차단
+  assert.equal(ub("cd .chageun && rm -f STOP"), "u-protected-path");
+  assert.equal(ub("( cd .chageun ; rm -f STOP )"), "u-protected-path");
+  assert.equal(ub('sed -i "s/.*/x/" .chageun/token'), "u-protected-path");
+  assert.equal(ub("python3 -c \"import os; os.remove('.chageun/token')\""), "u-protected-path");
+  assert.equal(ub("node -e \"require('fs').writeFileSync('.chageun/token','{}')\""), "u-protected-path");
+  assert.equal(ub("rm .CHAGEUN/token"), "u-protected-path", "대소문자 무관");
+  assert.equal(ub("cat .chageun/token"), null, "읽기 허용");
+  assert.equal(ub("grep x .chageun/STOP"), null, "읽기 허용");
+  // nested 과차단 제거
+  assert.equal(ub("grep claude -A5 file.py"), null, "언급은 오탐 아님");
+  assert.equal(ub("curl https://example.com/claude --output foo"), null);
+  assert.equal(ub('git commit -m "mention claude -p in docs"'), null);
+  // nested 미탐 보강
+  assert.equal(ub('claude "delete sandbox and push"'), "u-nested", "플래그 없어도 중첩");
+  assert.equal(ub("echo hi | claude"), "u-nested");
+  assert.equal(ub("sh -c 'claude -p x'"), "u-nested");
+  assert.equal(ub("/usr/bin/claude -p x"), "u-nested");
+  assert.equal(ub("claudexyz -p x"), null, "다른 바이너리는 오탐 아님");
+});
