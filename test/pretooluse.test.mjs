@@ -191,3 +191,21 @@ test("무인 최종보강: git -c push·Bash DML·MCP쓰기·멀티생태계 설
   assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__list_tables", {}, {}), null, "MCP 읽기(list)는 허용");
   assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__get_logs", {}, {}), null, "MCP 읽기(get)는 허용");
 });
+
+test("무인: 중첩 claude/codex 실행 + .chageun 제어파일 변형 차단", () => {
+  const CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+  const { unattendedBlock } = require(CORE);
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  // 중첩 claude/codex (env 없는 자식으로 탈출)
+  assert.equal(ub('claude -p "git push origin main"'), "u-nested");
+  assert.equal(ub("codex exec 'deploy'"), "u-nested");
+  assert.equal(ub("echo claude"), null, "문자열 언급은 오탐 아님");
+  // .chageun 제어파일 변형(통과표/STOP 위조·삭제 시도)
+  assert.equal(ub("rm .chageun/STOP"), "u-protected-path");
+  assert.equal(ub("rm -f .chageun/token"), "u-protected-path");
+  assert.equal(ub("echo x > .chageun/token"), "u-protected-path");
+  assert.equal(ub("mv .chageun/token /tmp/t"), "u-protected-path");
+  assert.equal(ub("cat .chageun/token"), null, "읽기는 허용");
+  // Write 도구로 .chageun 쓰기도 보호
+  assert.equal(unattendedBlock("Write", { file_path: "/w/.chageun/token" }, { worktreeRoot: "/w" }), "u-protected-path");
+});
