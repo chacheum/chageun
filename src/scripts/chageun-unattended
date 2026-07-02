@@ -8,9 +8,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # setup: 아직 무인 아님(.chageun 안 잠김)이라 기준을 여기서 적는다.
 if [ "${1:-}" = "setup" ]; then
   mkdir -p .chageun
+  # 새 일 = 새 기준. 옛 산출물·신선표식을 치워 stale 재사용을 원천 차단(매 setup은 백지에서).
+  rm -f .chageun/task.md .chageun/criteria.md .chageun/setup-ready
   echo "시동(유인): 무인으로 맡길 일과 '다 됐다' 기준을 claude와 함께 .chageun/task.md·criteria.md에 적고 확인하세요. 끝나면 이 폴더에서 'chageun-unattended'로 무인을 시작합니다."
   shift
-  exec claude "$@"
+  # exec 대신 실행 — 시동 세션이 끝난 뒤 신선표식을 찍는다(go가 이걸 소비 → 직전 setup 없이는 무인 거부).
+  claude "$@"
+  touch .chageun/setup-ready
+  exit 0
 fi
 
 # --check: preflight만
@@ -24,11 +29,12 @@ if ! node "$HERE/preflight.mjs"; then
   exit 1
 fi
 
-# 2) 시동 산출물 존재 확인(할일 카드 + 기준 둘 다). 없으면 시동부터.
-if [ ! -f .chageun/task.md ] || [ ! -f .chageun/criteria.md ]; then
-  echo "무인 시작 거부: 시동 산출물이 없습니다(.chageun/task.md·criteria.md 둘 다 필요). 먼저 'chageun-unattended setup'으로 할 일과 기준을 적으세요. (이전 작업의 기준이 남아 있으면 새 일로 setup을 다시 도세요.)" >&2
+# 2) 시동 산출물 + 신선표식 확인. 옛 파일이 남아도 최근 setup(setup-ready) 없으면 거부(stale 차단).
+if [ ! -f .chageun/task.md ] || [ ! -f .chageun/criteria.md ] || [ ! -f .chageun/setup-ready ]; then
+  echo "무인 시작 거부: 최근 시동(setup)이 없습니다(.chageun/task.md·criteria.md + 신선표식 필요). 먼저 'chageun-unattended setup'으로 할 일과 기준을 새로 적으세요 — 지난 작업의 옛 기준을 그대로 재사용하지 않도록." >&2
   exit 1
 fi
+rm -f .chageun/setup-ready   # 신선표식 소비 — 다음 무인엔 다시 setup 필요(직전 setup 강제)
 
 # 'go' 인자는 소비
 if [ "${1:-}" = "go" ]; then shift; fi
@@ -38,6 +44,7 @@ ROOT="$(pwd)"
 NONCE="$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')"
 node -e 'const fs=require("fs");fs.writeFileSync(".chageun/token",JSON.stringify({nonce:process.argv[1],at:Date.now()}))' "$NONCE"
 
-# 4) 무인 시작. 기준은 .chageun 보호로 자동 동결(CHAGEUN_CRITERIA_FILE로 이중 표시).
+# 4) 무인 시작. 기준은 .chageun 보호로 자동 동결. CHAGEUN_CRITERIA_FILE은 훅의 u-frozen-criteria
+#    차단을 발동하는 두 번째 방어선(장식 아님 — 지우지 말 것).
 echo "무인 모드 시작(통과표 발급). 정지하려면 다른 터미널에서 이 폴더($ROOT)로 이동 후: touch .chageun/STOP"
 exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$ROOT" CHAGEUN_UNATTENDED_TOKEN="$NONCE" CHAGEUN_CRITERIA_FILE=".chageun/criteria.md" claude "$@"
