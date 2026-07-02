@@ -140,4 +140,16 @@ function unattendedBlock(toolName, toolInput, opts) {
   return pathGuard(name, toolInput, opts);
 }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql };
+const REASONS_UNATTENDED = {
+  "u-push": "무인 모드 차단: git push는 자동배포로 이어질 수 있어 무인 중엔 못 합니다. 이 작업을 park하고 사람 복귀를 기다립니다.",
+  "u-deploy": "무인 모드 차단: 배포·퍼블리시(프리뷰 포함)는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
+  "u-db-write": "무인 모드 차단: DB 쓰기(INSERT/UPDATE/DELETE·스키마 변경)는 무인 중 금지 — 검증은 격리 샌드박스에서만. park하고 사람 복귀를 기다립니다.",
+  "u-install": "무인 모드 차단: 새 의존성 설치는 무인 중 금지(공급망·임의코드 위험). 락파일 재설치(npm ci)만 허용. park하고 사람 복귀를 기다립니다.",
+  "u-out-of-tree": "무인 모드 차단: 전용 worktree 밖 경로 쓰기는 금지(다른 작업물 보호). park하고 사람 복귀를 기다립니다.",
+  "u-protected-path": "무인 모드 차단: .claude·설정·훅 파일은 무인 중 수정 금지(안전장치 자체 보호). park하고 사람 복귀를 기다립니다.",
+  "u-frozen-criteria": "무인 모드 차단: 동결된 성공기준 파일은 무인 중 수정 금지. 기준을 바꿔야 하면 park하고 사람 복귀를 기다립니다.",
+  "u-pr": "무인 모드 차단: PR 생성·머지는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
+};
+function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
+
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql, reasonForUnattended };

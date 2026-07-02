@@ -124,3 +124,13 @@ test("무인 경로가드: worktree 밖·보호경로·동결기준 차단", () 
   assert.equal(w("/work/wt/criteria.md"), "u-frozen-criteria", "동결된 성공기준 보호");
   assert.equal(unattendedBlock("Read", { file_path: "/work/other/x" }, opts), null, "읽기 도구는 무관");
 });
+
+test("무인 사유문: 모든 무인 키에 메시지 + 우회 안내 없음", () => {
+  const { reasonForUnattended } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  for (const k of ["u-push","u-deploy","u-db-write","u-install","u-out-of-tree","u-protected-path","u-frozen-criteria","u-pr"]) {
+    const m = reasonForUnattended(k);
+    assert.match(m, /park/, `${k} 메시지에 park 안내`);
+    assert.doesNotMatch(m, /CHAGEUN_(ALLOW|SKIP)/, `${k} 메시지에 우회 env 노출 금지`);
+    assert.doesNotMatch(m, /=1/, `${k} 메시지에 우회 방법 금지`);
+  }
+});
