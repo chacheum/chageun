@@ -1,24 +1,43 @@
 #!/usr/bin/env bash
-# 무인 모드 안전 시작: preflight 통과 시에만 통과표 발급 + CHAGEUN_UNATTENDED=1로 claude 시작.
+# 무인 모드 안전 시작. 두 단계:
+#   setup : 유인 claude로 시동(할일 카드 .chageun/task.md + 성공기준 .chageun/criteria.md 작성·확인)
+#   go(기본): preflight + 시동 산출물 확인 후에만 통과표 발급 + CHAGEUN_UNATTENDED=1로 무인 시작
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-# 1) preflight (샌드박스 살아있나 + 위험 스캔)
+# setup: 아직 무인 아님(.chageun 안 잠김)이라 기준을 여기서 적는다.
+if [ "${1:-}" = "setup" ]; then
+  mkdir -p .chageun
+  echo "시동(유인): 무인으로 맡길 일과 '다 됐다' 기준을 claude와 함께 .chageun/task.md·criteria.md에 적고 확인하세요. 끝나면 이 폴더에서 'chageun-unattended'로 무인을 시작합니다."
+  shift
+  exec claude "$@"
+fi
+
+# --check: preflight만
+if [ "${1:-}" = "--check" ]; then
+  node "$HERE/preflight.mjs"; echo "preflight 통과 — 무인 시작 가능(단, 시동 산출물 필요)."; exit 0
+fi
+
+# go(기본): 1) preflight
 if ! node "$HERE/preflight.mjs"; then
   echo "무인 시작 거부: preflight 실패(위 이유). .chageun/unattended.json 확인 또는 샌드박스 기동 후 다시." >&2
   exit 1
 fi
 
-# --check: 검사만
-if [ "${1:-}" = "--check" ]; then echo "preflight 통과 — 무인 시작 가능."; exit 0; fi
+# 2) 시동 산출물 존재 확인(할일 카드 + 기준 둘 다). 없으면 시동부터.
+if [ ! -f .chageun/task.md ] || [ ! -f .chageun/criteria.md ]; then
+  echo "무인 시작 거부: 시동 산출물이 없습니다(.chageun/task.md·criteria.md 둘 다 필요). 먼저 'chageun-unattended setup'으로 할 일과 기준을 적으세요. (이전 작업의 기준이 남아 있으면 새 일로 setup을 다시 도세요.)" >&2
+  exit 1
+fi
 
-# 2) 통과표 발급(보호경로 .chageun/token). 시작 폴더를 대문(ROOT)으로 못 박는다.
+# 'go' 인자는 소비
+if [ "${1:-}" = "go" ]; then shift; fi
+
+# 3) 통과표 발급 + 대문 못 박기
 ROOT="$(pwd)"
-mkdir -p .chageun
 NONCE="$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')"
 node -e 'const fs=require("fs");fs.writeFileSync(".chageun/token",JSON.stringify({nonce:process.argv[1],at:Date.now()}))' "$NONCE"
 
-# 3) 무인 스위치 + 통과표 nonce + 대문 경로를 env로 넣고 claude 시작.
-# CHAGEUN_ROOT로 STOP·통과표 위치를 못 박아, 세션이 하위폴더/worktree로 옮겨가도 STOP이 확실히 먹는다.
+# 4) 무인 시작. 기준은 .chageun 보호로 자동 동결(CHAGEUN_CRITERIA_FILE로 이중 표시).
 echo "무인 모드 시작(통과표 발급). 정지하려면 다른 터미널에서 이 폴더($ROOT)로 이동 후: touch .chageun/STOP"
-exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$ROOT" CHAGEUN_UNATTENDED_TOKEN="$NONCE" claude "$@"
+exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$ROOT" CHAGEUN_UNATTENDED_TOKEN="$NONCE" CHAGEUN_CRITERIA_FILE=".chageun/criteria.md" claude "$@"
