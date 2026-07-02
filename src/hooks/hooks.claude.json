@@ -15,7 +15,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Write|Edit|NotebookEdit|execute_sql|apply_migration",
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|execute_sql|apply_migration",
         "hooks": [
           {
             "type": "command",

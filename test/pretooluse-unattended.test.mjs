@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
 // 부모 env의 CHAGEUN_* 제거 후 케이스별로 주입(격리).
@@ -38,4 +39,14 @@ test("무인: PR 생성 차단", () => {
 
 test("무인: 무관한 명령은 통과", () => {
   assert.equal(run(bash("npm test"), { CHAGEUN_UNATTENDED: "1" }).code, 0);
+});
+
+test("무인: 판정 중 예외는 fail-closed(park), 유인은 fail-open 불변", () => {
+  assert.equal(run({ tool_name: "Write", tool_input: { file_path: 12345 } }, { CHAGEUN_UNATTENDED: "1" }).code, 2, "무인: 예외 시 차단");
+  assert.equal(run({ tool_name: "Write", tool_input: { file_path: 12345 } }, {}).code, 0, "유인: 예외 시 기존대로 통과");
+});
+test("PreToolUse matcher가 MultiEdit 등 편집 도구 포함(훅 우회 방지)", () => {
+  const cfg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "hooks.claude.json"), "utf8"));
+  const m = cfg.hooks.PreToolUse[0].matcher;
+  for (const t of ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "execute_sql", "apply_migration"]) assert.ok(m.includes(t), `matcher에 ${t} 포함`);
 });

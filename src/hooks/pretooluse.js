@@ -29,11 +29,11 @@ function prReviewerRan(transcriptPath) {
 let raw = "";
 process.stdin.on("data", (d) => { raw += d; });
 process.stdin.on("end", () => {
+  const UNATTENDED = process.env.CHAGEUN_UNATTENDED === "1";
   try {
     const input = JSON.parse(raw);
     const name = input.tool_name;
     const ti = input.tool_input || {};
-    const UNATTENDED = process.env.CHAGEUN_UNATTENDED === "1";
 
     // 1) base 패턴 차단. 무인 모드는 배포 탈출구(CHAGEUN_ALLOW_DEPLOY)를 무시.
     const hit = block(name, ti);
@@ -54,6 +54,9 @@ process.stdin.on("end", () => {
     if (isPrCreate(name, ti) && (UNATTENDED || process.env.CHAGEUN_SKIP_GATE_CHECK !== "1")) {
       if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
     }
-  } catch (_) { /* 안전 통과 */ }
+  } catch (_) {
+    // 무인: 판정 중 예외 = 불확실 = 안전측(park). 유인: 기존대로 fail-open(사람이 백스톱).
+    if (UNATTENDED) { process.stderr.write(reasonForUnattended("u-error")); process.exit(2); }
+  }
   process.exit(0);
 });
