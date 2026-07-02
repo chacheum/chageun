@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
 
 function deny(reasonKey, unattended) {
   process.stderr.write(unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey));
@@ -41,6 +41,26 @@ function validPreflightToken() {
   } catch (_) { return false; } // 부재·파싱실패 = 무효(fail-closed)
 }
 
+// 예산 상태 읽기: "부재(go가 지움=새 시작) / 정상 / 손상(리셋 금지)"을 구분.
+function readRuntime() {
+  const p = ctlPath("runtime.json");
+  if (!fs.existsSync(p)) return { absent: true };
+  try {
+    const state = JSON.parse(fs.readFileSync(p, "utf8"));
+    // 파싱은 됐어도 스키마가 틀리면(null·숫자·startedAt 없음) 손상으로 취급 — 조용히 리셋 금지.
+    if (!state || typeof state.startedAt !== "number") return { corrupt: true };
+    return { state };
+  } catch (_) { return { corrupt: true }; }
+}
+// 원자적 쓰기(temp+rename) — 동시 서브에이전트 읽기가 잘린 파일을 보지 않게(POSIX rename 원자적).
+function writeRuntime(s) {
+  try {
+    const p = ctlPath("runtime.json"), tmp = p + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(s));
+    fs.renameSync(tmp, p);
+  } catch (_) { /* 무시 */ }
+}
+
 // transcript를 읽어 pr-reviewer 실행 흔적 확인. 못 읽으면 fail-open(true) — 훅 오류로 정상작업 안 막음.
 function prReviewerRan(transcriptPath) {
   try {
@@ -67,6 +87,15 @@ process.stdin.on("end", () => {
     if (UNATTENDED) {
       if (stopRequested()) return deny("u-stop", true);
       if (!validPreflightToken()) return deny("u-no-preflight", true);
+    }
+
+    // 0.5) 무인 예산·워치독: 매 호출 카운트+시각 검사. 초과/헛돎 → park. commit은 진전.
+    if (UNATTENDED) {
+      const rt = readRuntime();
+      if (rt.corrupt) return deny("u-error", true); // 손상 시 시계 리셋 대신 안전 park
+      const { state, reason } = budgetStep(rt.state || null, Date.now(), isGitCommit(name, ti), BUDGET);
+      writeRuntime(state);
+      if (reason) return deny(reason, true);
     }
 
     // 1) base 패턴 차단. 무인 모드는 배포 탈출구(CHAGEUN_ALLOW_DEPLOY)를 무시.

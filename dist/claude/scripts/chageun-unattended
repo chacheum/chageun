@@ -39,6 +39,9 @@ rm -f .chageun/setup-ready   # 신선표식 소비 — 다음 무인엔 다시 s
 # 'go' 인자는 소비
 if [ "${1:-}" = "go" ]; then shift; fi
 
+# 새 무인 세션: 예산 시계 리셋(이전 세션 잔여로 즉시 멈추지 않게).
+rm -f .chageun/runtime.json
+
 # 3) 통과표 발급 + 대문 못 박기
 ROOT="$(pwd)"
 NONCE="$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')"
