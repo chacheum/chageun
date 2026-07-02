@@ -131,6 +131,32 @@ function isWriteSql(text) {
   return false;
 }
 
+// 무인 예산·워치독 기본 한도. 8시간 / 2000 도구호출 / 30분 무진전.
+const BUDGET = { maxMs: 8 * 60 * 60 * 1000, maxCalls: 2000, watchdogMs: 30 * 60 * 1000 };
+// 이 도구 호출이 "진전"(git commit)인가 — 워치독 리셋 신호. 워치독은 과대검출이 "덜 안전"
+// (헛돎을 늦게 잡음)이라 정밀하게: 명령을 세그먼트로 쪼개 선두가 git … commit일 때만 참.
+// 그래서 "echo git commit"·"grep 'git commit'"은 진전으로 안 침.
+const GIT_COMMIT = /^\s*git\b(?:\s+\S+)*?\s+commit\b/;
+function isGitCommit(name, toolInput) {
+  if (name !== "Bash") return false;
+  const cmd = String((toolInput && toolInput.command) || "");
+  return cmd.split(/&&|\|\||[;|\n]/).some((seg) => GIT_COMMIT.test(seg));
+}
+// 순수 예산 판정: 이전 상태 + 지금 시각 + 이번 호출이 진전인가 → 갱신 상태 + 사유(없으면 null).
+// 상태 없으면 now로 생성. calls 증가. 진전이면 lastProgressAt=now. 한도 초과 시 사유.
+function budgetStep(prevState, now, isProgress, limits) {
+  const ok = prevState && typeof prevState.startedAt === "number";
+  const state = ok
+    ? { startedAt: prevState.startedAt, calls: (prevState.calls || 0) + 1, lastProgressAt: typeof prevState.lastProgressAt === "number" ? prevState.lastProgressAt : prevState.startedAt }
+    : { startedAt: now, calls: 1, lastProgressAt: now };
+  if (isProgress) state.lastProgressAt = now;
+  let reason = null;
+  if (now - state.startedAt > limits.maxMs) reason = "u-budget";
+  else if (state.calls > limits.maxCalls) reason = "u-budget";
+  else if (now - state.lastProgressAt > limits.watchdogMs) reason = "u-watchdog";
+  return { state, reason };
+}
+
 // 무인 모드: worktree 밖 쓰기 / 안전장치·설정·훅 / 동결된 성공기준 파일 수정 차단. Write류만 대상.
 const PROTECTED = /(^|\/)\.(?:claude|chageun)(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/i;
 function pathGuard(toolName, toolInput, opts) {
@@ -183,7 +209,9 @@ const REASONS_UNATTENDED = {
   "u-nested": "무인 모드 차단: 새 claude/codex 프로세스 실행은 무인 경계를 벗어나므로 금지. park하고 사람 복귀를 기다립니다.",
   "u-stop": "무인 모드 정지: .chageun/STOP 요청이 있어 모든 작업을 멈춥니다. 사람 복귀를 기다립니다.",
   "u-no-preflight": "무인 모드 차단: preflight 통과 증표가 없습니다. chageun-unattended 런처로 시작하세요. 그때까지 모든 작업을 park합니다.",
+  "u-budget": "무인 모드 정지: 예산 한도(시간 또는 작업량)에 도달해 멈춥니다. 진행 상황은 저장돼 있고, 사람 복귀 후 이어서 재개하세요.",
+  "u-watchdog": "무인 모드 정지: 오랫동안 진전(저장)이 없어 멈춥니다(헛돎 방지). 사람 복귀를 기다립니다.",
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql, reasonForUnattended };
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
