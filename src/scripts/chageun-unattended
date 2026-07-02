@@ -12,11 +12,13 @@ fi
 # --check: 검사만
 if [ "${1:-}" = "--check" ]; then echo "preflight 통과 — 무인 시작 가능."; exit 0; fi
 
-# 2) 통과표 발급(보호경로 .chageun/token)
+# 2) 통과표 발급(보호경로 .chageun/token). 시작 폴더를 대문(ROOT)으로 못 박는다.
+ROOT="$(pwd)"
 mkdir -p .chageun
 NONCE="$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')"
 node -e 'const fs=require("fs");fs.writeFileSync(".chageun/token",JSON.stringify({nonce:process.argv[1],at:Date.now()}))' "$NONCE"
 
-# 3) 무인 스위치 + 통과표 nonce를 env로 넣고 claude 시작
-echo "무인 모드 시작(통과표 발급). 정지하려면 다른 터미널에서: touch .chageun/STOP"
-exec env CHAGEUN_UNATTENDED=1 CHAGEUN_UNATTENDED_TOKEN="$NONCE" claude "$@"
+# 3) 무인 스위치 + 통과표 nonce + 대문 경로를 env로 넣고 claude 시작.
+# CHAGEUN_ROOT로 STOP·통과표 위치를 못 박아, 세션이 하위폴더/worktree로 옮겨가도 STOP이 확실히 먹는다.
+echo "무인 모드 시작(통과표 발급). 정지하려면 다른 터미널에서 이 폴더($ROOT)로 이동 후: touch .chageun/STOP"
+exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$ROOT" CHAGEUN_UNATTENDED_TOKEN="$NONCE" claude "$@"
