@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# 무인 모드 안전 시작: preflight 통과 시에만 통과표 발급 + CHAGEUN_UNATTENDED=1로 claude 시작.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+# 1) preflight (샌드박스 살아있나 + 위험 스캔)
+if ! node "$HERE/preflight.mjs"; then
+  echo "무인 시작 거부: preflight 실패(위 이유). .chageun/unattended.json 확인 또는 샌드박스 기동 후 다시." >&2
+  exit 1
+fi
+
+# --check: 검사만
+if [ "${1:-}" = "--check" ]; then echo "preflight 통과 — 무인 시작 가능."; exit 0; fi
+
+# 2) 통과표 발급(보호경로 .chageun/token)
+mkdir -p .chageun
+NONCE="$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')"
+node -e 'const fs=require("fs");fs.writeFileSync(".chageun/token",JSON.stringify({nonce:process.argv[1],at:Date.now()}))' "$NONCE"
+
+# 3) 무인 스위치 + 통과표 nonce를 env로 넣고 claude 시작
+echo "무인 모드 시작(통과표 발급). 정지하려면 다른 터미널에서: touch .chageun/STOP"
+exec env CHAGEUN_UNATTENDED=1 CHAGEUN_UNATTENDED_TOKEN="$NONCE" claude "$@"
