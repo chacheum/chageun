@@ -6,11 +6,23 @@
 // NOTE: Codex 훅은 PreToolUse 미지원 → 이 방어는 Claude에만 있다(Codex는 텍스트 멈춤규칙 의존).
 
 const fs = require("fs");
+const path = require("path");
 const { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended } = require("./pretooluse-core.js");
 
 function deny(reasonKey, unattended) {
   process.stderr.write(unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey));
   process.exit(2); // PreToolUse: exit 2 = 도구 호출 차단, stderr를 Claude에 전달
+}
+
+function ctlPath(name) { return path.join(process.cwd(), ".chageun", name); }
+function stopRequested() { try { return fs.existsSync(ctlPath("STOP")); } catch (_) { return true; } } // 읽기 예외도 안전측
+function validPreflightToken() {
+  try {
+    const want = process.env.CHAGEUN_UNATTENDED_TOKEN;
+    if (!want) return false;
+    const data = JSON.parse(fs.readFileSync(ctlPath("token"), "utf8"));
+    return typeof data.nonce === "string" && data.nonce.length > 0 && data.nonce === want;
+  } catch (_) { return false; } // 부재·파싱실패 = 무효(fail-closed)
 }
 
 // transcript를 읽어 pr-reviewer 실행 흔적 확인. 못 읽으면 fail-open(true) — 훅 오류로 정상작업 안 막음.
@@ -34,6 +46,12 @@ process.stdin.on("end", () => {
     const input = JSON.parse(raw);
     const name = input.tool_name;
     const ti = input.tool_input || {};
+
+    // 0) 무인 게이트: 정지 요청 or preflight 통과표 없음 → 모든 도구 park(fail-closed).
+    if (UNATTENDED) {
+      if (stopRequested()) return deny("u-stop", true);
+      if (!validPreflightToken()) return deny("u-no-preflight", true);
+    }
 
     // 1) base 패턴 차단. 무인 모드는 배포 탈출구(CHAGEUN_ALLOW_DEPLOY)를 무시.
     const hit = block(name, ti);
