@@ -165,3 +165,29 @@ test("무인 우회 방지: push/설치/배포/SQL/경로 강화", () => {
   assert.equal(ub("env vercel --prod"), "u-deploy");
   assert.equal(ub("npm run i-love-cats"), null, "스크립트명 속 i는 오탐 아님");
 });
+
+test("무인 최종보강: git -c push·Bash DML·MCP쓰기·멀티생태계 설치 차단", () => {
+  const CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+  const { unattendedBlock } = require(CORE);
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  // C1
+  assert.equal(ub("git -c user.name=x push origin main"), "u-push");
+  assert.equal(ub("git -c http.extraHeader=A push"), "u-push");
+  assert.equal(ub("git log --oneline"), null);
+  // C2 (Bash SQL 클라이언트 DML)
+  assert.equal(ub('psql -c "INSERT INTO users VALUES(1)"'), "u-db-write");
+  assert.equal(ub('mysql -e "UPDATE t SET x=1 WHERE id=1"'), "u-db-write");
+  assert.equal(ub('psql -c "SELECT * FROM t"'), null, "Bash 읽기 쿼리는 허용");
+  // I2 (멀티 생태계 설치)
+  assert.equal(ub("pip install requests"), "u-install");
+  assert.equal(ub("cargo add serde"), "u-install");
+  assert.equal(ub("go get github.com/x/y"), "u-install");
+  assert.equal(ub("gem install rails"), "u-install");
+  assert.equal(ub("npx create-react-app foo"), "u-install");
+  // I1 (MCP 쓰기/파괴 도구)
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__deploy_edge_function", {}, {}), "u-mcp-write");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__delete_branch", {}, {}), "u-mcp-write");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__restore_project", {}, {}), "u-mcp-write");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__list_tables", {}, {}), null, "MCP 읽기(list)는 허용");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__get_logs", {}, {}), null, "MCP 읽기(get)는 허용");
+});
