@@ -28,3 +28,14 @@ test("env에 시크릿/유료키 보이면 거부", () => {
 test("설정 없음 → 거부(샌드박스 미정의)", () => {
   assert.equal(evaluate({}, alive, {}).ok, false);
 });
+test("env의 외부 DB 연결문자열(비번 포함) → 거부", () => {
+  assert.equal(evaluate(cfg({ container: "c" }), alive, { DATABASE_URL: "postgresql://postgres:pw@db.prod.supabase.co:5432/postgres" }).ok, false);
+  assert.equal(evaluate(cfg({ container: "c" }), alive, { REDIS_URL: "redis://:hunter2@prod-redis.example.com:6379" }).ok, false);
+});
+test("로컬 DB 연결문자열(비번 포함)은 통과", () => {
+  assert.equal(evaluate(cfg({ container: "c" }), alive, { DATABASE_URL: "postgres://postgres:postgres@localhost:54322/postgres" }).ok, true);
+});
+test("GCP credentials·private_key 감지 → 거부", () => {
+  assert.equal(evaluate(cfg({ container: "c" }), alive, { GOOGLE_APPLICATION_CREDENTIALS: "/x/sa.json" }).ok, false);
+  assert.equal(evaluate(cfg({ container: "c" }), alive, { SA_BLOB: '{"private_key":"-----BEGIN PRIVATE KEY-----"}' }).ok, false);
+});
