@@ -134,3 +134,29 @@ test("무인 사유문: 모든 무인 키에 메시지 + 우회 안내 없음", 
     assert.doesNotMatch(m, /=1/, `${k} 메시지에 우회 방법 금지`);
   }
 });
+
+test("무인 우회 방지: push/설치/배포/SQL/경로 강화", () => {
+  const CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+  const { unattendedBlock } = require(CORE);
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  assert.equal(ub("git -C /some/dir push origin main"), "u-push");
+  assert.equal(ub("git --git-dir=/x push"), "u-push");
+  assert.equal(ub("git log --oneline"), null, "push 아닌 git은 통과");
+  assert.equal(ub("npm install --save-dev foo"), "u-install");
+  assert.equal(ub("npm i -D foo"), "u-install");
+  assert.equal(ub("yarn global add foo"), "u-install");
+  assert.equal(ub("npm --prefix . install foo"), "u-install");
+  assert.equal(ub("npm ci"), null);
+  assert.equal(ub("npm install"), null);
+  assert.equal(ub("echo done-vercel-setup"), null, "문자열 속 vercel은 오탐 아님");
+  assert.equal(ub("vercel --prod"), "u-deploy");
+  const sqlw = (q) => unattendedBlock("mcp__x_execute_sql", { query: q }, {});
+  assert.equal(sqlw("IN/**/SERT INTO t VALUES(1)"), "u-db-write", "코멘트 분절 우회 차단");
+  assert.equal(sqlw("SELECT * INTO new_t FROM t"), "u-db-write", "SELECT INTO는 쓰기");
+  assert.equal(sqlw("SELECT * FROM t"), null);
+  const opts = { worktreeRoot: "/work/wt", criteriaPath: "criteria.md" };
+  const w = (f) => unattendedBlock("Write", { file_path: f }, opts);
+  assert.equal(w("/work/wt/.Claude/x"), "u-protected-path", "대소문자 무관 보호");
+  assert.equal(w("/work/wt/CRITERIA.MD"), "u-frozen-criteria");
+  assert.equal(unattendedBlock("MultiEdit", { file_path: "/work/other/x" }, opts), "u-out-of-tree", "MultiEdit도 가드");
+});

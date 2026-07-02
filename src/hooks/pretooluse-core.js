@@ -96,29 +96,38 @@ function hasPrReviewer(objs) {
 
 // ── 무인 모드(CHAGEUN_UNATTENDED=1) 전용 추가 차단 ──────────────────────────
 // 유인 모드엔 영향 없음(래퍼가 무인일 때만 호출). base block보다 넓게 막고, 탈출구 env는 래퍼에서 무시.
-const ANY_PUSH = /\bgit\s+push\b/;                                    // force 여부 무관 모든 push
-const ANY_DEPLOY = /\b(vercel|netlify|surge)\b|\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+(push|deploy)\b/;
-// 새 의존성 추가만 차단(락파일 재설치 npm ci / 인자없는 install은 허용). yarn/pnpm/bun add는 항상 추가.
-const PKG_ADD = /\b(?:yarn\s+add|pnpm\s+add|bun\s+add)\b|\bnpm\s+(?:install|i)\s+(?!-)\S/;
+// 모든 git push(force 무관). git와 push 사이 플래그(-C dir, --git-dir=…)를 허용해 삽입 우회 차단.
+const ANY_PUSH = /\bgit\b(?:\s+-{1,2}[\w-]+(?:=\S+)?|\s+-C\s+\S+)*\s+push\b/;
+// 배포·퍼블리시. 동사형은 느슨히, 단독 툴명(vercel/netlify/surge)은 세그먼트 선두에서만(문자열 속 오탐 축소).
+const DEPLOY_VERB = /\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+(push|deploy)\b/;
+const DEPLOY_TOOL = /^\s*(?:sudo\s+|npx\s+)?(?:vercel|netlify|surge)\b/;
+// 설치/추가 계열: 무인 중 새 의존성 유입을 넓게 차단, 락파일 재설치 표준형만 허용.
+const PKG_INSTALLISH = /\b(?:npm|pnpm|yarn|bun)\b[^\n]*\b(?:install|i|add)\b/;
+const PKG_SAFE_REINSTALL = /^\s*(?:npm\s+(?:ci|install|i)|(?:pnpm|yarn|bun)\s+install|pnpm\s+i)\s*(?:--[\w-]+)?\s*$/;
 
 // 무인 모드: SELECT/EXPLAIN/SHOW 외 모든 쓰기성 SQL(DML+DDL) 차단. 주석 제거 후 문장별 검사.
 const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
+const SQL_SELECT_INTO = /\bSELECT\b[\s\S]*?\bINTO\b/i;
 function isWriteSql(text) {
-  const noComments = String(text || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
-  for (const stmt of noComments.split(";")) if (stmt.trim() && SQL_WRITE.test(stmt)) return true;
+  // 블록 코멘트는 빈 문자열로 제거(IN/**/SERT 같은 키워드 분절 난독화 무력화), 라인 코멘트는 공백으로.
+  const noComments = String(text || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const stmt of noComments.split(";")) {
+    if (!stmt.trim()) continue;
+    if (SQL_WRITE.test(stmt) || SQL_SELECT_INTO.test(stmt)) return true;
+  }
   return false;
 }
 
 // 무인 모드: worktree 밖 쓰기 / 안전장치·설정·훅 / 동결된 성공기준 파일 수정 차단. Write류만 대상.
-const PROTECTED = /(^|\/)\.claude(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/;
+const PROTECTED = /(^|\/)\.claude(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/i;
 function pathGuard(toolName, toolInput, opts) {
-  if (!/^(Write|Edit|NotebookEdit)$/.test(String(toolName || ""))) return null;
+  if (!/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(String(toolName || ""))) return null;
   const fp = (toolInput && (toolInput.file_path || toolInput.notebook_path)) || "";
   if (!fp) return null;
   const root = (opts && opts.worktreeRoot) || ".";
   const abs = path.resolve(root, fp);
   if (PROTECTED.test(abs)) return "u-protected-path";
-  if (opts && opts.criteriaPath && path.resolve(root, opts.criteriaPath) === abs) return "u-frozen-criteria";
+  if (opts && opts.criteriaPath && path.resolve(root, opts.criteriaPath).toLowerCase() === abs.toLowerCase()) return "u-frozen-criteria";
   const rel = path.relative(path.resolve(root), abs);
   if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return "u-out-of-tree";
   return null;
@@ -128,9 +137,11 @@ function unattendedBlock(toolName, toolInput, opts) {
   const name = String(toolName || "");
   if (name === "Bash") {
     const cmd = String((toolInput && toolInput.command) || "");
-    if (ANY_PUSH.test(cmd)) return "u-push";
-    for (const seg of cmd.split(/&&|\|\||[;|\n]/)) if (ANY_DEPLOY.test(seg)) return "u-deploy";
-    if (PKG_ADD.test(cmd)) return "u-install";
+    for (const seg of cmd.split(/&&|\|\||[;|\n]/)) {
+      if (ANY_PUSH.test(seg)) return "u-push";
+      if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
+      if (PKG_INSTALLISH.test(seg) && !PKG_SAFE_REINSTALL.test(seg)) return "u-install";
+    }
     return null;
   }
   if (/execute_sql|apply_migration/.test(name)) {
