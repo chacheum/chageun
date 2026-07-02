@@ -112,11 +112,11 @@ const PKG_ADD_MULTI = /\b(?:pip3?|pipx)\s+install\b|\bcargo\s+(?:add|install)\b|
 // 무인: 외부·파괴적 MCP 도구(메서드명이 위험 동사로 시작). get/list/search/read/download 등 읽기는 통과.
 const MCP_WRITE = /__(?:create|delete|deploy|pause|restore|merge|reset|rebase|update|apply|confirm|copy|upload|move|remove|write|insert|set)_/i;
 
-// claude/codex 중첩 실행(env 없는 자식으로 무인 탈출). 세그먼트 선두·경로/래퍼(sh -c·env·sudo·xargs) 접두·파이프 뒤에서 "명령으로" 실행될 때만. 단순 언급(grep claude, 커밋메시지)은 제외. 플래그 유무 무관.
-const NESTED_AGENT = /(?:^|\||\bsh\s+-c\s+["']?|\bbash\s+-c\s+["']?|\benv\s+(?:\S+=\S+\s+)*|\bsudo\s+|\bcommand\s+|\bxargs\s+)\s*(?:\S*\/)?(?:claude|codex)\b/;
+// claude/codex 중첩 실행(자식이 env를 잃고 유인으로 떠 무인 경계 탈출). 명령 위치(세그먼트 선두·셸연산자·명령치환·제어구조·래퍼(sh -c/bash -c/env/sudo/nohup/timeout 등)·인라인 VAR= 프리픽스)에서 실행될 때 차단. 단순 언급(grep/echo/curl/커밋메시지)은 제외.
+const NESTED_AGENT = /(?:^|[;|&(){]|\bthen\b|\bdo\b|\$\(|`|\bsh\s+-c\s+["']?|\bbash\s+-c\s+["']?|\b(?:env|sudo|command|xargs|nohup|timeout|setsid|exec|nice|stdbuf|time|ionice|doas)\b[^|&;]*?\s|(?:\b[A-Za-z_]\w*=\S*\s+)+)\s*(?:\S*\/)?(?:claude|codex)\b/;
 // .chageun 제어파일(통과표·STOP)을 읽기 외로 건드리는 명령 차단. 전체 명령 스캔(세그먼트 분리·cd·인터프리터 우회 방지), 대소문자 무관. cat/grep/ls 같은 순수 읽기는 통과.
 const CHAGEUN_REF = /\.chageun\b/i;
-const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed|awk|python3?|node|perl|ruby|cd)\b|>>?/i;
+const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed|awk|python3?|node|perl|ruby|cd|find|shred|rsync|git)\b|>>?/i;
 
 // 무인 모드: SELECT/EXPLAIN/SHOW 외 모든 쓰기성 SQL(DML+DDL) 차단. 주석 제거 후 문장별 검사.
 const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
