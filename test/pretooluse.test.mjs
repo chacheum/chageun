@@ -81,3 +81,19 @@ test("hasPrReviewer: 실제 Task 실행만 감지(문자열 언급 무시)", () 
   assert.equal(hasPrReviewer(mentionOnly), false, "언급만으론 흔적 아님");
   assert.equal(hasPrReviewer([]), false);
 });
+
+test("무인 Bash: 모든 push·프리뷰배포·의존성설치 차단", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  assert.equal(ub("git push origin main"), "u-push", "무인은 force 아니어도 push 차단");
+  assert.equal(ub("git push --force-with-lease origin main"), "u-push");
+  assert.equal(ub("vercel"), "u-deploy", "프리뷰 배포도 무인 차단");
+  assert.equal(ub("netlify deploy"), "u-deploy");
+  assert.equal(ub("npm publish --dry-run"), "u-deploy", "무인은 dry-run도 차단");
+  assert.equal(ub("npm install left-pad"), "u-install");
+  assert.equal(ub("yarn add react"), "u-install");
+  assert.equal(ub("npm ci"), null, "락파일 재설치는 허용");
+  assert.equal(ub("npm install"), null, "인자없는 install(락파일 기반)은 허용");
+  assert.equal(ub("npm test"), null);
+  assert.equal(ub("ls -la"), null);
+});

@@ -92,4 +92,23 @@ function hasPrReviewer(objs) {
   return false;
 }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer };
+// ── 무인 모드(CHAGEUN_UNATTENDED=1) 전용 추가 차단 ──────────────────────────
+// 유인 모드엔 영향 없음(래퍼가 무인일 때만 호출). base block보다 넓게 막고, 탈출구 env는 래퍼에서 무시.
+const ANY_PUSH = /\bgit\s+push\b/;                                    // force 여부 무관 모든 push
+const ANY_DEPLOY = /\b(vercel|netlify|surge)\b|\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+(push|deploy)\b/;
+// 새 의존성 추가만 차단(락파일 재설치 npm ci / 인자없는 install은 허용). yarn/pnpm/bun add는 항상 추가.
+const PKG_ADD = /\b(?:yarn\s+add|pnpm\s+add|bun\s+add)\b|\bnpm\s+(?:install|i)\s+(?!-)\S/;
+
+function unattendedBlock(toolName, toolInput, opts) {
+  const name = String(toolName || "");
+  if (name === "Bash") {
+    const cmd = String((toolInput && toolInput.command) || "");
+    if (ANY_PUSH.test(cmd)) return "u-push";
+    for (const seg of cmd.split(/&&|\|\||[;|\n]/)) if (ANY_DEPLOY.test(seg)) return "u-deploy";
+    if (PKG_ADD.test(cmd)) return "u-install";
+    return null;
+  }
+  return null; // DB쓰기·경로가드는 뒤 태스크에서 추가
+}
+
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock };
