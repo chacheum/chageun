@@ -135,3 +135,9 @@ test("유인 회귀: 예산 상태가 있어도 유인은 영향 없음", () => 
 test("무인 예산: runtime.json이 있는데 손상(파싱 실패)이면 리셋 말고 park", () => {
   assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtimeRaw: "{broken" }).code, 2);
 });
+
+test("무인 예산: 유효 JSON이나 스키마 손상(null/42/startedAt 없음)도 리셋 말고 park", () => {
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtimeRaw: "null" }).code, 2);
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtimeRaw: "42" }).code, 2);
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtimeRaw: '{"calls":5}' }).code, 2);
+});

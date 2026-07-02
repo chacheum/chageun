@@ -45,8 +45,12 @@ function validPreflightToken() {
 function readRuntime() {
   const p = ctlPath("runtime.json");
   if (!fs.existsSync(p)) return { absent: true };
-  try { return { state: JSON.parse(fs.readFileSync(p, "utf8")) }; }
-  catch (_) { return { corrupt: true }; }
+  try {
+    const state = JSON.parse(fs.readFileSync(p, "utf8"));
+    // 파싱은 됐어도 스키마가 틀리면(null·숫자·startedAt 없음) 손상으로 취급 — 조용히 리셋 금지.
+    if (!state || typeof state.startedAt !== "number") return { corrupt: true };
+    return { state };
+  } catch (_) { return { corrupt: true }; }
 }
 // 원자적 쓰기(temp+rename) — 동시 서브에이전트 읽기가 잘린 파일을 보지 않게(POSIX rename 원자적).
 function writeRuntime(s) {
