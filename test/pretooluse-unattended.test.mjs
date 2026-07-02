@@ -18,6 +18,8 @@ function runIn(input, env, opts = {}) {
   const nonce = opts.nonce === undefined ? "abc123" : opts.nonce;
   if (opts.writeToken !== false) writeFileSync(join(dir, ".chageun", "token"), JSON.stringify({ nonce }));
   if (opts.stop) writeFileSync(join(dir, ".chageun", "STOP"), "");
+  if (opts.runtime) writeFileSync(join(dir, ".chageun", "runtime.json"), JSON.stringify(opts.runtime));
+  if (opts.runtimeRaw !== undefined) writeFileSync(join(dir, ".chageun", "runtime.json"), opts.runtimeRaw);
   const fullEnv = { ...BASE, ...env };
   if (opts.tokenEnv !== null && (env.CHAGEUN_UNATTENDED === "1")) fullEnv.CHAGEUN_UNATTENDED_TOKEN = opts.tokenEnv || nonce;
   const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(input), env: fullEnv, cwd: dir, encoding: "utf8" });
@@ -109,4 +111,27 @@ test("PreToolUse matcher가 MultiEdit 등 편집 도구 포함(훅 우회 방지
   const cfg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "hooks.claude.json"), "utf8"));
   const m = cfg.hooks.PreToolUse[0].matcher;
   for (const t of ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "execute_sql", "apply_migration"]) assert.ok(m.includes(t), `matcher에 ${t} 포함`);
+});
+
+test("무인 예산: 시간/횟수 초과 시 park, 정상은 통과", () => {
+  const now = Date.now();
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtime: { startedAt: now - 9 * 3600e3, calls: 5, lastProgressAt: now } }).code, 2);
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtime: { startedAt: now, calls: 2000, lastProgressAt: now } }).code, 2);
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtime: { startedAt: now, calls: 1, lastProgressAt: now } }).code, 0);
+});
+
+test("무인 워치독: 30분 무진전 park, 단 이번이 commit이면 통과", () => {
+  const now = Date.now();
+  const stale = { startedAt: now - 60e3, calls: 5, lastProgressAt: now - 31 * 60e3 };
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtime: stale }).code, 2);
+  assert.equal(runIn(bash('git commit -m x'), { CHAGEUN_UNATTENDED: "1" }, { runtime: stale }).code, 0);
+});
+
+test("유인 회귀: 예산 상태가 있어도 유인은 영향 없음", () => {
+  const now = Date.now();
+  assert.equal(runIn(bash("ls"), {}, { runtime: { startedAt: now - 9 * 3600e3, calls: 9999, lastProgressAt: now - 9 * 3600e3 } }).code, 0);
+});
+
+test("무인 예산: runtime.json이 있는데 손상(파싱 실패)이면 리셋 말고 park", () => {
+  assert.equal(runIn(bash("ls"), { CHAGEUN_UNATTENDED: "1" }, { runtimeRaw: "{broken" }).code, 2);
 });
