@@ -1,0 +1,6 @@
+{
+  "sandbox": {
+    "container": "supabase_db_ofxscmkoqgcjoegnaazj",
+    "dbUrl": "postgres://postgres:postgres@localhost:54322/postgres"
+  }
+}

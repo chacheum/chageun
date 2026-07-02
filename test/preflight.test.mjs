@@ -39,3 +39,16 @@ test("GCP credentials·private_key 감지 → 거부", () => {
   assert.equal(evaluate(cfg({ container: "c" }), alive, { GOOGLE_APPLICATION_CREDENTIALS: "/x/sa.json" }).ok, false);
   assert.equal(evaluate(cfg({ container: "c" }), alive, { SA_BLOB: '{"private_key":"-----BEGIN PRIVATE KEY-----"}' }).ok, false);
 });
+
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+
+test("런처 --check: 샌드박스 미설정이면 거부(exit 1, claude 미실행)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "launch-"));
+  const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
+  // .chageun/unattended.json 없음 → preflight 거부
+  const r = spawnSync("bash", [script, "--check"], { cwd: dir, encoding: "utf8" });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 1, "preflight 실패 시 exit 1");
+});
