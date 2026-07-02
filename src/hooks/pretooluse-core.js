@@ -1,6 +1,8 @@
 // chageun pretooluse 코어 — 순수 판정 로직(테스트 대상). 고위험·되돌리기불가 소수 패턴만.
 "use strict";
 
+const path = require("path");
+
 // git push --force / -f 차단(단 --force-with-lease는 허용 — 안전한 강제 push).
 const FORCE_PUSH = /\bgit\s+push\b[^\n]*?(--force(?!-with-lease)\b|(?:^|\s)-[a-zA-Z]*f\b)/;
 // rm 재귀+강제(-rf·-fr·-r -f·--recursive --force)가 루트/홈/현재트리 등 위험 타깃을 지울 때.
@@ -107,6 +109,21 @@ function isWriteSql(text) {
   return false;
 }
 
+// 무인 모드: worktree 밖 쓰기 / 안전장치·설정·훅 / 동결된 성공기준 파일 수정 차단. Write류만 대상.
+const PROTECTED = /(^|\/)\.claude(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/;
+function pathGuard(toolName, toolInput, opts) {
+  if (!/^(Write|Edit|NotebookEdit)$/.test(String(toolName || ""))) return null;
+  const fp = (toolInput && (toolInput.file_path || toolInput.notebook_path)) || "";
+  if (!fp) return null;
+  const root = (opts && opts.worktreeRoot) || ".";
+  const abs = path.resolve(root, fp);
+  if (PROTECTED.test(abs)) return "u-protected-path";
+  if (opts && opts.criteriaPath && path.resolve(root, opts.criteriaPath) === abs) return "u-frozen-criteria";
+  const rel = path.relative(path.resolve(root), abs);
+  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return "u-out-of-tree";
+  return null;
+}
+
 function unattendedBlock(toolName, toolInput, opts) {
   const name = String(toolName || "");
   if (name === "Bash") {
@@ -120,7 +137,7 @@ function unattendedBlock(toolName, toolInput, opts) {
     if (isWriteSql((toolInput && (toolInput.query || toolInput.sql)) || "")) return "u-db-write";
     return null;
   }
-  return null; // 경로가드는 다음 태스크
+  return pathGuard(name, toolInput, opts);
 }
 
 module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql };

@@ -110,3 +110,17 @@ test("무인 DB: 모든 쓰기 SQL 차단(읽기는 허용)", () => {
   assert.equal(ub("EXPLAIN SELECT 1"), null);
   assert.equal(ub("SELECT 1; INSERT INTO t VALUES(1)"), "u-db-write", "다중문장 중 하나라도 쓰기면 차단");
 });
+
+test("무인 경로가드: worktree 밖·보호경로·동결기준 차단", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const opts = { worktreeRoot: "/work/wt", criteriaPath: "criteria.md" };
+  const w = (file_path) => unattendedBlock("Write", { file_path }, opts);
+  assert.equal(w("/work/wt/src/app.js"), null, "트리 안 쓰기는 허용");
+  assert.equal(w("src/app.js"), null, "상대경로(트리 기준)는 허용");
+  assert.equal(w("/work/other/x.js"), "u-out-of-tree", "트리 밖 절대경로 차단");
+  assert.equal(w("../other/x.js"), "u-out-of-tree", "상위 탈출 차단");
+  assert.equal(w("/work/wt/.claude/settings.json"), "u-protected-path", ".claude 보호");
+  assert.equal(w("/work/wt/hooks/pretooluse.js"), "u-protected-path", "훅 자체 보호");
+  assert.equal(w("/work/wt/criteria.md"), "u-frozen-criteria", "동결된 성공기준 보호");
+  assert.equal(unattendedBlock("Read", { file_path: "/work/other/x" }, opts), null, "읽기 도구는 무관");
+});
