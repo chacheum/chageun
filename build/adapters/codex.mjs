@@ -17,6 +17,8 @@ export function buildCodex(srcDir, outDir) {
 
   // 공유 콘텐츠(미수정 복사)
   for (const d of ["skills", "rules", "assets", "codex"]) copyTree(join(srcDir, d), join(outDir, d));
+  // 무인 스킬 등 Claude 전용 스킬은 Codex 산출물에서 제거(Codex엔 안전 훅이 없음).
+  for (const s of (m.codex.skillsExclude || [])) rmSync(join(outDir, "skills", s), { recursive: true, force: true });
 
   // README: Codex 설치 섹션 덧붙이기
   const readme = readFileSync(join(srcDir, "README.md"), "utf8");
