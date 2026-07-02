@@ -14,7 +14,23 @@ function deny(reasonKey, unattended) {
   process.exit(2); // PreToolUse: exit 2 = 도구 호출 차단, stderr를 Claude에 전달
 }
 
-function ctlPath(name) { return path.join(process.cwd(), ".chageun", name); }
+// 제어파일(.chageun/STOP·token) 위치를 한 곳에 못 박는다 — 세션이 하위폴더·전용 worktree로
+// 옮겨 다녀도 "사람이 STOP을 두는 곳"과 "훅이 찾는 곳"이 갈라지지 않게. cwd는 신뢰 안 함.
+// 1순위: 런처가 준 CHAGEUN_ROOT(env는 cd로 안 바뀜). 2순위: cwd에서 위로 올라가며 .chageun 탐색
+// (STOP을 더 잘 찾는 안전 방향). 못 찾으면 cwd(그러면 통과표 부재 → fail-closed park).
+function ctlRoot() {
+  const fromEnv = process.env.CHAGEUN_ROOT;
+  if (fromEnv) return fromEnv;
+  let dir = process.cwd();
+  for (let i = 0; i < 64; i++) {
+    try { if (fs.existsSync(path.join(dir, ".chageun"))) return dir; } catch (_) { /* 계속 */ }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+function ctlPath(name) { return path.join(ctlRoot(), ".chageun", name); }
 function stopRequested() { try { return fs.existsSync(ctlPath("STOP")); } catch (_) { return true; } } // 읽기 예외도 안전측
 function validPreflightToken() {
   try {
@@ -64,7 +80,7 @@ process.stdin.on("end", () => {
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
     if (UNATTENDED) {
       if (isPrCreate(name, ti)) return deny("u-pr", true);
-      const uhit = unattendedBlock(name, ti, { worktreeRoot: process.cwd(), criteriaPath: process.env.CHAGEUN_CRITERIA_FILE });
+      const uhit = unattendedBlock(name, ti, { worktreeRoot: ctlRoot(), criteriaPath: process.env.CHAGEUN_CRITERIA_FILE });
       if (uhit) return deny(uhit, true);
     }
 
