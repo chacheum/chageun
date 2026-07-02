@@ -255,3 +255,4 @@ PR 권고: APPROVE | REQUEST CHANGES | BLOCK
 - blocker/BLOCK은 단순 동의로 우회 불가 — 문제를 수정·완화하거나 사용자가 위험을 자기 말로 다시 적어 확인할 때만 진행.
 - high/REQUEST CHANGES는 명시적 "진행해도 좋다" 1회로 진행 가능.
 - CONDITIONAL은 "구현 중 해결 가능"이라며 그냥 진행하지 말고, 그 조건을 사용자에게 보고·승인받아 끝 점검 채점 항목으로 등록.
+- **무인 모드 미지원:** Codex는 PreToolUse 하드 차단이 없어 무인 빌드 loop의 기계 경계(push·배포·DB쓰기·설치 차단, 탈출구 무시, 예외 시 park)를 세울 수 없다. 무인(사람 자리 비움) 실행은 Claude에서만. Codex에선 사람이 붙은 유인 모드로만 진행한다.

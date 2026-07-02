@@ -81,3 +81,113 @@ test("hasPrReviewer: 실제 Task 실행만 감지(문자열 언급 무시)", () 
   assert.equal(hasPrReviewer(mentionOnly), false, "언급만으론 흔적 아님");
   assert.equal(hasPrReviewer([]), false);
 });
+
+test("무인 Bash: 모든 push·프리뷰배포·의존성설치 차단", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  assert.equal(ub("git push origin main"), "u-push", "무인은 force 아니어도 push 차단");
+  assert.equal(ub("git push --force-with-lease origin main"), "u-push");
+  assert.equal(ub("vercel"), "u-deploy", "프리뷰 배포도 무인 차단");
+  assert.equal(ub("netlify deploy"), "u-deploy");
+  assert.equal(ub("npm publish --dry-run"), "u-deploy", "무인은 dry-run도 차단");
+  assert.equal(ub("npm install left-pad"), "u-install");
+  assert.equal(ub("yarn add react"), "u-install");
+  assert.equal(ub("npm ci"), null, "락파일 재설치는 허용");
+  assert.equal(ub("npm install"), null, "인자없는 install(락파일 기반)은 허용");
+  assert.equal(ub("npm test"), null);
+  assert.equal(ub("ls -la"), null);
+});
+
+test("무인 DB: 모든 쓰기 SQL 차단(읽기는 허용)", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const ub = (query) => unattendedBlock("mcp__plugin_supabase_supabase__execute_sql", { query }, {});
+  assert.equal(ub("INSERT INTO users(name) VALUES('x')"), "u-db-write", "유인은 통과하지만 무인은 INSERT 차단");
+  assert.equal(ub("UPDATE users SET name='x' WHERE id=1"), "u-db-write", "WHERE 있어도 무인은 차단");
+  assert.equal(ub("DELETE FROM users WHERE id=1"), "u-db-write");
+  assert.equal(ub("CREATE TABLE t(id int)"), "u-db-write");
+  assert.equal(ub("ALTER TABLE t ADD c int"), "u-db-write");
+  assert.equal(ub("SELECT * FROM users"), null, "읽기는 허용");
+  assert.equal(ub("EXPLAIN SELECT 1"), null);
+  assert.equal(ub("SELECT 1; INSERT INTO t VALUES(1)"), "u-db-write", "다중문장 중 하나라도 쓰기면 차단");
+});
+
+test("무인 경로가드: worktree 밖·보호경로·동결기준 차단", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const opts = { worktreeRoot: "/work/wt", criteriaPath: "criteria.md" };
+  const w = (file_path) => unattendedBlock("Write", { file_path }, opts);
+  assert.equal(w("/work/wt/src/app.js"), null, "트리 안 쓰기는 허용");
+  assert.equal(w("src/app.js"), null, "상대경로(트리 기준)는 허용");
+  assert.equal(w("/work/other/x.js"), "u-out-of-tree", "트리 밖 절대경로 차단");
+  assert.equal(w("../other/x.js"), "u-out-of-tree", "상위 탈출 차단");
+  assert.equal(w("/work/wt/.claude/settings.json"), "u-protected-path", ".claude 보호");
+  assert.equal(w("/work/wt/hooks/pretooluse.js"), "u-protected-path", "훅 자체 보호");
+  assert.equal(w("/work/wt/criteria.md"), "u-frozen-criteria", "동결된 성공기준 보호");
+  assert.equal(unattendedBlock("Read", { file_path: "/work/other/x" }, opts), null, "읽기 도구는 무관");
+});
+
+test("무인 사유문: 모든 무인 키에 메시지 + 우회 안내 없음", () => {
+  const { reasonForUnattended } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  for (const k of ["u-push","u-deploy","u-db-write","u-install","u-out-of-tree","u-protected-path","u-frozen-criteria","u-pr"]) {
+    const m = reasonForUnattended(k);
+    assert.match(m, /park/, `${k} 메시지에 park 안내`);
+    assert.doesNotMatch(m, /CHAGEUN_(ALLOW|SKIP)/, `${k} 메시지에 우회 env 노출 금지`);
+    assert.doesNotMatch(m, /=1/, `${k} 메시지에 우회 방법 금지`);
+  }
+});
+
+test("무인 우회 방지: push/설치/배포/SQL/경로 강화", () => {
+  const CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+  const { unattendedBlock } = require(CORE);
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  assert.equal(ub("git -C /some/dir push origin main"), "u-push");
+  assert.equal(ub("git --git-dir=/x push"), "u-push");
+  assert.equal(ub("git log --oneline"), null, "push 아닌 git은 통과");
+  assert.equal(ub("npm install --save-dev foo"), "u-install");
+  assert.equal(ub("npm i -D foo"), "u-install");
+  assert.equal(ub("yarn global add foo"), "u-install");
+  assert.equal(ub("npm --prefix . install foo"), "u-install");
+  assert.equal(ub("npm ci"), null);
+  assert.equal(ub("npm install"), null);
+  assert.equal(ub("echo done-vercel-setup"), "u-deploy", "안전 우선: 셸 래퍼 우회 차단 위해 vercel 문자열은 과차단(park) 감수");
+  assert.equal(ub("vercel --prod"), "u-deploy");
+  const sqlw = (q) => unattendedBlock("mcp__x_execute_sql", { query: q }, {});
+  assert.equal(sqlw("IN/**/SERT INTO t VALUES(1)"), "u-db-write", "코멘트 분절 우회 차단");
+  assert.equal(sqlw("SELECT * INTO new_t FROM t"), "u-db-write", "SELECT INTO는 쓰기");
+  assert.equal(sqlw("SELECT * FROM t"), null);
+  const opts = { worktreeRoot: "/work/wt", criteriaPath: "criteria.md" };
+  const w = (f) => unattendedBlock("Write", { file_path: f }, opts);
+  assert.equal(w("/work/wt/.Claude/x"), "u-protected-path", "대소문자 무관 보호");
+  assert.equal(w("/work/wt/CRITERIA.MD"), "u-frozen-criteria");
+  assert.equal(unattendedBlock("MultiEdit", { file_path: "/work/other/x" }, opts), "u-out-of-tree", "MultiEdit도 가드");
+  assert.equal(ub('sh -c "vercel --prod"'), "u-deploy", "셸 래퍼로 감싼 배포도 차단");
+  assert.equal(ub("bunx vercel --prod"), "u-deploy");
+  assert.equal(ub("yarn dlx vercel --prod"), "u-deploy");
+  assert.equal(ub("env vercel --prod"), "u-deploy");
+  assert.equal(ub("npm run i-love-cats"), null, "스크립트명 속 i는 오탐 아님");
+});
+
+test("무인 최종보강: git -c push·Bash DML·MCP쓰기·멀티생태계 설치 차단", () => {
+  const CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+  const { unattendedBlock } = require(CORE);
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  // C1
+  assert.equal(ub("git -c user.name=x push origin main"), "u-push");
+  assert.equal(ub("git -c http.extraHeader=A push"), "u-push");
+  assert.equal(ub("git log --oneline"), null);
+  // C2 (Bash SQL 클라이언트 DML)
+  assert.equal(ub('psql -c "INSERT INTO users VALUES(1)"'), "u-db-write");
+  assert.equal(ub('mysql -e "UPDATE t SET x=1 WHERE id=1"'), "u-db-write");
+  assert.equal(ub('psql -c "SELECT * FROM t"'), null, "Bash 읽기 쿼리는 허용");
+  // I2 (멀티 생태계 설치)
+  assert.equal(ub("pip install requests"), "u-install");
+  assert.equal(ub("cargo add serde"), "u-install");
+  assert.equal(ub("go get github.com/x/y"), "u-install");
+  assert.equal(ub("gem install rails"), "u-install");
+  assert.equal(ub("npx create-react-app foo"), "u-install");
+  // I1 (MCP 쓰기/파괴 도구)
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__deploy_edge_function", {}, {}), "u-mcp-write");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__delete_branch", {}, {}), "u-mcp-write");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__restore_project", {}, {}), "u-mcp-write");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__list_tables", {}, {}), null, "MCP 읽기(list)는 허용");
+  assert.equal(unattendedBlock("mcp__plugin_supabase_supabase__get_logs", {}, {}), null, "MCP 읽기(get)는 허용");
+});

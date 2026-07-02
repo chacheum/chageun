@@ -6,10 +6,10 @@
 // NOTE: Codex 훅은 PreToolUse 미지원 → 이 방어는 Claude에만 있다(Codex는 텍스트 멈춤규칙 의존).
 
 const fs = require("fs");
-const { block, reasonFor, isPrCreate, hasPrReviewer } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended } = require("./pretooluse-core.js");
 
-function deny(reasonKey) {
-  process.stderr.write(reasonFor(reasonKey));
+function deny(reasonKey, unattended) {
+  process.stderr.write(unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey));
   process.exit(2); // PreToolUse: exit 2 = 도구 호출 차단, stderr를 Claude에 전달
 }
 
@@ -29,23 +29,34 @@ function prReviewerRan(transcriptPath) {
 let raw = "";
 process.stdin.on("data", (d) => { raw += d; });
 process.stdin.on("end", () => {
+  const UNATTENDED = process.env.CHAGEUN_UNATTENDED === "1";
   try {
     const input = JSON.parse(raw);
     const name = input.tool_name;
     const ti = input.tool_input || {};
 
-    // 1) 패턴 기반 차단. 단 배포는 사용자가 세션에 CHAGEUN_ALLOW_DEPLOY=1 설정 시 통과.
+    // 1) base 패턴 차단. 무인 모드는 배포 탈출구(CHAGEUN_ALLOW_DEPLOY)를 무시.
     const hit = block(name, ti);
     if (hit === "deploy") {
-      if (process.env.CHAGEUN_ALLOW_DEPLOY !== "1") return deny("deploy");
+      if (UNATTENDED || process.env.CHAGEUN_ALLOW_DEPLOY !== "1") return deny("deploy", UNATTENDED);
     } else if (hit) {
-      return deny(hit);
+      return deny(hit, UNATTENDED);
     }
 
-    // 2) 게이트 생략 감지: gh pr create/merge인데 이 세션에 pr-reviewer 실행 흔적이 없으면 차단.
-    if (isPrCreate(name, ti) && process.env.CHAGEUN_SKIP_GATE_CHECK !== "1") {
-      if (!prReviewerRan(input.transcript_path)) return deny("gate-skip");
+    // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
+    if (UNATTENDED) {
+      if (isPrCreate(name, ti)) return deny("u-pr", true);
+      const uhit = unattendedBlock(name, ti, { worktreeRoot: process.cwd(), criteriaPath: process.env.CHAGEUN_CRITERIA_FILE });
+      if (uhit) return deny(uhit, true);
     }
-  } catch (_) { /* 안전 통과 */ }
+
+    // 3) 게이트 생략 감지: 무인 모드는 SKIP 탈출구(CHAGEUN_SKIP_GATE_CHECK)를 무시.
+    if (isPrCreate(name, ti) && (UNATTENDED || process.env.CHAGEUN_SKIP_GATE_CHECK !== "1")) {
+      if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
+    }
+  } catch (_) {
+    // 무인: 판정 중 예외 = 불확실 = 안전측(park). 유인: 기존대로 fail-open(사람이 백스톱).
+    if (UNATTENDED) { process.stderr.write(reasonForUnattended("u-error")); process.exit(2); }
+  }
   process.exit(0);
 });
