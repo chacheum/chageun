@@ -1,6 +1,8 @@
 // chageun pretooluse 코어 — 순수 판정 로직(테스트 대상). 고위험·되돌리기불가 소수 패턴만.
 "use strict";
 
+const path = require("path");
+
 // git push --force / -f 차단(단 --force-with-lease는 허용 — 안전한 강제 push).
 const FORCE_PUSH = /\bgit\s+push\b[^\n]*?(--force(?!-with-lease)\b|(?:^|\s)-[a-zA-Z]*f\b)/;
 // rm 재귀+강제(-rf·-fr·-r -f·--recursive --force)가 루트/홈/현재트리 등 위험 타깃을 지울 때.
@@ -92,4 +94,75 @@ function hasPrReviewer(objs) {
   return false;
 }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer };
+// ── 무인 모드(CHAGEUN_UNATTENDED=1) 전용 추가 차단 ──────────────────────────
+// 유인 모드엔 영향 없음(래퍼가 무인일 때만 호출). base block보다 넓게 막고, 탈출구 env는 래퍼에서 무시.
+// 모든 git push(force 무관). git와 push 사이 플래그(-C dir, --git-dir=…)를 허용해 삽입 우회 차단.
+const ANY_PUSH = /\bgit\b(?:\s+-{1,2}[\w-]+(?:=\S+)?|\s+-C\s+\S+)*\s+push\b/;
+// 배포·퍼블리시. 동사형은 느슨히, 단독 툴명(vercel/netlify/surge)은 세그먼트 선두에서만(문자열 속 오탐 축소).
+const DEPLOY_VERB = /\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+(push|deploy)\b/;
+// 배포 CLI. 무인 중엔 오탐(park)을 감수하고 앵커 없이 어디서든 매칭 — 셸 래퍼(sh -c, bunx, *dlx, env 등)로 감싼 배포 우회 차단이 문자열 오탐 축소보다 우선.
+const DEPLOY_TOOL = /\b(?:vercel|netlify|surge)\b/;
+// 설치/추가 계열: 무인 중 새 의존성 유입을 넓게 차단, 락파일 재설치 표준형만 허용.
+const PKG_INSTALLISH = /\b(?:npm|pnpm|yarn|bun)\b[^\n]*\b(?:install|add)\b|\b(?:npm|pnpm)\s+i\b/;
+const PKG_SAFE_REINSTALL = /^\s*(?:npm\s+(?:ci|install|i)|(?:pnpm|yarn|bun)\s+install|pnpm\s+i)\s*(?:--[\w-]+)?\s*$/;
+
+// 무인 모드: SELECT/EXPLAIN/SHOW 외 모든 쓰기성 SQL(DML+DDL) 차단. 주석 제거 후 문장별 검사.
+const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
+const SQL_SELECT_INTO = /\bSELECT\b[\s\S]*?\bINTO\b/i;
+function isWriteSql(text) {
+  // 블록 코멘트는 빈 문자열로 제거(IN/**/SERT 같은 키워드 분절 난독화 무력화), 라인 코멘트는 공백으로.
+  const noComments = String(text || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const stmt of noComments.split(";")) {
+    if (!stmt.trim()) continue;
+    if (SQL_WRITE.test(stmt) || SQL_SELECT_INTO.test(stmt)) return true;
+  }
+  return false;
+}
+
+// 무인 모드: worktree 밖 쓰기 / 안전장치·설정·훅 / 동결된 성공기준 파일 수정 차단. Write류만 대상.
+const PROTECTED = /(^|\/)\.claude(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/i;
+function pathGuard(toolName, toolInput, opts) {
+  if (!/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(String(toolName || ""))) return null;
+  const fp = (toolInput && (toolInput.file_path || toolInput.notebook_path)) || "";
+  if (!fp) return null;
+  const root = (opts && opts.worktreeRoot) || ".";
+  const abs = path.resolve(root, fp);
+  if (PROTECTED.test(abs)) return "u-protected-path";
+  if (opts && opts.criteriaPath && path.resolve(root, opts.criteriaPath).toLowerCase() === abs.toLowerCase()) return "u-frozen-criteria";
+  const rel = path.relative(path.resolve(root), abs);
+  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return "u-out-of-tree";
+  return null;
+}
+
+function unattendedBlock(toolName, toolInput, opts) {
+  const name = String(toolName || "");
+  if (name === "Bash") {
+    const cmd = String((toolInput && toolInput.command) || "");
+    for (const seg of cmd.split(/&&|\|\||[;|\n]/)) {
+      if (ANY_PUSH.test(seg)) return "u-push";
+      if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
+      if (PKG_INSTALLISH.test(seg) && !PKG_SAFE_REINSTALL.test(seg)) return "u-install";
+    }
+    return null;
+  }
+  if (/execute_sql|apply_migration/.test(name)) {
+    if (isWriteSql((toolInput && (toolInput.query || toolInput.sql)) || "")) return "u-db-write";
+    return null;
+  }
+  return pathGuard(name, toolInput, opts);
+}
+
+const REASONS_UNATTENDED = {
+  "u-push": "무인 모드 차단: git push는 자동배포로 이어질 수 있어 무인 중엔 못 합니다. 이 작업을 park하고 사람 복귀를 기다립니다.",
+  "u-deploy": "무인 모드 차단: 배포·퍼블리시(프리뷰 포함)는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
+  "u-db-write": "무인 모드 차단: DB 쓰기(INSERT/UPDATE/DELETE·스키마 변경)는 무인 중 금지 — 검증은 격리 샌드박스에서만. park하고 사람 복귀를 기다립니다.",
+  "u-install": "무인 모드 차단: 새 의존성 설치는 무인 중 금지(공급망·임의코드 위험). 락파일 재설치(npm ci)만 허용. park하고 사람 복귀를 기다립니다.",
+  "u-out-of-tree": "무인 모드 차단: 전용 worktree 밖 경로 쓰기는 금지(다른 작업물 보호). park하고 사람 복귀를 기다립니다.",
+  "u-protected-path": "무인 모드 차단: .claude·설정·훅 파일은 무인 중 수정 금지(안전장치 자체 보호). park하고 사람 복귀를 기다립니다.",
+  "u-frozen-criteria": "무인 모드 차단: 동결된 성공기준 파일은 무인 중 수정 금지. 기준을 바꿔야 하면 park하고 사람 복귀를 기다립니다.",
+  "u-pr": "무인 모드 차단: PR 생성·머지는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
+  "u-error": "무인 모드 차단: 판정 중 오류가 나 안전을 위해 park합니다. 사람 복귀를 기다립니다.",
+};
+function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
+
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql, reasonForUnattended };
