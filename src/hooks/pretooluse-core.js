@@ -99,6 +99,14 @@ const ANY_DEPLOY = /\b(vercel|netlify|surge)\b|\bfly(ctl)?\s+deploy\b|\bwrangler
 // 새 의존성 추가만 차단(락파일 재설치 npm ci / 인자없는 install은 허용). yarn/pnpm/bun add는 항상 추가.
 const PKG_ADD = /\b(?:yarn\s+add|pnpm\s+add|bun\s+add)\b|\bnpm\s+(?:install|i)\s+(?!-)\S/;
 
+// 무인 모드: SELECT/EXPLAIN/SHOW 외 모든 쓰기성 SQL(DML+DDL) 차단. 주석 제거 후 문장별 검사.
+const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
+function isWriteSql(text) {
+  const noComments = String(text || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+  for (const stmt of noComments.split(";")) if (stmt.trim() && SQL_WRITE.test(stmt)) return true;
+  return false;
+}
+
 function unattendedBlock(toolName, toolInput, opts) {
   const name = String(toolName || "");
   if (name === "Bash") {
@@ -108,7 +116,11 @@ function unattendedBlock(toolName, toolInput, opts) {
     if (PKG_ADD.test(cmd)) return "u-install";
     return null;
   }
-  return null; // DB쓰기·경로가드는 뒤 태스크에서 추가
+  if (/execute_sql|apply_migration/.test(name)) {
+    if (isWriteSql((toolInput && (toolInput.query || toolInput.sql)) || "")) return "u-db-write";
+    return null;
+  }
+  return null; // 경로가드는 다음 태스크
 }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock };
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql };

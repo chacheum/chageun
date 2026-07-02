@@ -97,3 +97,16 @@ test("무인 Bash: 모든 push·프리뷰배포·의존성설치 차단", () => 
   assert.equal(ub("npm test"), null);
   assert.equal(ub("ls -la"), null);
 });
+
+test("무인 DB: 모든 쓰기 SQL 차단(읽기는 허용)", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const ub = (query) => unattendedBlock("mcp__plugin_supabase_supabase__execute_sql", { query }, {});
+  assert.equal(ub("INSERT INTO users(name) VALUES('x')"), "u-db-write", "유인은 통과하지만 무인은 INSERT 차단");
+  assert.equal(ub("UPDATE users SET name='x' WHERE id=1"), "u-db-write", "WHERE 있어도 무인은 차단");
+  assert.equal(ub("DELETE FROM users WHERE id=1"), "u-db-write");
+  assert.equal(ub("CREATE TABLE t(id int)"), "u-db-write");
+  assert.equal(ub("ALTER TABLE t ADD c int"), "u-db-write");
+  assert.equal(ub("SELECT * FROM users"), null, "읽기는 허용");
+  assert.equal(ub("EXPLAIN SELECT 1"), null);
+  assert.equal(ub("SELECT 1; INSERT INTO t VALUES(1)"), "u-db-write", "다중문장 중 하나라도 쓰기면 차단");
+});
