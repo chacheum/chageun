@@ -21,7 +21,14 @@ const MARKERS = [
   "localhost",                   // LOOP: 로컬 실구동검증(배포 아님)
   "단언",                        // LOOP: assertion 주축(스크린샷은 증거)
   "pr-reviewer",                 // LOOP: 코드심판 게이트
-  "N=1",                         // LOOP: 고치기 1회
+  "N=2",                         // LOOP: 고치기 2회까지
+  "부풀기",                      // LOOP: 변경이 범위 벗어나면 멈춤
+  "git diff --stat",             // LOOP: 부풀기 판정 수단
+  "국소 가정",                   // 가정: 표시·문구는 최선추측+진행
+  "구조 가정",                   // 가정: 데이터모델 등은 park
+  "질문 상한",                   // 가정: 🙋 상한 넘으면 park
+  "재판정",                      // 가정: 민감면·구조 건드리면 park
+  "구조로 보고 park",            // 가정: 애매하면 안전측(타이브레이커)
   "커밋",                        // LOOP: 통과 시 저장(push 아님)
   "park",                        // 갈림길·실패는 멈춤
   "대기표",                      // FINISH: hard-stop 대기표(배포는 복귀 후)
@@ -48,4 +55,8 @@ test("code-implementer가 무인 금지 안내를 담는다", () => {
   assert.ok(/무인/.test(IMPL), "무인 언급");
   assert.ok(/push|배포|운영|외부/.test(IMPL), "되돌리기 비싼 행동 언급");
   assert.ok(/park|BLOCKED/.test(IMPL), "시도 말고 park/BLOCKED로 올리라는 지시");
+});
+
+test("무인 스킬: 질문 상한 표기가 4개로 통일(3~4 잔존 금지)", () => {
+  assert.ok(!SKILL.includes("3~4"), "질문 상한이 '4개'로 통일돼야 함(옛 '3~4' 표기 제거)");
 });
