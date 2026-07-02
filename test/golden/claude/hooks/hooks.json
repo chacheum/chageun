@@ -15,7 +15,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|execute_sql|apply_migration",
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|execute_sql|apply_migration|deploy_edge_function|delete_branch|create_branch|merge_branch|reset_branch|rebase_branch|restore_project|pause_project|create_project|delete_project|confirm_cost",
         "hooks": [
           {
             "type": "command",

@@ -96,8 +96,8 @@ function hasPrReviewer(objs) {
 
 // ── 무인 모드(CHAGEUN_UNATTENDED=1) 전용 추가 차단 ──────────────────────────
 // 유인 모드엔 영향 없음(래퍼가 무인일 때만 호출). base block보다 넓게 막고, 탈출구 env는 래퍼에서 무시.
-// 모든 git push(force 무관). git와 push 사이 플래그(-C dir, --git-dir=…)를 허용해 삽입 우회 차단.
-const ANY_PUSH = /\bgit\b(?:\s+-{1,2}[\w-]+(?:=\S+)?|\s+-C\s+\S+)*\s+push\b/;
+// git과 push 사이에 어떤 토큰이 와도(-c key=val, -C dir, --git-dir=… 등) 차단. 과차단(커밋메시지 속 " push" 등)은 park라 안전.
+const ANY_PUSH = /\bgit\b(?:\s+\S+)*?\s+push\b/;
 // 배포·퍼블리시. 동사형은 느슨히, 단독 툴명(vercel/netlify/surge)은 세그먼트 선두에서만(문자열 속 오탐 축소).
 const DEPLOY_VERB = /\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+(push|deploy)\b/;
 // 배포 CLI. 무인 중엔 오탐(park)을 감수하고 앵커 없이 어디서든 매칭 — 셸 래퍼(sh -c, bunx, *dlx, env 등)로 감싼 배포 우회 차단이 문자열 오탐 축소보다 우선.
@@ -105,6 +105,12 @@ const DEPLOY_TOOL = /\b(?:vercel|netlify|surge)\b/;
 // 설치/추가 계열: 무인 중 새 의존성 유입을 넓게 차단, 락파일 재설치 표준형만 허용.
 const PKG_INSTALLISH = /\b(?:npm|pnpm|yarn|bun)\b[^\n]*\b(?:install|add)\b|\b(?:npm|pnpm)\s+i\b/;
 const PKG_SAFE_REINSTALL = /^\s*(?:npm\s+(?:ci|install|i)|(?:pnpm|yarn|bun)\s+install|pnpm\s+i)\s*(?:--[\w-]+)?\s*$/;
+// SQL 클라이언트(base와 동일 목록) — Bash 경유 DML도 무인 차단하기 위해.
+const SQL_CLIENT = /\b(?:psql|mysql|mariadb|sqlite3|mongosh?|clickhouse-client)\b/;
+// JS 외 생태계 설치 + 원격실행기(npx/dlx/bunx) — 무인 중 새 의존성·임의코드 유입 차단.
+const PKG_ADD_MULTI = /\b(?:pip3?|pipx)\s+install\b|\bcargo\s+(?:add|install)\b|\bgo\s+(?:get|install)\b|\bgem\s+install\b|\b(?:npx|bunx)\b|\b(?:pnpm|yarn|bun)\s+dlx\b/;
+// 무인: 외부·파괴적 MCP 도구(메서드명이 위험 동사로 시작). get/list/search/read/download 등 읽기는 통과.
+const MCP_WRITE = /__(?:create|delete|deploy|pause|restore|merge|reset|rebase|update|apply|confirm|copy|upload|move|remove|write|insert|set)_/i;
 
 // 무인 모드: SELECT/EXPLAIN/SHOW 외 모든 쓰기성 SQL(DML+DDL) 차단. 주석 제거 후 문장별 검사.
 const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
@@ -142,6 +148,8 @@ function unattendedBlock(toolName, toolInput, opts) {
       if (ANY_PUSH.test(seg)) return "u-push";
       if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
       if (PKG_INSTALLISH.test(seg) && !PKG_SAFE_REINSTALL.test(seg)) return "u-install";
+      if (PKG_ADD_MULTI.test(seg)) return "u-install";
+      if (SQL_CLIENT.test(seg) && isWriteSql(seg)) return "u-db-write";
     }
     return null;
   }
@@ -149,6 +157,7 @@ function unattendedBlock(toolName, toolInput, opts) {
     if (isWriteSql((toolInput && (toolInput.query || toolInput.sql)) || "")) return "u-db-write";
     return null;
   }
+  if (/^mcp__/.test(name) && MCP_WRITE.test(name)) return "u-mcp-write";
   return pathGuard(name, toolInput, opts);
 }
 
@@ -161,6 +170,7 @@ const REASONS_UNATTENDED = {
   "u-protected-path": "무인 모드 차단: .claude·설정·훅 파일은 무인 중 수정 금지(안전장치 자체 보호). park하고 사람 복귀를 기다립니다.",
   "u-frozen-criteria": "무인 모드 차단: 동결된 성공기준 파일은 무인 중 수정 금지. 기준을 바꿔야 하면 park하고 사람 복귀를 기다립니다.",
   "u-pr": "무인 모드 차단: PR 생성·머지는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
+  "u-mcp-write": "무인 모드 차단: 외부·파괴적 MCP 도구(배포·프로젝트/브랜치 생성·삭제 등)는 무인 중 금지. park하고 사람 복귀를 기다립니다.",
   "u-error": "무인 모드 차단: 판정 중 오류가 나 안전을 위해 park합니다. 사람 복귀를 기다립니다.",
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
