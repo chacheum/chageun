@@ -234,3 +234,31 @@ test("무인 보강: .chageun 세그먼트/인터프리터 우회 차단 + neste
   assert.equal(ub("/usr/bin/claude -p x"), "u-nested");
   assert.equal(ub("claudexyz -p x"), null, "다른 바이너리는 오탐 아님");
 });
+
+test("무인 보강2: env-strip/명령치환/래퍼 중첩 차단 + 오탐 가드 유지", () => {
+  const CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+  const { unattendedBlock } = require(CORE);
+  const ub = (c) => unattendedBlock("Bash", { command: c }, {});
+  // env를 벗겨 자식이 유인으로 뜨는 탈출 — 반드시 차단
+  assert.equal(ub('env -i claude -p "do it"'), "u-nested");
+  assert.equal(ub("env -u CHAGEUN_UNATTENDED claude -p x"), "u-nested");
+  assert.equal(ub("CHAGEUN_UNATTENDED= claude -p x"), "u-nested");
+  assert.equal(ub("CHAGEUN_UNATTENDED=0 claude -p x"), "u-nested");
+  assert.equal(ub("env -i CHAGEUN_FOO=1 claude -p x"), "u-nested");
+  // 명령치환·래퍼
+  assert.equal(ub("$(claude -p x)"), "u-nested");
+  assert.equal(ub("nohup claude -p x"), "u-nested");
+  assert.equal(ub("timeout 5 claude -p x"), "u-nested");
+  // 기존 오탐 가드 유지(언급은 통과)
+  assert.equal(ub("grep claude -A5 file.py"), null);
+  assert.equal(ub("echo claude"), null);
+  assert.equal(ub("curl https://example.com/claude --output foo"), null);
+  assert.equal(ub("claudexyz -p x"), null);
+  // 기존 탐지 유지
+  assert.equal(ub('claude "delete sandbox"'), "u-nested");
+  assert.equal(ub("echo hi | claude"), "u-nested");
+  assert.equal(ub("sh -c 'claude -p x'"), "u-nested");
+  // find/shred/git로 .chageun 변형도 차단
+  assert.equal(ub("find .chageun -name STOP -delete"), "u-protected-path");
+  assert.equal(ub("git checkout HEAD -- .chageun/token"), "u-protected-path");
+});
