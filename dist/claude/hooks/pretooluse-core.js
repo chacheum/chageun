@@ -112,6 +112,12 @@ const PKG_ADD_MULTI = /\b(?:pip3?|pipx)\s+install\b|\bcargo\s+(?:add|install)\b|
 // 무인: 외부·파괴적 MCP 도구(메서드명이 위험 동사로 시작). get/list/search/read/download 등 읽기는 통과.
 const MCP_WRITE = /__(?:create|delete|deploy|pause|restore|merge|reset|rebase|update|apply|confirm|copy|upload|move|remove|write|insert|set)_/i;
 
+// claude/codex 중첩 실행(env 없는 자식으로 무인 탈출). 세그먼트 선두·경로/래퍼(sh -c·env·sudo·xargs) 접두·파이프 뒤에서 "명령으로" 실행될 때만. 단순 언급(grep claude, 커밋메시지)은 제외. 플래그 유무 무관.
+const NESTED_AGENT = /(?:^|\||\bsh\s+-c\s+["']?|\bbash\s+-c\s+["']?|\benv\s+(?:\S+=\S+\s+)*|\bsudo\s+|\bcommand\s+|\bxargs\s+)\s*(?:\S*\/)?(?:claude|codex)\b/;
+// .chageun 제어파일(통과표·STOP)을 읽기 외로 건드리는 명령 차단. 전체 명령 스캔(세그먼트 분리·cd·인터프리터 우회 방지), 대소문자 무관. cat/grep/ls 같은 순수 읽기는 통과.
+const CHAGEUN_REF = /\.chageun\b/i;
+const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed|awk|python3?|node|perl|ruby|cd)\b|>>?/i;
+
 // 무인 모드: SELECT/EXPLAIN/SHOW 외 모든 쓰기성 SQL(DML+DDL) 차단. 주석 제거 후 문장별 검사.
 const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
 const SQL_SELECT_INTO = /\bSELECT\b[\s\S]*?\bINTO\b/i;
@@ -126,7 +132,7 @@ function isWriteSql(text) {
 }
 
 // 무인 모드: worktree 밖 쓰기 / 안전장치·설정·훅 / 동결된 성공기준 파일 수정 차단. Write류만 대상.
-const PROTECTED = /(^|\/)\.claude(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/i;
+const PROTECTED = /(^|\/)\.(?:claude|chageun)(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/i;
 function pathGuard(toolName, toolInput, opts) {
   if (!/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(String(toolName || ""))) return null;
   const fp = (toolInput && (toolInput.file_path || toolInput.notebook_path)) || "";
@@ -144,7 +150,9 @@ function unattendedBlock(toolName, toolInput, opts) {
   const name = String(toolName || "");
   if (name === "Bash") {
     const cmd = String((toolInput && toolInput.command) || "");
+    if (CHAGEUN_REF.test(cmd) && CHAGEUN_TOUCH.test(cmd)) return "u-protected-path";
     for (const seg of cmd.split(/&&|\|\||[;|\n]/)) {
+      if (NESTED_AGENT.test(seg)) return "u-nested";
       if (ANY_PUSH.test(seg)) return "u-push";
       if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
       if (PKG_INSTALLISH.test(seg) && !PKG_SAFE_REINSTALL.test(seg)) return "u-install";
@@ -167,11 +175,14 @@ const REASONS_UNATTENDED = {
   "u-db-write": "무인 모드 차단: DB 쓰기(INSERT/UPDATE/DELETE·스키마 변경)는 무인 중 금지 — 검증은 격리 샌드박스에서만. park하고 사람 복귀를 기다립니다.",
   "u-install": "무인 모드 차단: 새 의존성 설치는 무인 중 금지(공급망·임의코드 위험). 락파일 재설치(npm ci)만 허용. park하고 사람 복귀를 기다립니다.",
   "u-out-of-tree": "무인 모드 차단: 전용 worktree 밖 경로 쓰기는 금지(다른 작업물 보호). park하고 사람 복귀를 기다립니다.",
-  "u-protected-path": "무인 모드 차단: .claude·설정·훅 파일은 무인 중 수정 금지(안전장치 자체 보호). park하고 사람 복귀를 기다립니다.",
+  "u-protected-path": "무인 모드 차단: .claude·.chageun·설정·훅 파일은 무인 중 수정 금지(안전장치·정지 스위치 보호). park하고 사람 복귀를 기다립니다.",
   "u-frozen-criteria": "무인 모드 차단: 동결된 성공기준 파일은 무인 중 수정 금지. 기준을 바꿔야 하면 park하고 사람 복귀를 기다립니다.",
   "u-pr": "무인 모드 차단: PR 생성·머지는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
   "u-mcp-write": "무인 모드 차단: 외부·파괴적 MCP 도구(배포·프로젝트/브랜치 생성·삭제 등)는 무인 중 금지. park하고 사람 복귀를 기다립니다.",
   "u-error": "무인 모드 차단: 판정 중 오류가 나 안전을 위해 park합니다. 사람 복귀를 기다립니다.",
+  "u-nested": "무인 모드 차단: 새 claude/codex 프로세스 실행은 무인 경계를 벗어나므로 금지. park하고 사람 복귀를 기다립니다.",
+  "u-stop": "무인 모드 정지: .chageun/STOP 요청이 있어 모든 작업을 멈춥니다. 사람 복귀를 기다립니다.",
+  "u-no-preflight": "무인 모드 차단: preflight 통과 증표가 없습니다. chageun-unattended 런처로 시작하세요. 그때까지 모든 작업을 park합니다.",
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 

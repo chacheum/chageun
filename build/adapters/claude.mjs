@@ -19,7 +19,7 @@ export function buildClaude(srcDir, outDir) {
   for (const f of m.components.hooks) cpSync(join(srcDir, "hooks", f), join(outDir, "hooks", f));
 
   // 콘텐츠 디렉터리
-  for (const d of ["rules", "skills", "agents", "assets"]) copyTree(join(srcDir, d), join(outDir, d));
+  for (const d of ["rules", "skills", "agents", "assets", "scripts"]) copyTree(join(srcDir, d), join(outDir, d));
 
   // 루트 파일
   cpSync(join(srcDir, "README.md"), join(outDir, "README.md"));
