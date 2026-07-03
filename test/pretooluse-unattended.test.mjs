@@ -40,9 +40,12 @@ test("무인: 배포 탈출구(CHAGEUN_ALLOW_DEPLOY) 무시", () => {
   assert.equal(runIn(bash("vercel --prod"), { CHAGEUN_ALLOW_DEPLOY: "1" }).code, 0, "유인 회귀: 탈출구 있으면 통과");
 });
 
-test("무인: DB 쓰기 차단(무인 사유문)", () => {
+test("무인: 로컬 Bash 설치는 통과, 원격 MCP DB쓰기는 백스톱으로 차단(격리 작업실)", () => {
+  // 로컬 목조름 제거: 설치 통과
+  assert.equal(runIn(bash("npm install left-pad"), { CHAGEUN_UNATTENDED: "1" }).code, 0, "격리 clone: 설치 허용");
+  // 원격/관리형 백스톱: MCP 경유 DB쓰기 차단(MCP-off 미관측 대비 심층방어)
   const r = runIn({ tool_name: "mcp__x_execute_sql", tool_input: { query: "INSERT INTO t VALUES(1)" } }, { CHAGEUN_UNATTENDED: "1" });
-  assert.equal(r.code, 2);
+  assert.equal(r.code, 2, "원격 MCP DB쓰기는 백스톱으로 park");
   assert.match(r.stderr, /DB 쓰기/);
 });
 

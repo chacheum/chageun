@@ -39,15 +39,48 @@ rm -f .chageun/setup-ready   # 신선표식 소비 — 다음 무인엔 다시 s
 # 'go' 인자는 소비
 if [ "${1:-}" = "go" ]; then shift; fi
 
-# 새 무인 세션: 예산 시계 리셋(이전 세션 잔여로 즉시 멈추지 않게).
-rm -f .chageun/runtime.json
+# 3) 격리 전 점검: (a) git 저장소인가 (b) 커밋 안 된 변경 없나.
+#    clone --local은 '커밋된 상태'만 복사하므로, git이 아니거나 WIP가 남아있으면 친절히 멈춘다(영문 fatal 절벽 방지).
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "무인 시작 거부: 이 폴더는 아직 git 저장소가 아닙니다. 무인 격리 작업실은 git이 필요해요 — 'git init' 후 커밋을 한 번 만들고 다시 시작하세요." >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  echo "무인 시작 거부: 저장(커밋) 안 된 변경이 있습니다. 무인 작업실은 '커밋된 상태'만 복사하므로 지금 커밋 안 된 변경은 무인 세션이 못 봅니다. 먼저 커밋한 뒤 다시 시작하세요(git add -A && git commit)." >&2
+  exit 1
+fi
 
-# 3) 통과표 발급 + 대문 못 박기
-ROOT="$(pwd)"
+# 3b) 격리 작업실(일회용 clone) 만들기 — 되돌리기 불가 행동을 '환경'으로 불능화.
+#    본체를 git clone --local(하드링크·독립 config)한 뒤, clone에서 origin을 떼어 push/PR을 구조적으로 막는다.
+#    (worktree는 본체와 .git/config·리모트를 '공유'하므로 origin을 떼면 본체 리모트까지 삭제됨 — 그래서 clone.)
+SRC_ROOT="$(pwd)"
+LABEL="$(date +%Y%m%d-%H%M%S)"
+CLONE="$SRC_ROOT/../$(basename "$SRC_ROOT")-unattended-$LABEL"
+if [ -e "$CLONE" ]; then echo "무인 시작 거부: 일회용 작업실 경로가 이미 존재합니다: $CLONE" >&2; exit 1; fi
+git clone --quiet --local "$SRC_ROOT" "$CLONE"
+( cd "$CLONE" && git remote remove origin 2>/dev/null || true )
+git -C "$CLONE" checkout -q -b "unattended/$LABEL"
+
+# 4) 제어파일을 clone 쪽에 배치(clone은 커밋본만 받으므로 .chageun가 없음). 기준은 여기서 동결된다.
+#    .git/info/exclude로 .chageun/를 무시 — loop의 git add -A가 통과표·기준·runtime·STOP을 무인 브랜치에 커밋하는 것 차단.
+mkdir -p "$CLONE/.chageun"
+printf '.chageun/\n' >> "$CLONE/.git/info/exclude"
+cp .chageun/task.md .chageun/criteria.md "$CLONE/.chageun/"
+
+# 5) 통과표(nonce) 발급 + 예산 시계 리셋(이전 세션 잔여로 즉시 멈추지 않게).
 NONCE="$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))')"
-node -e 'const fs=require("fs");fs.writeFileSync(".chageun/token",JSON.stringify({nonce:process.argv[1],at:Date.now()}))' "$NONCE"
+node -e 'const fs=require("fs");fs.writeFileSync(process.argv[2],JSON.stringify({nonce:process.argv[1],at:Date.now()}))' "$NONCE" "$CLONE/.chageun/token"
+rm -f "$CLONE/.chageun/runtime.json"
 
-# 4) 무인 시작. 기준은 .chageun 보호로 자동 동결. CHAGEUN_CRITERIA_FILE은 훅의 u-frozen-criteria
-#    차단을 발동하는 두 번째 방어선(장식 아님 — 지우지 말 것).
-echo "무인 모드 시작(통과표 발급). 정지하려면 다른 터미널에서 이 폴더($ROOT)로 이동 후: touch .chageun/STOP"
-exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$ROOT" CHAGEUN_UNATTENDED_TOKEN="$NONCE" CHAGEUN_CRITERIA_FILE=".chageun/criteria.md" claude "$@"
+# 6) MCP 전면 off 설정: 빈 서버목록 + --strict-mcp-config = "이 목록의 서버만 쓴다"(=0개). 문서상 가장
+#    강한 조합. 단, 이 런타임 효과는 무인 harness에서 관측 불가하므로 훅의 MCP 백스톱(u-mcp-write·u-db-write)이
+#    심층방어로 함께 지킨다(둘 중 하나만 믿지 않음). 빈 config는 .chageun(=git 제외)에 둔다.
+printf '{"mcpServers":{}}\n' > "$CLONE/.chageun/empty-mcp.json"
+
+# 7) 무인 시작. CHAGEUN_ROOT=clone(훅의 STOP·통과표·경로가드 기준).
+#    CHAGEUN_CRITERIA_FILE은 훅의 u-frozen-criteria 차단을 발동하는 두 번째 방어선(장식 아님 — 지우지 말 것).
+echo "무인 모드 시작(격리 작업실: $CLONE). 정지하려면 다른 터미널에서: touch \"$CLONE/.chageun/STOP\""
+echo "복귀 후 결과 회수: git -C \"$SRC_ROOT\" fetch \"$CLONE\" unattended/$LABEL:unattended/$LABEL  (그다음 검토·머지, 이후 rm -rf \"$CLONE\")"
+cd "$CLONE"
+# --mcp-config는 variadic(뒤 토큰을 config 경로로 삼킴)이라 맨 끝에 두어 한 값만 받게 한다(무인은 claude 추가 인자 없음).
+exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$CLONE" CHAGEUN_UNATTENDED_TOKEN="$NONCE" CHAGEUN_CRITERIA_FILE=".chageun/criteria.md" claude --strict-mcp-config --mcp-config "$CLONE/.chageun/empty-mcp.json"

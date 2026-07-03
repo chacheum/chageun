@@ -47,6 +47,12 @@ test("무인 스킬은 배포를 무인 중 하지 않는다고 명시(로컬만
   assert.ok(/배포[^\n]*복귀|복귀[^\n]*배포/.test(SKILL), "배포는 복귀 후 사람과 함께임을 명시해야 함");
 });
 
+test("스킬: 격리 작업실 + 복귀 회수(fetch) 프레이밍 포함", () => {
+  assert.match(SKILL, /격리 작업실|일회용 clone|clone/, "격리 작업실 프레이밍");
+  assert.match(SKILL, /fetch/, "FINISH에 복귀 회수 명령(fetch) 안내");
+  assert.match(SKILL, /--strict-mcp-config|MCP 전면 off|MCP.*꺼/, "MCP 전면 off 설명");
+});
+
 const IMPL = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "src", "agents", "code-implementer.md"),
   "utf8"
