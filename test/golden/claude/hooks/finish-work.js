@@ -3,6 +3,10 @@
 // 되돌려 지금 하게 한다(보수적: 통과 넓게 / 차단 좁게). 결정론적, 외부 호출 없음, 실패 시 안전 통과.
 // 개인/회사 정보 없음. shouldBlock는 finish-work-codex.mjs와 동일 로직(듀얼 미러 — 함께 갱신).
 
+// 계측은 out-of-band. 로드 실패해도 훅 판정이 죽으면 안 됨 → 방어적 require.
+let log = () => {};
+try { ({ log } = require("./metrics.js")); } catch (_) { /* out-of-band: 로드 실패해도 훅은 산다 */ }
+
 // 사용자 대기/질문 신호가 있으면 통과(chageun가 정상적으로 묻고 멈추는 경우).
 // bare "알려"·"검토"는 제외 — 약속 문장("검토하겠습니다")까지 통과시켜 브레이크를 무력화했음.
 // 의문형("검토할까요?"·"알려주세요")은 [?]·할까요·주세요가 여전히 잡는다.
@@ -77,6 +81,68 @@ function endedWithTool(m) {
   return false;
 }
 
+// tool_result의 텍스트 추출(문자열 또는 [{text}] 배열).
+function resultText(b) {
+  const c = b && b.content;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) return c.map((x) => (x && (x.text || (typeof x.content === "string" ? x.content : ""))) || "").join("\n");
+  return "";
+}
+// 게이트 판정 문자열 추출. NO-GO를 GO보다 먼저(부분매칭 역전 방지).
+function verdictOf(agent, text) {
+  const t = text || "";
+  if (agent === "pr-reviewer") {
+    if (/\bAPPROVE\b/.test(t)) return "APPROVE";
+    if (/\bREJECT\b/.test(t)) return "REJECT";
+    if (/\bCONDITIONAL\b/i.test(t)) return "CONDITIONAL";
+    return "unknown";
+  }
+  if (/\bNO-?GO\b/.test(t)) return "NO-GO";
+  if (/\bCONDITIONAL\b/i.test(t)) return "CONDITIONAL";
+  if (/\bGO\b/.test(t)) return "GO";
+  return "unknown";
+}
+// objs에서 게이트 실행(plan-validator/pr-reviewer)+판정을 뽑는다. 순수함수(fs 없음).
+// 중복 제거는 여기서 하지 않는다(안전 훅에 상태파일 커플링 추가 금지) — tuid로 분석 시점에.
+function extractGates(objs) {
+  if (!Array.isArray(objs)) return [];
+  const idToAgent = {};
+  for (const o of objs) {
+    const m = msgOf(o); const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== "tool_use" || !/^(Task|Agent)$/.test(String(b.name || ""))) continue;
+      const inp = b.input || {};
+      const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
+      const mt = sub.match(/plan-validator|pr-reviewer/);
+      if (mt && b.id) idToAgent[b.id] = mt[0];
+    }
+  }
+  const out = [];
+  for (const o of objs) {
+    const m = msgOf(o); const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== "tool_result") continue;
+      const agent = idToAgent[b.tool_use_id];
+      if (!agent) continue;
+      out.push({ tuid: b.tool_use_id, agent, verdict: verdictOf(agent, resultText(b)) });
+    }
+  }
+  return out;
+}
+// assistant usage 합산. 순수함수.
+function sumUsage(objs) {
+  let input = 0, output = 0, cache_read = 0, cache_creation = 0;
+  if (Array.isArray(objs)) for (const o of objs) {
+    const u = msgOf(o) && msgOf(o).usage;
+    if (!u) continue;
+    input += u.input_tokens || 0; output += u.output_tokens || 0;
+    cache_read += u.cache_read_input_tokens || 0; cache_creation += u.cache_creation_input_tokens || 0;
+  }
+  return { input, output, cache_read, cache_creation };
+}
+
 function run() {
   let raw = "";
   process.stdin.on("data", (d) => { raw += d; });
@@ -95,6 +161,9 @@ function run() {
         if (!s) continue;
         try { objs.push(JSON.parse(s)); } catch (_) { /* skip */ }
       }
+      const sid = String(input.session_id || "");
+      for (const g of extractGates(objs)) log("gate", { sid, agent: g.agent, verdict: g.verdict, tuid: g.tuid });
+      log("session_usage", Object.assign({ sid }, sumUsage(objs)));
       let lastIdx = -1;
       for (let i = objs.length - 1; i >= 0; i--) {
         if (roleOf(objs[i]) === "assistant") { lastIdx = i; break; }
@@ -113,6 +182,7 @@ function run() {
       const noEvidence = shouldBlockNoEvidence(objs);
       if (!promise && !noEvidence) return process.exit(0);
       const reason = promise ? REASON : REASON_NOEVIDENCE;
+      log("stop_block", { sid, reason: promise ? "promise" : "noEvidence" });
       process.stdout.write(JSON.stringify({ decision: "block", reason }));
       process.exit(0);
     } catch (_) {
@@ -121,5 +191,5 @@ function run() {
   });
 }
 
-module.exports = { shouldBlock, shouldBlockNoEvidence, WAIT_RE, PROMISE_RE };
+module.exports = { shouldBlock, shouldBlockNoEvidence, extractGates, sumUsage, WAIT_RE, PROMISE_RE };
 if (require.main === module) run();
