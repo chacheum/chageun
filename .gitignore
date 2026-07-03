@@ -5,6 +5,9 @@ oracle/
 # 로컬 편의 심링크(루트 앵커 — src/hooks·dist/*/hooks·golden/hooks는 건드리지 않음)
 /hooks
 
+# 무인 loop 제어파일 — 커밋 금지(통과표·기준·runtime·STOP)
+.chageun/
+
 # OS/에디터 잡파일
 .DS_Store
 *.swp
