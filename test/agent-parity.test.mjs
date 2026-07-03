@@ -44,3 +44,14 @@ test("pr-reviewer APPROVE 조건이 '무조건 medium 통과'로 느슨해지지
   assert.ok(!/medium만 있거나 발견 없음\s*→\s*\*\*APPROVE/.test(codexGates),
     "Codex pr-reviewer가 안전 단서 없는 느슨한 APPROVE로 회귀함");
 });
+
+// 다이어트 가드: 하네스가 자동 주입하는 메모리 설명서 중복이 되돌아오지 않게 한다.
+test("에이전트 파일에 하네스-중복 '# Persistent Agent Memory' 섹션이 없다", () => {
+  for (const [name, txt] of [["plan-validator", planValidator], ["pr-reviewer", prReviewer]]) {
+    assert.ok(!txt.includes("# Persistent Agent Memory"),
+      `${name}.md에 하네스 자동주입과 중복되는 메모리 설명서가 다시 들어옴`);
+    // 에이전트 고유의 '무엇을 기록할지' 안내 문단은 남아 있어야 한다.
+    assert.ok(txt.includes("Update your agent memory"),
+      `${name}.md에서 메모리 기록 안내 문단이 사라짐(과삭제)`);
+  }
+});
