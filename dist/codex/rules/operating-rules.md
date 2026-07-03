@@ -54,7 +54,7 @@ LIGHT일 때 표현:
 
 # 검증 게이트
 
-- Superpowers write-plan 직후·구현 시작 전: **plan-validator** 호출.
+- **구현 시작 직전, 이 작업을 구현할 plan/설계 문서가 있으면(출처 무관 — Superpowers write-plan이든 직접·수기 작성이든): plan-validator 호출.** Superpowers write-plan 직후가 전형적 시점.
 - 구현 완료·PR 생성 직전: **pr-reviewer** 호출.
 - **호출 시 대상과 성공 기준을 반드시 입력으로 넘긴다** — plan-validator엔 검증할 **plan 파일 경로**, pr-reviewer엔 **비교 기준(diff 대상)**, 둘 다에 그 작업의 **성공 기준**. 게이트가 대상을 추측(예: "가장 최근 plan 파일")하게 두지 않는다 — 엉뚱한 산출물에 GO/APPROVE가 날 수 있다.
 - **게이트는 스캐너가 아니라 검증자다 — 발견을 보고 전에 가능하면 재현해 진짜인지 확인하고(거짓 양성 제거), 재현이 안 되면 강도를 낮춘다.**
