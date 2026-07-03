@@ -9,7 +9,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const C = join(ROOT, "dist/claude"), X = join(ROOT, "dist/codex");
 before(() => execFileSync("node", ["build/build.mjs"], { cwd: ROOT }));
 
-const SKILLS = ["referencing","product-map","design-system","monitoring","security-scan"];
+const SKILLS = ["referencing","product-map","design-system","monitoring","security-scan","finish-check","spec-gate","run-verify"];
 
 test("스킬 5종은 두 플랫폼에 동일 경로·동일 내용", () => {
   for (const s of SKILLS) {
