@@ -11,6 +11,7 @@ const { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForU
 // 계측은 out-of-band. 로드 실패해도 훅 판정이 죽으면 안 됨(무인 fail-open 안전 회귀 방지) → 방어적 require.
 let log = () => {};
 try { ({ log } = require("./metrics.js")); } catch (_) { /* out-of-band: 로드 실패해도 훅은 산다 */ }
+if (typeof log !== "function") log = () => {}; // 로드는 됐으나 log 미export여도 no-op(유인 fail-open 방지)
 
 // 로깅 컨텍스트(차단·탈출구 로그에 실을 값). stdin 파싱 직후 채운다.
 let CUR = { tool: "", snippet: "", sid: "" };

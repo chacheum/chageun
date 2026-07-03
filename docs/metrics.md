@@ -14,7 +14,7 @@ env `CHAGEUN_METRICS_DIR`로 경로 오버라이드(테스트용).
 |----|----|------|------|
 | `hook_block` | pretooluse | reason, unattended, tool, snippet(≤160자), sid | PreToolUse가 도구를 차단 |
 | `escape_used` | pretooluse | hatch(ALLOW_DEPLOY\|SKIP_GATE), tool, snippet?, sid | 탈출구로 차단을 통과시킴(사각지대 가시화) |
-| `gate` | finish-work | agent(plan-validator\|pr-reviewer), verdict, tuid, sid | 게이트 실행+판정 |
+| `gate` | finish-work | agent, verdict, tuid, sid | 게이트 실행+판정. verdict: pr-reviewer=`APPROVE`/`REQUEST_CHANGES`/`BLOCK`, plan-validator=`GO`/`NO-GO`/`CONDITIONAL`, 앵커 없으면 `unknown`. 최종 "PR 권고:"/"진행 권고:" 줄에만 앵커(본문 오탐 방지) |
 | `stop_block` | finish-work | reason(promise\|noEvidence), sid | Stop 훅이 "말만 하고 끝"을 되돌림 |
 | `session_usage` | finish-work | input, output, cache_read, cache_creation, sid | 세션 누적 토큰(Stop마다 스냅샷) |
 

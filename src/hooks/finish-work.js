@@ -6,6 +6,7 @@
 // 계측은 out-of-band. 로드 실패해도 훅 판정이 죽으면 안 됨 → 방어적 require.
 let log = () => {};
 try { ({ log } = require("./metrics.js")); } catch (_) { /* out-of-band: 로드 실패해도 훅은 산다 */ }
+if (typeof log !== "function") log = () => {}; // 로드는 됐으나 log 미export여도 no-op
 
 // 사용자 대기/질문 신호가 있으면 통과(chageun가 정상적으로 묻고 멈추는 경우).
 // bare "알려"·"검토"는 제외 — 약속 문장("검토하겠습니다")까지 통과시켜 브레이크를 무력화했음.
@@ -88,18 +89,27 @@ function resultText(b) {
   if (Array.isArray(c)) return c.map((x) => (x && (x.text || (typeof x.content === "string" ? x.content : ""))) || "").join("\n");
   return "";
 }
-// 게이트 판정 문자열 추출. NO-GO를 GO보다 먼저(부분매칭 역전 방지).
+// 게이트 판정 추출. 실제 에이전트 어휘(pr-reviewer.md:176 / plan-validator.md:86)에 맞춘다:
+//   pr-reviewer  = "PR 권고: APPROVE | REQUEST CHANGES | BLOCK"
+//   plan-validator = "진행 권고: GO | NO-GO | CONDITIONAL"
+// 전체 blob 스캔은 본문에 섞인 단어에 오탐(BLOCK인데 APPROVE로 역전)하므로,
+// 최종 권고 줄("PR/진행 권고:")의 **마지막** 등장 이후 구간에만 앵커한다. 앵커 없으면 unknown(거짓양성 회피).
 function verdictOf(agent, text) {
-  const t = text || "";
+  const t = String(text || "");
+  const anchor = /(?:PR|진행)\s*권고\s*[:：]/g;
+  let last = -1, mm;
+  while ((mm = anchor.exec(t)) !== null) last = mm.index + mm[0].length;
+  if (last < 0) return "unknown";
+  const scope = t.slice(last, last + 40);
   if (agent === "pr-reviewer") {
-    if (/\bAPPROVE\b/.test(t)) return "APPROVE";
-    if (/\bREJECT\b/.test(t)) return "REJECT";
-    if (/\bCONDITIONAL\b/i.test(t)) return "CONDITIONAL";
+    if (/REQUEST\s*CHANGES/i.test(scope)) return "REQUEST_CHANGES";
+    if (/\bBLOCK\b/i.test(scope)) return "BLOCK";
+    if (/\bAPPROVE\b/i.test(scope)) return "APPROVE";
     return "unknown";
   }
-  if (/\bNO-?GO\b/.test(t)) return "NO-GO";
-  if (/\bCONDITIONAL\b/i.test(t)) return "CONDITIONAL";
-  if (/\bGO\b/.test(t)) return "GO";
+  if (/\bNO-?GO\b/i.test(scope)) return "NO-GO"; // NO-GO를 GO보다 먼저(부분매칭 역전 방지)
+  if (/\bCONDITIONAL\b/i.test(scope)) return "CONDITIONAL";
+  if (/\bGO\b/i.test(scope)) return "GO";
   return "unknown";
 }
 // objs에서 게이트 실행(plan-validator/pr-reviewer)+판정을 뽑는다. 순수함수(fs 없음).
