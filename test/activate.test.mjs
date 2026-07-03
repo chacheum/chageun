@@ -41,3 +41,13 @@ test("규칙 본문에는 무인 상세가 없고 포인터만 있다", () => {
   assert.ok(!RULES.includes(APPENDIX_MARK), "operating-rules.md에 무인 상세가 남아 있음");
   assert.ok(RULES.includes("chageun-unattended"), "무인 진입 포인터가 코어에서 사라짐");
 });
+
+// 지연로드(항목7): 코어엔 절차 포인터만 있고 이관된 살은 없다(살 재유입 회귀 방지).
+test("지연로드: 코어에 절차 스킬 포인터 존재 + 이관된 살 부재", () => {
+  const r = run({});
+  assert.ok(r.stdout.includes("chageun:finish-check"), "finish-check 포인터 존재");
+  assert.ok(r.stdout.includes("chageun:spec-gate"), "spec-gate 포인터 존재");
+  assert.ok(r.stdout.includes("chageun:run-verify"), "run-verify 포인터 존재");
+  assert.ok(!r.stdout.includes("3축(간결성/과설계"), "정성채점 살이 코어에 남으면 안 됨");
+  assert.ok(!r.stdout.includes("검증 체크리스트로 feature-spec에 저장"), "검증체크리스트 살 부재");
+});
