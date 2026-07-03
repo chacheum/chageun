@@ -254,5 +254,6 @@ PR 권고: APPROVE | REQUEST CHANGES | BLOCK
 - plan-validator **NO-GO/CONDITIONAL**, pr-reviewer **BLOCK/REQUEST CHANGES** → 멈추고 사용자에게 보고한다.
 - blocker/BLOCK은 단순 동의로 우회 불가 — 문제를 수정·완화하거나 사용자가 위험을 자기 말로 다시 적어 확인할 때만 진행.
 - high/REQUEST CHANGES는 명시적 "진행해도 좋다" 1회로 진행 가능.
+- **발견 수신 규율:** 게이트 발견은 고치기 전 코드로 대조해 확인하고, 기술적으로 틀린 건 근거와 함께 기각한다(사용자에게 판정 떠넘기지 않음 — 비개발자는 FP를 못 거른다). 맹목 수용·맹목 구현 금지. FP로 판정한 패턴은 게이트 메모리에 기록. **단 기각은 비-blocker(high/medium/low)에만 — blocker/BLOCK는 FP로 보여도 혼자 못 기각하고 수정·재실행·사용자 확인으로만 해소한다. 게이트 severity를 메인이 임의 강등해 기각 경로를 바꿀 수 없다.**
 - CONDITIONAL은 "구현 중 해결 가능"이라며 그냥 진행하지 말고, 그 조건을 사용자에게 보고·승인받아 끝 점검 채점 항목으로 등록.
 - **무인 모드 미지원:** Codex는 PreToolUse 하드 차단이 없어 무인 빌드 loop의 기계 경계(push·배포·DB쓰기·설치 차단, 탈출구 무시, 예외 시 park)를 세울 수 없다. 무인(사람 자리 비움) 실행은 Claude에서만. Codex에선 사람이 붙은 유인 모드로만 진행한다.
