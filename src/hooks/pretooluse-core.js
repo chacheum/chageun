@@ -103,10 +103,11 @@ const DEPLOY_VERB = /\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\br
 // 배포 CLI. 무인 중엔 오탐(park)을 감수하고 앵커 없이 어디서든 매칭 — 셸 래퍼(sh -c, bunx, *dlx, env 등)로 감싼 배포 우회 차단이 문자열 오탐 축소보다 우선.
 const DEPLOY_TOOL = /\b(?:vercel|netlify|surge)\b/;
 // (A안 격리 재설계) 로컬 작업은 풀고, 원격/관리형 쓰기만 남긴다:
-//   걷어냄(로컬·목조름) = 설치(일회용 clone이라 안전)·Bash SQL 클라이언트 DML(localhost 샌드박스; 원격은 접속문자열 필요→preflight가 거름).
-//   남김(원격·백스톱) = MCP write·MCP 경유 DB DML. MCP-off(--strict-mcp-config)가 primary지만 그 런타임 효과를
-//   무인 harness에서 관측할 수 없어(관리 명령 mcp list는 세션 게이트 무시), 훅을 심층방어 백스톱으로 유지한다.
-//   supabase MCP는 OAuth로 원격 관리형 프로젝트(운영 가능)에 닿고 env 스캔(preflight)이 못 잡으므로 이 백스톱이 실질 방어.
+//   걷어냄(로컬·목조름) = 설치(일회용 clone이라 안전)·Bash SQL 클라이언트의 **localhost** DML(격리 샌드박스).
+//   남김(원격·백스톱) = MCP write·MCP 경유 DB DML·**Bash SQL의 명시적 비-localhost 대상 DML**.
+//   MCP-off(--strict-mcp-config)가 primary지만 그 런타임 효과를 무인 harness에서 관측할 수 없어(관리 명령 mcp list는
+//   세션 게이트 무시), 훅을 심층방어 백스톱으로 유지한다. supabase MCP는 OAuth로 원격 관리형 프로젝트(운영 가능)에
+//   닿고, preflight는 **env만** 스캔해 명령·repo에 인라인으로 박힌 접속문자열은 못 거르므로, 이 훅 백스톱이 실질 방어.
 // 무인: 외부·파괴적 MCP 도구(메서드명이 위험 동사로 시작). get/list/search/read/download 등 읽기는 통과.
 const MCP_WRITE = /__(?:create|delete|deploy|pause|restore|merge|reset|rebase|update|apply|confirm|copy|upload|move|remove|write|insert|set)_/i;
 // MCP 경유 DB 쓰기(execute_sql/apply_migration) 판정용. SELECT/EXPLAIN/SHOW 외 쓰기성 SQL(DML+DDL).
@@ -120,6 +121,18 @@ function isWriteSql(text) {
     if (SQL_WRITE.test(stmt) || SQL_SELECT_INTO.test(stmt)) return true;
   }
   return false;
+}
+
+// Bash SQL 클라이언트(psql/mysql 등) — 명시적 원격 대상 DML만 백스톱으로 막기 위해(localhost 샌드박스는 허용).
+const SQL_CLIENT = /\b(?:psql|mysql|mariadb|sqlite3|mongosh?|clickhouse-client)\b/;
+const LOCAL_DB_HOST = /(?:localhost|127\.0\.0\.1|\[::1\]|(?:^|[^:\d])::1\b|0\.0\.0\.0)/i;
+// 접속 대상이 명령에 '명시'됐나 — 연결문자열(scheme://…@host) 또는 -h/--host/host= 플래그.
+const DB_CONN_STRING = /[a-z][a-z0-9+.-]*:\/\/[^\s]*@[^\s/]+/i;
+const DB_HOST_FLAG = /(?:^|\s)-h\s+\S+|--host[=\s]+\S+|\bhost=\S+/i;
+// 명시 대상이 있고 그게 localhost가 아니면 원격으로 본다. 대상 미명시(=기본 localhost 샌드박스)는 원격 아님(허용).
+function targetsRemoteDb(seg) {
+  const explicit = DB_CONN_STRING.test(seg) || DB_HOST_FLAG.test(seg);
+  return explicit && !LOCAL_DB_HOST.test(seg);
 }
 
 // claude/codex 중첩 실행(자식이 env를 잃고 유인으로 떠 무인 경계 탈출). 명령 위치(세그먼트 선두·셸연산자·명령치환·제어구조·래퍼(sh -c/bash -c/env/sudo/nohup/timeout 등)·인라인 VAR= 프리픽스)에서 실행될 때 차단. 단순 언급(grep/echo/curl/커밋메시지)은 제외.
@@ -178,6 +191,8 @@ function unattendedBlock(toolName, toolInput, opts) {
       if (NESTED_AGENT.test(seg)) return "u-nested";
       if (ANY_PUSH.test(seg)) return "u-push";
       if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
+      // Bash SQL 클라이언트가 '명시적 원격' 대상에 쓰기 → 백스톱(localhost 샌드박스 쓰기는 허용).
+      if (SQL_CLIENT.test(seg) && isWriteSql(seg) && targetsRemoteDb(seg)) return "u-db-write";
     }
     return null;
   }
