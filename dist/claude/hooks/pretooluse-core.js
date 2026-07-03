@@ -102,34 +102,15 @@ const ANY_PUSH = /\bgit\b(?:\s+\S+)*?\s+push\b/;
 const DEPLOY_VERB = /\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+(push|deploy)\b/;
 // 배포 CLI. 무인 중엔 오탐(park)을 감수하고 앵커 없이 어디서든 매칭 — 셸 래퍼(sh -c, bunx, *dlx, env 등)로 감싼 배포 우회 차단이 문자열 오탐 축소보다 우선.
 const DEPLOY_TOOL = /\b(?:vercel|netlify|surge)\b/;
-// 설치/추가 계열: 무인 중 새 의존성 유입을 넓게 차단, 락파일 재설치 표준형만 허용.
-const PKG_INSTALLISH = /\b(?:npm|pnpm|yarn|bun)\b[^\n]*\b(?:install|add)\b|\b(?:npm|pnpm)\s+i\b/;
-const PKG_SAFE_REINSTALL = /^\s*(?:npm\s+(?:ci|install|i)|(?:pnpm|yarn|bun)\s+install|pnpm\s+i)\s*(?:--[\w-]+)?\s*$/;
-// SQL 클라이언트(base와 동일 목록) — Bash 경유 DML도 무인 차단하기 위해.
-const SQL_CLIENT = /\b(?:psql|mysql|mariadb|sqlite3|mongosh?|clickhouse-client)\b/;
-// JS 외 생태계 설치 + 원격실행기(npx/dlx/bunx) — 무인 중 새 의존성·임의코드 유입 차단.
-const PKG_ADD_MULTI = /\b(?:pip3?|pipx)\s+install\b|\bcargo\s+(?:add|install)\b|\bgo\s+(?:get|install)\b|\bgem\s+install\b|\b(?:npx|bunx)\b|\b(?:pnpm|yarn|bun)\s+dlx\b/;
-// 무인: 외부·파괴적 MCP 도구(메서드명이 위험 동사로 시작). get/list/search/read/download 등 읽기는 통과.
-const MCP_WRITE = /__(?:create|delete|deploy|pause|restore|merge|reset|rebase|update|apply|confirm|copy|upload|move|remove|write|insert|set)_/i;
+// (A안 격리 재설계) 설치·localhost DB쓰기·MCP write 차단은 제거됨 — 이제 '환경'이 대체한다:
+//   설치 = 일회용 clone이라 안전 / 운영 DB·MCP write = --strict-mcp-config로 MCP 부재 + preflight 외부URL 거부.
+//   목조름(설치·localhost DB쓰기 차단)을 걷어내 검증 마찰을 없앤다. 남은 무인 차단은 아래 5(환경이 못 막는 것)뿐.
 
 // claude/codex 중첩 실행(자식이 env를 잃고 유인으로 떠 무인 경계 탈출). 명령 위치(세그먼트 선두·셸연산자·명령치환·제어구조·래퍼(sh -c/bash -c/env/sudo/nohup/timeout 등)·인라인 VAR= 프리픽스)에서 실행될 때 차단. 단순 언급(grep/echo/curl/커밋메시지)은 제외.
 const NESTED_AGENT = /(?:^|[;|&(){]|\bthen\b|\bdo\b|\$\(|`|\bsh\s+-c\s+["']?|\bbash\s+-c\s+["']?|\b(?:env|sudo|command|xargs|nohup|timeout|setsid|exec|nice|stdbuf|time|ionice|doas)\b[^|&;]*?\s|(?:\b[A-Za-z_]\w*=\S*\s+)+)\s*(?:\S*\/)?(?:claude|codex)\b/;
 // .chageun 제어파일(통과표·STOP)을 읽기 외로 건드리는 명령 차단. 전체 명령 스캔(세그먼트 분리·cd·인터프리터 우회 방지), 대소문자 무관. cat/grep/ls 같은 순수 읽기는 통과.
 const CHAGEUN_REF = /\.chageun\b/i;
 const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed|awk|python3?|node|perl|ruby|cd|find|shred|rsync|git)\b|>>?/i;
-
-// 무인 모드: SELECT/EXPLAIN/SHOW 외 모든 쓰기성 SQL(DML+DDL) 차단. 주석 제거 후 문장별 검사.
-const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
-const SQL_SELECT_INTO = /\bSELECT\b[\s\S]*?\bINTO\b/i;
-function isWriteSql(text) {
-  // 블록 코멘트는 빈 문자열로 제거(IN/**/SERT 같은 키워드 분절 난독화 무력화), 라인 코멘트는 공백으로.
-  const noComments = String(text || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, "");
-  for (const stmt of noComments.split(";")) {
-    if (!stmt.trim()) continue;
-    if (SQL_WRITE.test(stmt) || SQL_SELECT_INTO.test(stmt)) return true;
-  }
-  return false;
-}
 
 // 무인 예산·워치독 기본 한도. 8시간 / 2000 도구호출 / 30분 무진전.
 const BUDGET = { maxMs: 8 * 60 * 60 * 1000, maxCalls: 2000, watchdogMs: 30 * 60 * 1000 };
@@ -181,30 +162,19 @@ function unattendedBlock(toolName, toolInput, opts) {
       if (NESTED_AGENT.test(seg)) return "u-nested";
       if (ANY_PUSH.test(seg)) return "u-push";
       if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
-      if (PKG_INSTALLISH.test(seg) && !PKG_SAFE_REINSTALL.test(seg)) return "u-install";
-      if (PKG_ADD_MULTI.test(seg)) return "u-install";
-      if (SQL_CLIENT.test(seg) && isWriteSql(seg)) return "u-db-write";
     }
     return null;
   }
-  if (/execute_sql|apply_migration/.test(name)) {
-    if (isWriteSql((toolInput && (toolInput.query || toolInput.sql)) || "")) return "u-db-write";
-    return null;
-  }
-  if (/^mcp__/.test(name) && MCP_WRITE.test(name)) return "u-mcp-write";
   return pathGuard(name, toolInput, opts);
 }
 
 const REASONS_UNATTENDED = {
   "u-push": "무인 모드 차단: git push는 자동배포로 이어질 수 있어 무인 중엔 못 합니다. 이 작업을 park하고 사람 복귀를 기다립니다.",
   "u-deploy": "무인 모드 차단: 배포·퍼블리시(프리뷰 포함)는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
-  "u-db-write": "무인 모드 차단: DB 쓰기(INSERT/UPDATE/DELETE·스키마 변경)는 무인 중 금지 — 검증은 격리 샌드박스에서만. park하고 사람 복귀를 기다립니다.",
-  "u-install": "무인 모드 차단: 새 의존성 설치는 무인 중 금지(공급망·임의코드 위험). 락파일 재설치(npm ci)만 허용. park하고 사람 복귀를 기다립니다.",
   "u-out-of-tree": "무인 모드 차단: 전용 worktree 밖 경로 쓰기는 금지(다른 작업물 보호). park하고 사람 복귀를 기다립니다.",
   "u-protected-path": "무인 모드 차단: .claude·.chageun·설정·훅 파일은 무인 중 수정 금지(안전장치·정지 스위치 보호). park하고 사람 복귀를 기다립니다.",
   "u-frozen-criteria": "무인 모드 차단: 동결된 성공기준 파일은 무인 중 수정 금지. 기준을 바꿔야 하면 park하고 사람 복귀를 기다립니다.",
   "u-pr": "무인 모드 차단: PR 생성·머지는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
-  "u-mcp-write": "무인 모드 차단: 외부·파괴적 MCP 도구(배포·프로젝트/브랜치 생성·삭제 등)는 무인 중 금지. park하고 사람 복귀를 기다립니다.",
   "u-error": "무인 모드 차단: 판정 중 오류가 나 안전을 위해 park합니다. 사람 복귀를 기다립니다.",
   "u-nested": "무인 모드 차단: 새 claude/codex 프로세스 실행은 무인 경계를 벗어나므로 금지. park하고 사람 복귀를 기다립니다.",
   "u-stop": "무인 모드 정지: .chageun/STOP 요청이 있어 모든 작업을 멈춥니다. 사람 복귀를 기다립니다.",
@@ -214,4 +184,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
