@@ -37,6 +37,23 @@ function isToolResultOnly(m) {
   return Array.isArray(c) && c.length > 0 && c.every((b) => b && b.type === "tool_result");
 }
 
+// 세션 transcript 어디든 실행형 도구를 썼나 — Bash(테스트·명령)·Task/Agent(위임 실행)·
+// playwright/puppeteer(브라우저)·executeCode·MCP 실행(execute/sql/migration/deploy/invoke/
+// query — Supabase 등 DB 검증). 과거참조 fail-open은 이 증거가 있을 때만 정당. 넓게 잡아
+// 정당 재보고 오차단을 피한다("차단 좁게"; 오차단이 이 훅의 최대 실패 양식). 순수함수(fs 없음).
+function hasExecEvidence(objs) {
+  if (!Array.isArray(objs)) return false;
+  const EXEC = /^(Bash|Task|Agent)$|playwright|puppeteer|executeCode|mcp__.*(execute|sql|migration|deploy|invoke|query)/i;
+  for (const o of objs) {
+    const m = msgOf(o); const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (b && b.type === "tool_use" && EXEC.test(String(b.name || ""))) return true;
+    }
+  }
+  return false;
+}
+
 // 직전 '진짜 user 메시지' 이후 assistant 구간에서 도구를 한 번도 안 쓰고(0회) 실행 주장만 하며
 // 끝났으면 차단(증거 없는 성공 선언). F-1: tool_result(role=user)를 진짜 user로 착각하지 않도록
 // 건너뛴다 — 이전 턴에 도구를 썼으면(정상 끝 점검) 통과.
@@ -58,8 +75,10 @@ function shouldBlockNoEvidence(objs) {
   if (toolCount > 0) return false; // 이번 요청 동안 도구 사용 → 정상, 통과
   const tail = texts.join("\n").trim().slice(-600);
   if (!tail || WAIT_RE.test(tail)) return false;
-  // 과거 참조("아까 돌려보니")면 이전 실행 재보고이므로 통과(후속 턴 오차단 방지).
-  if (/아까|앞서|이전에|기존에|already|earlier|previously/.test(tail)) return false;
+  // 과거 참조("아까 돌려보니")여도, 세션에 실제 실행 증거(Bash·서브에이전트·브라우저·MCP 실행)가
+  // 있을 때만 재보고로 보고 통과(후속 턴 오차단 방지). 실행이 아예 없는데 "아까 돌려봤다"면
+  // 조작이므로 fall-through해 차단(item8 신선도 규칙의 기계 백스톱).
+  if (/아까|앞서|이전에|기존에|already|earlier|previously/.test(tail) && hasExecEvidence(objs)) return false;
   return EXEC_CLAIM_RE.test(tail);
 }
 
