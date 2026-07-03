@@ -31,7 +31,7 @@ close_agent(agent_id)
 
 ## plan-validator 지시문
 
-**호출 시점:** Superpowers write-plan 직후, 구현 시작 직전.
+**호출 시점:** 구현 시작 직전, 이 작업을 구현할 plan/설계 문서가 있으면(출처 무관 — Superpowers write-plan이든 직접 작성이든). Superpowers write-plan 직후가 전형.
 **역할:** 어드버서리얼 plan 검증 → GO / NO-GO / CONDITIONAL 권고.
 **sandbox:** read-only (파일 읽기만, 수정 없음)
 
