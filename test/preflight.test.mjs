@@ -40,8 +40,8 @@ test("GCP credentials·private_key 감지 → 거부", () => {
   assert.equal(evaluate(cfg({ container: "c" }), alive, { SA_BLOB: '{"private_key":"-----BEGIN PRIVATE KEY-----"}' }).ok, false);
 });
 
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { spawnSync, execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 test("런처 --check: 샌드박스 미설정이면 거부(exit 1, claude 미실행)", () => {
@@ -81,21 +81,63 @@ test("런처 go: 옛 task/criteria가 남아도 신선 표식(setup-ready) 없�
   assert.match(r.stdout + r.stderr, /setup/, "새로 setup 하라는 안내");
 });
 
-test("런처 go: 시작 시 runtime.json 리셋(claude stub로 exec 지점 도달 확인)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "launch-reset-"));
-  const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
-  mkdirSync(join(dir, ".chageun"), { recursive: true });
-  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
-  writeFileSync(join(dir, ".chageun", "task.md"), "t");
-  writeFileSync(join(dir, ".chageun", "criteria.md"), "c");
-  writeFileSync(join(dir, ".chageun", "setup-ready"), "");
-  writeFileSync(join(dir, ".chageun", "runtime.json"), JSON.stringify({ startedAt: 1, calls: 9999, lastProgressAt: 1 }));
-  const bin = join(dir, "bin"); mkdirSync(bin);
-  writeFileSync(join(bin, "claude"), "#!/usr/bin/env bash\necho stub\n");
+test("런처 go: 시작 시 clone의 runtime.json 리셋(claude stub로 exec 지점 도달 확인)", () => {
+  const repo = mkdtempSync(join(tmpdir(), "launch-reset-"));
+  const git = (args) => execFileSync("git", args, { cwd: repo });
+  git(["init", "-q"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
+  writeFileSync(join(repo, "README.md"), "hi"); git(["add", "-A"]); git(["commit", "-qm", "init"]);
+  mkdirSync(join(repo, ".chageun"), { recursive: true });
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "task.md"), "t");
+  writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
+  writeFileSync(join(repo, ".chageun", "setup-ready"), "");
+  const bin = join(repo, "bin"); mkdirSync(bin);
+  const recFile = join(repo, "cwd.txt");
+  writeFileSync(join(bin, "claude"), `#!/usr/bin/env bash\npwd > "${recFile}"\nexit 0\n`);
   spawnSync("chmod", ["+x", join(bin, "claude")]);
-  const r = spawnSync("bash", [script, "go"], { cwd: dir, encoding: "utf8", env: { PATH: `${bin}:${process.env.PATH}` } });
-  const runtimeGone = !existsSync(join(dir, ".chageun", "runtime.json"));
-  rmSync(dir, { recursive: true, force: true });
+  const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
+  const r = spawnSync("bash", [script, "go"], { cwd: repo, encoding: "utf8", env: { PATH: `${bin}:${process.env.PATH}` } });
+  const cloneCwd = existsSync(recFile) ? readFileSync(recFile, "utf8").trim() : "";
+  const runtimeGone = cloneCwd ? !existsSync(join(cloneCwd, ".chageun", "runtime.json")) : false;
+  rmSync(repo, { recursive: true, force: true });
+  if (cloneCwd) rmSync(cloneCwd, { recursive: true, force: true });
   assert.equal(r.status, 0, "게이트 통과");
-  assert.ok(runtimeGone, "go가 runtime.json을 리셋(삭제)해야 함");
+  assert.ok(runtimeGone, "go가 clone의 runtime.json을 리셋(삭제)해야 함");
+});
+
+test("런처 go: 격리 clone 생성 + origin 제거 + claude --strict-mcp-config로 기동", () => {
+  const repo = mkdtempSync(join(tmpdir(), "isolate-repo-"));
+  // 본체를 git 저장소로 만들고 커밋 하나 + github origin 리모트를 단다(제거되는지 볼 대상).
+  const git = (args) => execFileSync("git", args, { cwd: repo });
+  git(["init", "-q"]);
+  git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
+  writeFileSync(join(repo, "README.md"), "hi");
+  git(["add", "-A"]); git(["commit", "-qm", "init"]);
+  git(["remote", "add", "origin", "https://github.com/x/y.git"]);
+  // 시동 산출물 + 통과 조건
+  mkdirSync(join(repo, ".chageun"), { recursive: true });
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "task.md"), "t");
+  writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
+  writeFileSync(join(repo, ".chageun", "setup-ready"), "");
+  // claude stub: 받은 인자와 cwd를 repo/claude-args.txt에 기록하고 즉시 종료(무한 loop 방지).
+  const bin = join(repo, "bin"); mkdirSync(bin);
+  const recFile = join(repo, "claude-args.txt");
+  writeFileSync(join(bin, "claude"), `#!/usr/bin/env bash\n{ echo "ARGS=$*"; echo "CWD=$(pwd)"; } > "${recFile}"\nexit 0\n`);
+  spawnSync("chmod", ["+x", join(bin, "claude")]);
+
+  const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
+  const r = spawnSync("bash", [script, "go"], { cwd: repo, encoding: "utf8", env: { PATH: `${bin}:${process.env.PATH}` } });
+
+  const rec = existsSync(recFile) ? readFileSync(recFile, "utf8") : "";
+  // clone 경로는 stub이 기록한 CWD(=clone) 에서 읽는다.
+  const cwdLine = (rec.match(/CWD=(.*)/) || [])[1] || "";
+  const remotes = cwdLine ? execFileSync("git", ["remote"], { cwd: cwdLine, encoding: "utf8" }).trim() : "MISSING";
+  rmSync(repo, { recursive: true, force: true });
+  if (cwdLine) rmSync(cwdLine, { recursive: true, force: true });
+
+  assert.equal(r.status, 0, "게이트 통과 후 exec 도달");
+  assert.match(rec, /ARGS=.*--strict-mcp-config/, "claude가 MCP 전면 off 플래그로 기동");
+  assert.notEqual(cwdLine, repo, "본체가 아니라 일회용 clone에서 기동");
+  assert.equal(remotes, "", "clone에 origin 등 리모트가 없어야(push/PR 구조적 불능)");
 });
