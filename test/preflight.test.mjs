@@ -85,7 +85,9 @@ test("런처 go: 시작 시 clone의 runtime.json 리셋(claude stub로 exec 지
   const repo = mkdtempSync(join(tmpdir(), "launch-reset-"));
   const git = (args) => execFileSync("git", args, { cwd: repo });
   git(["init", "-q"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
-  writeFileSync(join(repo, "README.md"), "hi"); git(["add", "-A"]); git(["commit", "-qm", "init"]);
+  writeFileSync(join(repo, "README.md"), "hi");
+  writeFileSync(join(repo, ".gitignore"), ".chageun/\nbin/\n*.txt\n"); // 스캐폴딩 무시 → 트리 clean(실 repo와 동일)
+  git(["add", "-A"]); git(["commit", "-qm", "init"]);
   mkdirSync(join(repo, ".chageun"), { recursive: true });
   writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
   writeFileSync(join(repo, ".chageun", "task.md"), "t");
@@ -112,6 +114,7 @@ test("런처 go: 격리 clone 생성 + origin 제거 + claude --strict-mcp-confi
   git(["init", "-q"]);
   git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
   writeFileSync(join(repo, "README.md"), "hi");
+  writeFileSync(join(repo, ".gitignore"), ".chageun/\nbin/\n*.txt\n"); // 스캐폴딩 무시 → 트리 clean(실 repo와 동일)
   git(["add", "-A"]); git(["commit", "-qm", "init"]);
   git(["remote", "add", "origin", "https://github.com/x/y.git"]);
   // 시동 산출물 + 통과 조건
@@ -140,4 +143,39 @@ test("런처 go: 격리 clone 생성 + origin 제거 + claude --strict-mcp-confi
   assert.match(rec, /ARGS=.*--strict-mcp-config/, "claude가 MCP 전면 off 플래그로 기동");
   assert.notEqual(cwdLine, repo, "본체가 아니라 일회용 clone에서 기동");
   assert.equal(remotes, "", "clone에 origin 등 리모트가 없어야(push/PR 구조적 불능)");
+});
+
+test("런처 go: 커밋 안 된 변경(WIP) 있으면 거부(clone은 커밋본만 복사 → 무인이 WIP 못 봄)", () => {
+  const repo = mkdtempSync(join(tmpdir(), "launch-dirty-"));
+  const git = (args) => execFileSync("git", args, { cwd: repo });
+  git(["init", "-q"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
+  writeFileSync(join(repo, "README.md"), "hi");
+  writeFileSync(join(repo, ".gitignore"), ".chageun/\nbin/\n*.txt\n");
+  git(["add", "-A"]); git(["commit", "-qm", "init"]);
+  // 통과 조건은 모두 갖추되, 추적 파일을 하나 고쳐 트리를 dirty로 만든다.
+  mkdirSync(join(repo, ".chageun"), { recursive: true });
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "task.md"), "t");
+  writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
+  writeFileSync(join(repo, ".chageun", "setup-ready"), "");
+  writeFileSync(join(repo, "README.md"), "changed but not committed"); // WIP
+  const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
+  const r = spawnSync("bash", [script, "go"], { cwd: repo, encoding: "utf8", env: { PATH: process.env.PATH } });
+  rmSync(repo, { recursive: true, force: true });
+  assert.equal(r.status, 1, "WIP 있으면 거부(exit 1)");
+  assert.match(r.stdout + r.stderr, /커밋/, "먼저 커밋하라는 안내");
+});
+
+test("런처 go: git 저장소가 아니면 친절히 거부(영문 fatal 절벽 방지)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "launch-nogit-"));
+  mkdirSync(join(dir, ".chageun"), { recursive: true });
+  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(dir, ".chageun", "task.md"), "t");
+  writeFileSync(join(dir, ".chageun", "criteria.md"), "c");
+  writeFileSync(join(dir, ".chageun", "setup-ready"), "");
+  const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
+  const r = spawnSync("bash", [script, "go"], { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH } });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 1, "git 아니면 거부(exit 1)");
+  assert.match(r.stdout + r.stderr, /git init|git 저장소/, "git init 안내");
 });

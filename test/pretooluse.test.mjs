@@ -168,10 +168,15 @@ test("무인 최종보강: git -c push·원격 MCP쓰기는 차단(Bash DML·멀
   assert.equal(ub("git -c user.name=x push origin main"), "u-push");
   assert.equal(ub("git -c http.extraHeader=A push"), "u-push");
   assert.equal(ub("git log --oneline"), null);
-  // C2: Bash SQL 클라이언트 DML — 이제 허용(localhost 샌드박스; 원격은 접속문자열 필요→preflight)
-  assert.equal(ub('psql -c "INSERT INTO users VALUES(1)"'), null);
+  // C2: Bash SQL DML — localhost/기본대상은 허용(샌드박스), 명시적 원격 대상은 백스톱으로 차단.
+  assert.equal(ub('psql -c "INSERT INTO users VALUES(1)"'), null, "대상 미명시=기본 localhost → 허용");
   assert.equal(ub('mysql -e "UPDATE t SET x=1 WHERE id=1"'), null);
-  assert.equal(ub('psql -c "SELECT * FROM t"'), null);
+  assert.equal(ub('psql -h localhost -c "INSERT INTO t VALUES(1)"'), null, "명시 localhost → 허용");
+  assert.equal(ub('psql -c "SELECT * FROM t"'), null, "읽기는 허용");
+  assert.equal(ub('psql -h prod.example.com -c "UPDATE users SET admin=true WHERE id=1"'), "u-db-write", "명시 원격 호스트 쓰기 → 백스톱 차단");
+  assert.equal(ub('psql "postgresql://u:p@prod.db.example.com:5432/x" -c "DELETE FROM users WHERE id=1"'), "u-db-write", "원격 접속문자열 쓰기 → 차단");
+  assert.equal(ub('psql "postgresql://u:p@localhost:5432/x" -c "INSERT INTO t VALUES(1)"'), null, "localhost 접속문자열 → 허용");
+  assert.equal(ub('psql -h prod.example.com -c "SELECT * FROM t"'), null, "원격이어도 읽기는 허용");
   // I2: 멀티 생태계 설치 — 이제 허용(일회용 clone이라 안전)
   assert.equal(ub("pip install requests"), null);
   assert.equal(ub("cargo add serde"), null);
