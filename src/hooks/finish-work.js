@@ -153,6 +153,25 @@ function sumUsage(objs) {
   return { input, output, cache_read, cache_creation };
 }
 
+// 지연로드 절차 스킬(finish-check·spec-gate·run-verify)이 세션에 로드됐는지. 순수함수.
+// 미발동률 실측용 — Skill 도구 input.skill 또는 subagent_type에서 스킬명 감지.
+function extractSkillLoads(objs) {
+  const s = { finishCheck: false, specGate: false, runVerify: false };
+  if (!Array.isArray(objs)) return s;
+  for (const o of objs) {
+    const m = msgOf(o); const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== "tool_use") continue;
+      const nm = String((b.input && (b.input.skill || b.input.subagent_type)) || b.name || "");
+      if (/finish-check/.test(nm)) s.finishCheck = true;
+      if (/spec-gate/.test(nm)) s.specGate = true;
+      if (/run-verify/.test(nm)) s.runVerify = true;
+    }
+  }
+  return s;
+}
+
 function run() {
   let raw = "";
   process.stdin.on("data", (d) => { raw += d; });
@@ -174,6 +193,7 @@ function run() {
       const sid = String(input.session_id || "");
       for (const g of extractGates(objs)) log("gate", { sid, agent: g.agent, verdict: g.verdict, tuid: g.tuid });
       log("session_usage", Object.assign({ sid }, sumUsage(objs)));
+      log("skill_load", Object.assign({ sid }, extractSkillLoads(objs)));
       let lastIdx = -1;
       for (let i = objs.length - 1; i >= 0; i--) {
         if (roleOf(objs[i]) === "assistant") { lastIdx = i; break; }
@@ -201,5 +221,5 @@ function run() {
   });
 }
 
-module.exports = { shouldBlock, shouldBlockNoEvidence, extractGates, sumUsage, WAIT_RE, PROMISE_RE };
+module.exports = { shouldBlock, shouldBlockNoEvidence, extractGates, sumUsage, extractSkillLoads, WAIT_RE, PROMISE_RE };
 if (require.main === module) run();

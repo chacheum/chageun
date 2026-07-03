@@ -9,7 +9,26 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js");
-const { extractGates, sumUsage } = require(HOOK);
+const { extractGates, sumUsage, extractSkillLoads } = require(HOOK);
+
+// ── 순수함수: extractSkillLoads (지연로드 절차 스킬 발동 여부) ──────────
+const skillCall = (name) => ({ message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill: name } }] } });
+
+test("extractSkillLoads: finish-check 스킬 로드 감지", () => {
+  const r = extractSkillLoads([skillCall("chageun:finish-check")]);
+  assert.equal(r.finishCheck, true);
+  assert.equal(r.specGate, false);
+  assert.equal(r.runVerify, false);
+});
+test("extractSkillLoads: run-verify + spec-gate 동시", () => {
+  const r = extractSkillLoads([skillCall("chageun:run-verify"), skillCall("spec-gate")]);
+  assert.equal(r.runVerify, true);
+  assert.equal(r.specGate, true);
+  assert.equal(r.finishCheck, false);
+});
+test("extractSkillLoads: 무관 스킬은 false", () => {
+  assert.deepEqual(extractSkillLoads([skillCall("design-system")]), { finishCheck: false, specGate: false, runVerify: false });
+});
 
 // ── 순수함수: extractGates / sumUsage ──────────────────────────────
 const gateCall = (id, sub) => ({ message: { role: "assistant", content: [{ type: "tool_use", id, name: "Task", input: { subagent_type: sub } }] } });
