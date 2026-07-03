@@ -61,9 +61,15 @@ NONCE="$(node -e 'console.log(require("crypto").randomBytes(16).toString("hex"))
 node -e 'const fs=require("fs");fs.writeFileSync(process.argv[2],JSON.stringify({nonce:process.argv[1],at:Date.now()}))' "$NONCE" "$CLONE/.chageun/token"
 rm -f "$CLONE/.chageun/runtime.json"
 
-# 6) 무인 시작. CHAGEUN_ROOT=clone(훅의 STOP·통과표·경로가드 기준). --strict-mcp-config로 MCP 전면 off.
+# 6) MCP 전면 off 설정: 빈 서버목록 + --strict-mcp-config = "이 목록의 서버만 쓴다"(=0개). 문서상 가장
+#    강한 조합. 단, 이 런타임 효과는 무인 harness에서 관측 불가하므로 훅의 MCP 백스톱(u-mcp-write·u-db-write)이
+#    심층방어로 함께 지킨다(둘 중 하나만 믿지 않음). 빈 config는 .chageun(=git 제외)에 둔다.
+printf '{"mcpServers":{}}\n' > "$CLONE/.chageun/empty-mcp.json"
+
+# 7) 무인 시작. CHAGEUN_ROOT=clone(훅의 STOP·통과표·경로가드 기준).
 #    CHAGEUN_CRITERIA_FILE은 훅의 u-frozen-criteria 차단을 발동하는 두 번째 방어선(장식 아님 — 지우지 말 것).
 echo "무인 모드 시작(격리 작업실: $CLONE). 정지하려면 다른 터미널에서: touch \"$CLONE/.chageun/STOP\""
 echo "복귀 후 결과 회수: git -C \"$SRC_ROOT\" fetch \"$CLONE\" unattended/$LABEL:unattended/$LABEL  (그다음 검토·머지, 이후 rm -rf \"$CLONE\")"
 cd "$CLONE"
-exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$CLONE" CHAGEUN_UNATTENDED_TOKEN="$NONCE" CHAGEUN_CRITERIA_FILE=".chageun/criteria.md" claude --strict-mcp-config "$@"
+# --mcp-config는 variadic(뒤 토큰을 config 경로로 삼킴)이라 맨 끝에 두어 한 값만 받게 한다(무인은 claude 추가 인자 없음).
+exec env CHAGEUN_UNATTENDED=1 CHAGEUN_ROOT="$CLONE" CHAGEUN_UNATTENDED_TOKEN="$NONCE" CHAGEUN_CRITERIA_FILE=".chageun/criteria.md" claude --strict-mcp-config --mcp-config "$CLONE/.chageun/empty-mcp.json"

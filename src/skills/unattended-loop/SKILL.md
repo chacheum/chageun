@@ -13,7 +13,7 @@ description: 무인 빌드 loop — 사람이 자리를 비운 사이 세션이 
 - 무인 표식(`CHAGEUN_UNATTENDED=1`)과 통과표가 있는가? 없으면 **LOOP를 시작하지 않고** 사람에게 "무인 모드가 아닙니다 — `chageun-unattended` 런처로 시작하세요"라고 알린다.
 - Codex 등 PreToolUse 훅이 없는 환경이면 무인 LOOP 금지(안전 바닥 부재).
 
-**이 자기가드는 심층 방어의 얇은 겉막이다.** 진짜 기계 바닥은 **격리 작업실**이다 — 런처 `chageun-unattended go`가 본체를 `git clone --local`한 **일회용 저장소**에서, `origin` 리모트를 떼고(push·PR 구조적 불능) `claude --strict-mcp-config`로 기동(MCP 전면 off → 운영 DB·외부 도구 쓰기 부재)한다. 그래서 무인 중 설치·localhost 검증은 **자유롭게** 하되, 되돌리기 불가 행동은 *환경적으로* 불가능하다. (여기에 (a)런처가 `claude`를 하드코딩해 codex로는 무인 진입 불가 (b)빌드가 이 스킬을 Codex 산출물에서 제거 — 이 둘도 바닥이지 이 문단이 아니다.)
+**이 자기가드는 심층 방어의 얇은 겉막이다.** 진짜 기계 바닥은 **격리 작업실**이다 — 런처 `chageun-unattended go`가 본체를 `git clone --local`한 **일회용 저장소**에서, `origin` 리모트를 떼고(push·PR 구조적 불능) `claude --strict-mcp-config`(빈 MCP 목록)로 기동(MCP 전면 off 지향)한다. 그래서 무인 중 **설치·localhost 검증은 자유롭게**(로컬은 풀림) 하되, 되돌리기 불가 행동은 *환경적으로* 불가능하다. MCP-off의 런타임 효과는 무인에서 눈으로 확인할 수 없어, **원격 MCP 쓰기·MCP 경유 DB 쓰기는 훅이 백스톱으로 함께 막는다**(둘 중 하나만 믿지 않는 심층방어). (여기에 (a)런처가 `claude`를 하드코딩해 codex로는 무인 진입 불가 (b)빌드가 이 스킬을 Codex 산출물에서 제거 — 이 둘도 바닥이지 이 문단이 아니다.)
 
 ## SETUP — 시동 (사람 있을 때, 유인)
 

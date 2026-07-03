@@ -102,9 +102,25 @@ const ANY_PUSH = /\bgit\b(?:\s+\S+)*?\s+push\b/;
 const DEPLOY_VERB = /\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+(push|deploy)\b/;
 // 배포 CLI. 무인 중엔 오탐(park)을 감수하고 앵커 없이 어디서든 매칭 — 셸 래퍼(sh -c, bunx, *dlx, env 등)로 감싼 배포 우회 차단이 문자열 오탐 축소보다 우선.
 const DEPLOY_TOOL = /\b(?:vercel|netlify|surge)\b/;
-// (A안 격리 재설계) 설치·localhost DB쓰기·MCP write 차단은 제거됨 — 이제 '환경'이 대체한다:
-//   설치 = 일회용 clone이라 안전 / 운영 DB·MCP write = --strict-mcp-config로 MCP 부재 + preflight 외부URL 거부.
-//   목조름(설치·localhost DB쓰기 차단)을 걷어내 검증 마찰을 없앤다. 남은 무인 차단은 아래 5(환경이 못 막는 것)뿐.
+// (A안 격리 재설계) 로컬 작업은 풀고, 원격/관리형 쓰기만 남긴다:
+//   걷어냄(로컬·목조름) = 설치(일회용 clone이라 안전)·Bash SQL 클라이언트 DML(localhost 샌드박스; 원격은 접속문자열 필요→preflight가 거름).
+//   남김(원격·백스톱) = MCP write·MCP 경유 DB DML. MCP-off(--strict-mcp-config)가 primary지만 그 런타임 효과를
+//   무인 harness에서 관측할 수 없어(관리 명령 mcp list는 세션 게이트 무시), 훅을 심층방어 백스톱으로 유지한다.
+//   supabase MCP는 OAuth로 원격 관리형 프로젝트(운영 가능)에 닿고 env 스캔(preflight)이 못 잡으므로 이 백스톱이 실질 방어.
+// 무인: 외부·파괴적 MCP 도구(메서드명이 위험 동사로 시작). get/list/search/read/download 등 읽기는 통과.
+const MCP_WRITE = /__(?:create|delete|deploy|pause|restore|merge|reset|rebase|update|apply|confirm|copy|upload|move|remove|write|insert|set)_/i;
+// MCP 경유 DB 쓰기(execute_sql/apply_migration) 판정용. SELECT/EXPLAIN/SHOW 외 쓰기성 SQL(DML+DDL).
+const SQL_WRITE = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|MERGE|REPLACE|UPSERT|CALL|COPY)\b/i;
+const SQL_SELECT_INTO = /\bSELECT\b[\s\S]*?\bINTO\b/i;
+function isWriteSql(text) {
+  // 블록 코멘트는 빈 문자열로 제거(IN/**/SERT 같은 키워드 분절 난독화 무력화), 라인 코멘트는 공백으로.
+  const noComments = String(text || "").replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const stmt of noComments.split(";")) {
+    if (!stmt.trim()) continue;
+    if (SQL_WRITE.test(stmt) || SQL_SELECT_INTO.test(stmt)) return true;
+  }
+  return false;
+}
 
 // claude/codex 중첩 실행(자식이 env를 잃고 유인으로 떠 무인 경계 탈출). 명령 위치(세그먼트 선두·셸연산자·명령치환·제어구조·래퍼(sh -c/bash -c/env/sudo/nohup/timeout 등)·인라인 VAR= 프리픽스)에서 실행될 때 차단. 단순 언급(grep/echo/curl/커밋메시지)은 제외.
 const NESTED_AGENT = /(?:^|[;|&(){]|\bthen\b|\bdo\b|\$\(|`|\bsh\s+-c\s+["']?|\bbash\s+-c\s+["']?|\b(?:env|sudo|command|xargs|nohup|timeout|setsid|exec|nice|stdbuf|time|ionice|doas)\b[^|&;]*?\s|(?:\b[A-Za-z_]\w*=\S*\s+)+)\s*(?:\S*\/)?(?:claude|codex)\b/;
@@ -165,12 +181,20 @@ function unattendedBlock(toolName, toolInput, opts) {
     }
     return null;
   }
+  // 원격/관리형 백스톱(MCP-off가 primary, 이건 심층방어): MCP 경유 DB DML + 파괴적 MCP 도구.
+  if (/execute_sql|apply_migration/.test(name)) {
+    if (isWriteSql((toolInput && (toolInput.query || toolInput.sql)) || "")) return "u-db-write";
+    return null;
+  }
+  if (/^mcp__/.test(name) && MCP_WRITE.test(name)) return "u-mcp-write";
   return pathGuard(name, toolInput, opts);
 }
 
 const REASONS_UNATTENDED = {
   "u-push": "무인 모드 차단: git push는 자동배포로 이어질 수 있어 무인 중엔 못 합니다. 이 작업을 park하고 사람 복귀를 기다립니다.",
   "u-deploy": "무인 모드 차단: 배포·퍼블리시(프리뷰 포함)는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
+  "u-db-write": "무인 모드 차단: 원격 MCP를 통한 DB 쓰기(INSERT/UPDATE/DELETE·스키마 변경)는 운영 위험이라 무인 중 금지. 검증은 localhost 샌드박스에서. park하고 사람 복귀를 기다립니다.",
+  "u-mcp-write": "무인 모드 차단: 외부·파괴적 MCP 도구(배포·프로젝트/브랜치 생성·삭제 등)는 무인 중 금지. park하고 사람 복귀를 기다립니다.",
   "u-out-of-tree": "무인 모드 차단: 전용 worktree 밖 경로 쓰기는 금지(다른 작업물 보호). park하고 사람 복귀를 기다립니다.",
   "u-protected-path": "무인 모드 차단: .claude·.chageun·설정·훅 파일은 무인 중 수정 금지(안전장치·정지 스위치 보호). park하고 사람 복귀를 기다립니다.",
   "u-frozen-criteria": "무인 모드 차단: 동결된 성공기준 파일은 무인 중 수정 금지. 기준을 바꿔야 하면 park하고 사람 복귀를 기다립니다.",
@@ -184,4 +208,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
