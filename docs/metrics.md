@@ -17,6 +17,7 @@ env `CHAGEUN_METRICS_DIR`로 경로 오버라이드(테스트용).
 | `gate` | finish-work | agent, verdict, tuid, sid | 게이트 실행+판정. verdict: pr-reviewer=`APPROVE`/`REQUEST_CHANGES`/`BLOCK`, plan-validator=`GO`/`NO-GO`/`CONDITIONAL`, 앵커 없으면 `unknown`. 최종 "PR 권고:"/"진행 권고:" 줄에만 앵커(본문 오탐 방지) |
 | `stop_block` | finish-work | reason(promise\|noEvidence), sid | Stop 훅이 "말만 하고 끝"을 되돌림 |
 | `session_usage` | finish-work | input, output, cache_read, cache_creation, sid | 세션 누적 토큰(Stop마다 스냅샷) |
+| `skill_load` | finish-work | finishCheck, specGate, runVerify(bool), sid | 지연로드 절차 스킬이 세션에 로드됐는지(항목7 미발동률 측정 — false 비율이 미발동률) |
 
 ## 분석 시 주의(MVP 한계)
 - **중복은 분석에서 제거:** finish-work는 Stop마다 transcript 전체를 재스캔하므로 `gate`·`session_usage`가 세션당 여러 번 쌓인다. `gate`는 `tuid`로 dedup, `session_usage`는 `sid`별 마지막(또는 최댓값) 행을 취한다. (안전 훅 심장부에 상태파일 커플링을 넣지 않으려는 의도적 선택 — 중복 제거를 훅이 아니라 분석으로 미룸.)
