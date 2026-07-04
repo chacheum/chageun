@@ -18,6 +18,7 @@ const PR_MARKERS = [
   "비전문가 요약에 반드시 명시", // APPROVE라도 명시
   "폴백",                        // git 아닐 때 종료 금지
   "git init",                    // 되돌리기 싸게 제안
+  "git ls-files --others --exclude-standard", // H3: untracked 신규파일 검수(빈 diff→검수0 방지), 양 플랫폼 표류 방어
 ];
 const PV_MARKERS = [
   "🙋",                          // 스펙 확인 게이트 대리결정 목록
