@@ -26,6 +26,7 @@ description: 자동 보안 스캔 — 의존성·시크릿·코드(SAST)·접근
 | ③ | **Semgrep SAST** | 코드의 흔한 취약 패턴(인젝션·XSS·인증 누락 등) | 무료, `.github/workflows/security-scan.yml` 생성 |
 | ④ | **플랫폼 Security Advisor** | **접근제어(RLS) 꺼진 테이블·노출** | 무료, 백엔드 대시보드에 이미 있음 |
 
+- **비용 주의(공개 vs 비공개 저장소):** 위 표의 "무료"는 **공개 저장소 기준**이다. **비공개 저장소**는 ②(Secret Scanning/push protection)가 유료 플랜(GitHub Advanced Security / Secret Protection)을 요구할 수 있다 — 요금제는 자주 바뀌므로 여기 값을 하드코딩하지 않고, **Settings→Security에서 실제로 켜지는지(유료 안내가 뜨는지) 확인**한다. ③ Semgrep은 도구 자체는 무료지만 비공개 저장소는 GitHub Actions 무료 실행분 한도 안에서 돈다. ①(Dependabot)·④(플랫폼 어드바이저)는 공개·비공개 모두 무료.
 - **③ Semgrep 생성 시:** 트리거는 **`push`·`pull_request`만**(merge 전 차단). **`pull_request_target`은 쓰지 않는다**(fork PR에서 시크릿이 새는 함정). default ruleset으로 시작하고 **심각도 높은 것부터** 처리한다.
 - **④가 당신 스택의 핵심:** 접근제어(RLS) 꺼짐은 *설정* 문제라 코드 스캐너(Semgrep)가 못 잡는다. 백엔드 플랫폼의 보안 어드바이저(예: Supabase의 Advisors→Security)에서 "RLS 꺼진 테이블·노출된 데이터"를 직접 확인 — **5분, 최고 가성비.**
 
