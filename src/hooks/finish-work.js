@@ -115,7 +115,9 @@ function resultText(b) {
 // 최종 권고 줄("PR/진행 권고:")의 **마지막** 등장 이후 구간에만 앵커한다. 앵커 없으면 unknown(거짓양성 회피).
 function verdictOf(agent, text) {
   const t = String(text || "");
-  const anchor = /(?:PR|진행)\s*권고\s*[:：]/g;
+  // "PR 권고:" / "진행 권고:"가 표준. 일부 에이전트가 "최종 권고: GO"로도 적어 최종도 앵커에 포함
+  // (실측: 최종만 있는 케이스가 unknown으로 샜음, 회귀 0으로 확인).
+  const anchor = /(?:PR|진행|최종)\s*권고\s*[:：]/g;
   let last = -1, mm;
   while ((mm = anchor.exec(t)) !== null) last = mm.index + mm[0].length;
   if (last < 0) return "unknown";
@@ -130,6 +132,33 @@ function verdictOf(agent, text) {
   if (/\bCONDITIONAL\b/i.test(scope)) return "CONDITIONAL";
   if (/\bGO\b/i.test(scope)) return "GO";
   return "unknown";
+}
+// 백그라운드 에이전트는 tool_result가 "실행 중" 스텁이라 최종 권고가 없어 verdict=unknown이 된다.
+// 실제 판정은 완료 통지 <task-notification>의 <result>에 담긴다(user·queue-operation 메시지의
+// 문자열 content). tool-use-id로 게이트 호출과 조인. 같은 task-id가 여러 번 통지될 수 있어(스펙 명시)
+// 판정이 잡히는(비-unknown) 통지를 우선한다. 순수함수(fs 없음). idToAgent: tuid→게이트명.
+function notifVerdicts(objs, idToAgent) {
+  const out = {};
+  if (!Array.isArray(objs)) return out;
+  const BLOCK = /<task-notification>([\s\S]*?)<\/task-notification>/g;
+  for (const o of objs) {
+    const txt = textOf(msgOf(o));
+    if (!txt || txt.indexOf("<task-notification>") === -1) continue;
+    let mm; BLOCK.lastIndex = 0;
+    while ((mm = BLOCK.exec(txt)) !== null) {
+      const blk = mm[1];
+      const idm = blk.match(/<tool-use-id>\s*([^\s<]+)\s*<\/tool-use-id>/); // 게이트 tuid만 idToAgent로 걸러짐
+
+      if (!idm) continue;
+      const tuid = idm[1];
+      const agent = idToAgent[tuid];
+      if (!agent) continue;
+      const rm = blk.match(/<result>([\s\S]*?)<\/result>/);
+      const v = verdictOf(agent, rm ? rm[1] : blk);
+      if (!(tuid in out) || (out[tuid] === "unknown" && v !== "unknown")) out[tuid] = v;
+    }
+  }
+  return out;
 }
 // objs에서 게이트 실행(plan-validator/pr-reviewer)+판정을 뽑는다. 순수함수(fs 없음).
 // 중복 제거는 여기서 하지 않는다(안전 훅에 상태파일 커플링 추가 금지) — tuid로 분석 시점에.
@@ -147,6 +176,7 @@ function extractGates(objs) {
       if (mt && b.id) idToAgent[b.id] = mt[0];
     }
   }
+  const nv = notifVerdicts(objs, idToAgent);
   const out = [];
   for (const o of objs) {
     const m = msgOf(o); const c = m && m.content;
@@ -155,37 +185,72 @@ function extractGates(objs) {
       if (!b || b.type !== "tool_result") continue;
       const agent = idToAgent[b.tool_use_id];
       if (!agent) continue;
-      out.push({ tuid: b.tool_use_id, agent, verdict: verdictOf(agent, resultText(b)) });
+      // 우선 tool_result에서(포그라운드 게이트는 여기에 최종 권고가 있다). unknown이면
+      // 완료 통지 조인으로 보강(백그라운드 게이트의 실제 판정 복원).
+      let verdict = verdictOf(agent, resultText(b));
+      const nvv = nv[b.tool_use_id];
+      if (verdict === "unknown" && nvv && nvv !== "unknown") verdict = nvv;
+      out.push({ tuid: b.tool_use_id, agent, verdict });
     }
   }
   return out;
 }
 // assistant usage 합산. 순수함수.
+// 스트리밍으로 같은 message.id가 여러 줄에 걸쳐 기록되고 usage가 누적된다(부분값→최종값).
+// 단순 합산하면 ~2.6배 과대집계(실측) → id별 각 필드의 최댓값(최종 상태)만 취해 합산한다.
+// id가 없는 usage는 dedup 불가라 그대로 더한다.
 function sumUsage(objs) {
-  let input = 0, output = 0, cache_read = 0, cache_creation = 0;
+  const byId = new Map();
+  let input = 0, output = 0, cache_read = 0, cache_creation = 0; // id 없는 usage 누적
   if (Array.isArray(objs)) for (const o of objs) {
-    const u = msgOf(o) && msgOf(o).usage;
+    const m = msgOf(o); const u = m && m.usage;
     if (!u) continue;
-    input += u.input_tokens || 0; output += u.output_tokens || 0;
-    cache_read += u.cache_read_input_tokens || 0; cache_creation += u.cache_creation_input_tokens || 0;
+    const rec = {
+      input: u.input_tokens || 0, output: u.output_tokens || 0,
+      cache_read: u.cache_read_input_tokens || 0, cache_creation: u.cache_creation_input_tokens || 0,
+    };
+    const id = m && m.id;
+    if (!id) { input += rec.input; output += rec.output; cache_read += rec.cache_read; cache_creation += rec.cache_creation; continue; }
+    const prev = byId.get(id);
+    if (!prev) byId.set(id, rec);
+    else {
+      prev.input = Math.max(prev.input, rec.input); prev.output = Math.max(prev.output, rec.output);
+      prev.cache_read = Math.max(prev.cache_read, rec.cache_read); prev.cache_creation = Math.max(prev.cache_creation, rec.cache_creation);
+    }
   }
+  for (const r of byId.values()) { input += r.input; output += r.output; cache_read += r.cache_read; cache_creation += r.cache_creation; }
   return { input, output, cache_read, cache_creation };
 }
 
 // 지연로드 절차 스킬(finish-check·spec-gate·run-verify)이 세션에 로드됐는지. 순수함수.
 // 미발동률 실측용 — Skill 도구 input.skill 또는 subagent_type에서 스킬명 감지.
+// 미발동률은 분모가 있어야 의미가 있다(읽기전용·잡담 세션엔 스킬이 안 떠도 정상). 그래서
+// "그 스킬이 떴어야 하는 세션인가"를 재는 분모 신호도 함께 남긴다:
+//   edited   — 파일 편집(Edit/Write/…)을 했나 → finish-check가 떴어야 하는 세션.
+//   uiEdited — 편집한 파일 경로가 프런트엔드 확장자(.tsx/.jsx/.vue/.svelte/.html/.css/.scss)인가
+//              → run-verify가 떴어야 하는 화면 작업 세션. (uiEdited 판정기준: 확장자 매칭 1줄.)
+//   planned  — 기획(brainstorming/writing-plans)을 했나 → spec-gate가 떴어야 하는 세션.
+// 분석 시 미발동률 = (스킬 false AND 분모 true) / (분모 true).
+const UI_EXT = /\.(tsx|jsx|vue|svelte|html?|css|scss|sass)$/i;
 function extractSkillLoads(objs) {
-  const s = { finishCheck: false, specGate: false, runVerify: false };
+  const s = { finishCheck: false, specGate: false, runVerify: false, edited: false, uiEdited: false, planned: false };
   if (!Array.isArray(objs)) return s;
   for (const o of objs) {
     const m = msgOf(o); const c = m && m.content;
     if (!Array.isArray(c)) continue;
     for (const b of c) {
       if (!b || b.type !== "tool_use") continue;
-      const nm = String((b.input && (b.input.skill || b.input.subagent_type)) || b.name || "");
+      const name = String(b.name || "");
+      const nm = String((b.input && (b.input.skill || b.input.subagent_type)) || name || "");
       if (/finish-check/.test(nm)) s.finishCheck = true;
       if (/spec-gate/.test(nm)) s.specGate = true;
       if (/run-verify/.test(nm)) s.runVerify = true;
+      if (/brainstorm|writing-plan|write-plan/.test(nm)) s.planned = true;
+      if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name)) {
+        s.edited = true;
+        const fp = String((b.input && (b.input.file_path || b.input.notebook_path)) || "");
+        if (UI_EXT.test(fp)) s.uiEdited = true;
+      }
     }
   }
   return s;
@@ -210,9 +275,13 @@ function run() {
         try { objs.push(JSON.parse(s)); } catch (_) { /* skip */ }
       }
       const sid = String(input.session_id || "");
-      for (const g of extractGates(objs)) log("gate", { sid, agent: g.agent, verdict: g.verdict, tuid: g.tuid });
-      log("session_usage", Object.assign({ sid }, sumUsage(objs)));
-      log("skill_load", Object.assign({ sid }, extractSkillLoads(objs)));
+      // 계측(순수함수 추출+log)은 아래 차단 판정과 완전히 격리한다 — 계측 계산이 언젠가
+      // throw해도 바깥 catch로 새어 차단 브레이크를 건너뛰지 않도록 전용 try/catch로 감싼다.
+      try {
+        for (const g of extractGates(objs)) log("gate", { sid, agent: g.agent, verdict: g.verdict, tuid: g.tuid });
+        log("session_usage", Object.assign({ sid }, sumUsage(objs)));
+        log("skill_load", Object.assign({ sid }, extractSkillLoads(objs)));
+      } catch (_) { /* out-of-band: 계측 실패가 차단 판정을 절대 막지 않는다 */ }
       let lastIdx = -1;
       for (let i = objs.length - 1; i >= 0; i--) {
         if (roleOf(objs[i]) === "assistant") { lastIdx = i; break; }
