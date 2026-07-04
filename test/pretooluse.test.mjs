@@ -288,3 +288,62 @@ test("예산: budgetStep 경계값(시간·횟수·워치독·진전 리셋·영
   assert.equal(isGitCommit("Write", { file_path: "/a" }), false);
   assert.deepEqual(BUDGET, { maxMs: 28800000, maxCalls: 2000, watchdogMs: 1800000 });
 });
+
+test("게이트 보강(감사 #2): force-push 변종 — git -c/-C·refspec+·--mirror 차단, 파이프 오탐 방지", () => {
+  assert.equal(bash("git -c http.extraHeader=A push --force"), "force-push", "git -c 주입 후 강제 push");
+  assert.equal(bash("git -c a=b -c d=e push -f"), "force-push");
+  assert.equal(bash("git -C /some/dir push --force"), "force-push");
+  assert.equal(bash("git --git-dir=/x push --mirror"), "force-push", "--mirror는 강제");
+  assert.equal(bash("git push origin +main"), "force-push", "refspec + 는 강제");
+  assert.equal(bash("git push origin +refs/heads/main:main"), "force-push");
+  // 회귀·오탐 방지
+  assert.equal(bash("git push --force-with-lease origin main"), null, "force-with-lease 허용 유지");
+  assert.equal(bash("git push origin main"), null);
+  assert.equal(bash("git -C /dir push origin main"), null, "옵션 있어도 강제 아니면 허용");
+  assert.equal(bash("git log | grep 'push --force'"), null, "파이프 뒤 문자열은 오탐 아님");
+  assert.equal(bash("git push origin main # cleanup + notes"), null, "주석의 + 는 오탐 아님");
+});
+
+test("게이트 보강(감사 #2): rm -rf .. (부모 트리) 차단, 구체 하위경로 허용 유지", () => {
+  assert.equal(bash("rm -rf .."), "rm-recursive", "부모 디렉토리");
+  assert.equal(bash("rm -rf ../"), "rm-recursive");
+  assert.equal(bash("rm -rf ../*"), "rm-recursive");
+  assert.equal(bash("rm -rf ../.."), "rm-recursive", "조부모");
+  assert.equal(bash("rm -rf ../build"), null, "구체 하위(부모의 특정 폴더)는 허용 유지");
+  assert.equal(bash("rm -rf ./build"), null);
+  assert.equal(bash("rm -rf ."), "rm-recursive", "기존 . 차단 유지");
+});
+
+test("게이트 보강(감사 #2): WHERE 없는 UPDATE 차단(Bash·MCP 공용)", () => {
+  assert.equal(sql("UPDATE users SET role='admin'"), "sql-update-no-where");
+  assert.equal(sql("UPDATE users SET admin=true WHERE id=1"), null, "WHERE 있으면 허용");
+  assert.equal(bash('psql -c "UPDATE users SET role=1"'), "sql-update-no-where", "Bash SQL 클라이언트도");
+  assert.equal(sql("SELECT * FROM users"), null);
+});
+
+test("게이트 보강(감사 H1): 무인 Bash가 .claude·훅·설정 안전판 쓰기 시 차단(읽기 허용)", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  assert.equal(ub('echo "" > ~/.claude/plugins/x/hooks/pretooluse.js'), "u-protected-path", "훅 파일 비우기 차단");
+  assert.equal(ub("sed -i s/a/b/ ~/.claude/settings.json"), "u-protected-path", "설정 변조 차단");
+  assert.equal(ub("tee ~/.claude/settings.local.json < x"), "u-protected-path");
+  assert.equal(ub("cp evil.js .claude/hooks/pretooluse-core.js"), "u-protected-path");
+  assert.equal(ub("cat ~/.claude/settings.json"), null, "읽기는 허용");
+  assert.equal(ub("grep hook .claude/settings.json"), null, "읽기는 허용");
+  assert.equal(ub("echo hi > src/app.js"), null, "일반 파일 쓰기는 무관");
+  // 오탐 방지: 차근 안전판은 .claude/.chageun 아래뿐 → 사용자 프로젝트의 동명 경로는 안 막음
+  assert.equal(ub("git add src/hooks/useAuth.js"), null, "React src/hooks 폴더는 오탐 아님");
+  assert.equal(ub("sed -i s/x/y/ .vscode/settings.json"), null, "프로젝트 settings.json은 오탐 아님");
+  assert.equal(ub("node scripts/hooks/gen.js"), null, "일반 hooks 폴더는 오탐 아님");
+  assert.equal(ub("sed -i s/x/y/ .claude/hooks/pretooluse.js"), "u-protected-path", "진짜 안전판(.claude/hooks)은 여전히 차단");
+});
+
+test("게이트 보강(감사 #2): 무인 Bash SQL이 원격 호스트 env(PGHOST)로 쓰기 시 차단", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  assert.equal(ub('export PGHOST=prod.example.com && psql -c "DELETE FROM users WHERE id=1"'), "u-db-write", "export 후 원격 psql 쓰기");
+  assert.equal(ub('PGHOST=prod.example.com psql -c "UPDATE t SET x=1 WHERE id=1"'), "u-db-write", "인라인 env 원격");
+  assert.equal(ub('MYSQL_HOST=prod.db mysql -e "INSERT INTO t VALUES(1)"'), "u-db-write");
+  assert.equal(ub('export PGHOST=localhost && psql -c "INSERT INTO t VALUES(1)"'), null, "localhost env는 허용(샌드박스)");
+  assert.equal(ub('export PGHOST=prod.example.com && psql -c "SELECT * FROM t"'), null, "원격이어도 읽기는 허용");
+});

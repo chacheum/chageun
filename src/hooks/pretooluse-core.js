@@ -3,11 +3,12 @@
 
 const path = require("path");
 
-// git push --force / -f 차단(단 --force-with-lease는 허용 — 안전한 강제 push).
-const FORCE_PUSH = /\bgit\s+push\b[^\n]*?(--force(?!-with-lease)\b|(?:^|\s)-[a-zA-Z]*f\b)/;
+// git 강제 push 차단(단 --force-with-lease는 허용). git↔push 사이 글로벌옵션(-c·-C·--git-dir·--work-tree) 허용,
+// refspec 강제(+ref)·--mirror도 강제로 간주. 매칭은 첫 셸 연산자 전까지(파이프 뒤 문자열 오탐 방지).
+const FORCE_PUSH = /\bgit\b(?:\s+-c\s+\S+|\s+-C\s+\S+|\s+--git-dir=\S+|\s+--work-tree=\S+)*\s+push\b[^\n|&;<>]*?(?:--force(?!-with-lease)\b|(?:^|\s)-[a-zA-Z]*f\b|--mirror\b|\s\+[\w./:-]+)/;
 // rm 재귀+강제(-rf·-fr·-r -f·--recursive --force)가 루트/홈/현재트리 등 위험 타깃을 지울 때.
 const RM_RECURSIVE = /\brm\s+(?:-[a-zA-Z]*\b\s*){0,3}(?:-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|--recursive|--force)\b/;
-const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/\*|\.\s*$|\*\s*$)/;
+const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/\*|\.\.(?:\s|$|\/(?:\s|$|\*|\.))|\.\s*$|\*\s*$)/;
 
 // 파괴적 SQL(스키마·대량삭제). DELETE는 WHERE 없을 때만.
 const SQL_DESTRUCTIVE = /\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+(TABLE\s+)?\w)/i;
@@ -32,6 +33,7 @@ function destructiveSql(text) {
   for (const stmt of noComments.split(";")) {
     if (SQL_DESTRUCTIVE.test(stmt)) return "sql-destructive";
     if (/\bDELETE\s+FROM\b/i.test(stmt) && !/\bWHERE\b/i.test(stmt)) return "sql-delete-no-where";
+    if (/\bUPDATE\s+\S/i.test(stmt) && !/\bWHERE\b/i.test(stmt)) return "sql-update-no-where";
   }
   return null;
 }
@@ -41,6 +43,7 @@ const REASONS = {
   "rm-recursive": "차단: 루트/홈/현재 트리 전체를 지우는 `rm -rf`는 되돌릴 수 없습니다. 지울 대상 경로를 구체적으로 좁히세요.",
   "sql-destructive": "차단: DROP/TRUNCATE 같은 파괴적 스키마 명령입니다. 운영 데이터라면 되돌릴 수 없으니, 테스트 환경인지·백업이 있는지 먼저 확인하세요.",
   "sql-delete-no-where": "차단: WHERE 없는 DELETE는 테이블 전체를 지웁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
+  "sql-update-no-where": "차단: WHERE 없는 UPDATE는 테이블 전체를 덮어씁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "deploy": "차단(배포는 되돌리기 어려움): 사용자 확인 후 진행하려면 세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하세요(그 세션 동안 배포 검사가 꺼집니다). 이 브레이크는 CLI 배포만 막고 git push→자동배포(Vercel/Netlify 깃연동)는 못 막습니다 — 그건 멈춤 규칙으로 확인하세요.",
   "gate-skip": "차단: PR 생성 전에 pr-reviewer 게이트를 거치세요(이 세션에 pr-reviewer 실행 흔적이 없습니다). 이미 검토했거나 예외면 CHAGEUN_SKIP_GATE_CHECK=1로 재실행하세요.",
 };
@@ -134,11 +137,24 @@ function targetsRemoteDb(seg) {
   const explicit = DB_CONN_STRING.test(seg) || DB_HOST_FLAG.test(seg);
   return explicit && !LOCAL_DB_HOST.test(seg);
 }
+// DB 클라이언트가 읽는 호스트 env(PGHOST 등)가 원격값으로 설정됐나 — `export PGHOST=원격 && psql …`(세그먼트 분리)와
+// 인라인 `PGHOST=원격 psql …`을 잡기 위해 명령 전체를 스캔. 값이 localhost면 원격 아님. ($VAR 참조는 정적 판정 불가 — 미커버.)
+const DB_HOST_ENV = /\b(?:PGHOST|PGHOSTADDR|MYSQL_HOST|MYSQL_TCP_HOST|MARIADB_HOST|MONGO_HOST|MONGODB_HOST|CLICKHOUSE_HOST|DB_HOST|DATABASE_HOST)\s*=\s*(\S+)/ig;
+function envTargetsRemoteDb(cmd) {
+  DB_HOST_ENV.lastIndex = 0;
+  let m;
+  while ((m = DB_HOST_ENV.exec(String(cmd || ""))) !== null) {
+    if (!LOCAL_DB_HOST.test(m[1])) return true;
+  }
+  return false;
+}
 
 // claude/codex 중첩 실행(자식이 env를 잃고 유인으로 떠 무인 경계 탈출). 명령 위치(세그먼트 선두·셸연산자·명령치환·제어구조·래퍼(sh -c/bash -c/env/sudo/nohup/timeout 등)·인라인 VAR= 프리픽스)에서 실행될 때 차단. 단순 언급(grep/echo/curl/커밋메시지)은 제외.
 const NESTED_AGENT = /(?:^|[;|&(){]|\bthen\b|\bdo\b|\$\(|`|\bsh\s+-c\s+["']?|\bbash\s+-c\s+["']?|\b(?:env|sudo|command|xargs|nohup|timeout|setsid|exec|nice|stdbuf|time|ionice|doas)\b[^|&;]*?\s|(?:\b[A-Za-z_]\w*=\S*\s+)+)\s*(?:\S*\/)?(?:claude|codex)\b/;
-// .chageun 제어파일(통과표·STOP)을 읽기 외로 건드리는 명령 차단. 전체 명령 스캔(세그먼트 분리·cd·인터프리터 우회 방지), 대소문자 무관. cat/grep/ls 같은 순수 읽기는 통과.
-const CHAGEUN_REF = /\.chageun\b/i;
+// 보호 경로(.chageun 통과표·STOP + .claude 안전판 + pretooluse 훅 파일)를 읽기 외로 건드리는 Bash 차단.
+// H1: pathGuard는 Write류만 봐서 Bash `tee`/`>`/`sed -i`로 안전판 쓰기가 새던 구멍을 막는다. 순수 읽기(cat/grep/ls)는 통과.
+// 차근 안전판은 항상 `.claude`/`.chageun` 아래라 그 둘로 충분 — bare `hooks/`·`settings.json`은 사용자 프로젝트(React src/hooks·.vscode/settings.json)를 오탐해 제외. ($HOME 밖 임의 절대경로 쓰기는 미커버 — 샌드박스가 근본대책.)
+const PROTECTED_REF = /\.(?:claude|chageun)\b|pretooluse[^/\s]*\.js\b/i;
 const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed|awk|python3?|node|perl|ruby|cd|find|shred|rsync|git)\b|>>?/i;
 
 // 무인 예산·워치독 기본 한도. 8시간 / 2000 도구호출 / 30분 무진전.
@@ -186,13 +202,14 @@ function unattendedBlock(toolName, toolInput, opts) {
   const name = String(toolName || "");
   if (name === "Bash") {
     const cmd = String((toolInput && toolInput.command) || "");
-    if (CHAGEUN_REF.test(cmd) && CHAGEUN_TOUCH.test(cmd)) return "u-protected-path";
+    if (PROTECTED_REF.test(cmd) && CHAGEUN_TOUCH.test(cmd)) return "u-protected-path";
+    const envRemote = envTargetsRemoteDb(cmd);
     for (const seg of cmd.split(/&&|\|\||[;|\n]/)) {
       if (NESTED_AGENT.test(seg)) return "u-nested";
       if (ANY_PUSH.test(seg)) return "u-push";
       if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
-      // Bash SQL 클라이언트가 '명시적 원격' 대상에 쓰기 → 백스톱(localhost 샌드박스 쓰기는 허용).
-      if (SQL_CLIENT.test(seg) && isWriteSql(seg) && targetsRemoteDb(seg)) return "u-db-write";
+      // Bash SQL 클라이언트가 '명시적 원격'(호스트 플래그·접속문자열) 또는 원격 호스트 env로 쓰기 → 백스톱(localhost 샌드박스는 허용).
+      if (SQL_CLIENT.test(seg) && isWriteSql(seg) && (targetsRemoteDb(seg) || envRemote)) return "u-db-write";
     }
     return null;
   }
