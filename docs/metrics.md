@@ -14,17 +14,19 @@ env `CHAGEUN_METRICS_DIR`로 경로 오버라이드(테스트용).
 |----|----|------|------|
 | `hook_block` | pretooluse | reason, unattended, tool, snippet(≤160자), sid | PreToolUse가 도구를 차단 |
 | `escape_used` | pretooluse | hatch(ALLOW_DEPLOY\|SKIP_GATE), tool, snippet?, sid | 탈출구로 차단을 통과시킴(사각지대 가시화) |
-| `gate` | finish-work | agent, verdict, tuid, sid | 게이트 실행+판정. verdict: pr-reviewer=`APPROVE`/`REQUEST_CHANGES`/`BLOCK`, plan-validator=`GO`/`NO-GO`/`CONDITIONAL`, 앵커 없으면 `unknown`. 최종 "PR 권고:"/"진행 권고:" 줄에만 앵커(본문 오탐 방지) |
+| `gate` | finish-work | agent, verdict, tuid, sid | 게이트 실행+판정. verdict: pr-reviewer=`APPROVE`/`REQUEST_CHANGES`/`BLOCK`, plan-validator=`GO`/`NO-GO`/`CONDITIONAL`, 앵커 없으면 `unknown`. 최종 "PR 권고:"/"진행 권고:"/"최종 권고:" 줄에만 앵커(본문 오탐 방지). 백그라운드 게이트는 tool_result가 "실행 중" 스텁이라 판정이 없으므로 완료 통지 `<task-notification>`의 `<result>`를 tool-use-id로 조인해 판정을 복원한다(unknown ~30%→~8%) |
 | `stop_block` | finish-work | reason(promise\|noEvidence), sid | Stop 훅이 "말만 하고 끝"을 되돌림 |
-| `session_usage` | finish-work | input, output, cache_read, cache_creation, sid | 세션 누적 토큰(Stop마다 스냅샷) |
-| `skill_load` | finish-work | finishCheck, specGate, runVerify(bool), sid | 지연로드 절차 스킬이 세션에 로드됐는지(항목7 미발동률 측정 — false 비율이 미발동률) |
+| `session_usage` | finish-work | input, output, cache_read, cache_creation, sid | 세션 누적 토큰(Stop마다 스냅샷). 스트리밍으로 같은 `message.id`가 부분값→최종값으로 여러 줄 기록되므로 id별 각 필드 최댓값만 합산한다(단순 합산 시 output ~2.6배 과대집계) |
+| `skill_load` | finish-work | finishCheck, specGate, runVerify, edited, uiEdited, planned(bool), sid | 지연로드 절차 스킬이 세션에 로드됐는지 + **미발동률 분모**. `edited`(파일 편집함)=finish-check 분모, `uiEdited`(프런트엔드 확장자 편집)=run-verify 분모, `planned`(brainstorming/writing-plans)=spec-gate 분모. 미발동률 = (스킬 false AND 분모 true) / (분모 true) |
 
 ## 분석 시 주의(MVP 한계)
 - **중복은 분석에서 제거:** finish-work는 Stop마다 transcript 전체를 재스캔하므로 `gate`·`session_usage`·`skill_load`가 세션당 여러 번 쌓인다. `gate`는 `tuid`로 dedup, `session_usage`는 `sid`별 마지막(또는 최댓값) 행, **`skill_load`는 `sid`별 마지막 행(불리언 OR)** 을 취한다(안 그러면 Stop 많은 세션이 과대 반영돼 미발동률 왜곡). (안전 훅 심장부에 상태파일 커플링을 넣지 않으려는 의도적 선택 — 중복 제거를 훅이 아니라 분석으로 미룸.)
 - **Codex 미계측:** Codex는 PreToolUse 훅이 없어 `hook_block`/`escape_used` 불가. `finish-work-codex.mjs`도 이번 MVP에서 미계측(다음 배치).
 - **severity 카운트 미추출:** `gate`는 판정(APPROVE/GO/…)만 남긴다. "blocker N·high M"은 아직 안 뽑음(리포트 텍스트 파싱 필요 — 다음 단계).
 - **escape_used(SKIP_GATE)의 의미:** `isPrCreate && SKIP env 설정`이면 pr-reviewer가 실제로 돌았어도 매번 남는다 — "탈출구를 실제로 썼다"기보다 "스킵 env가 켜져 있었다"에 가깝다. 분석 시 유의.
-- **session_usage 가정:** assistant per-message usage를 단순 합산한다. transcript의 usage가 이미 누적값이면 과대집계될 수 있으니, 첫 실사용 로그로 값을 sanity-check한 뒤 신뢰한다.
+- **session_usage(토큰) — message.id로 dedup됨:** 훅이 `message.id`별 각 필드 최댓값만 합산한다(스트리밍 부분값 중복 제거). id가 없는 usage는 dedup 불가라 그대로 더한다. 세션간 스냅샷 중복(Stop마다)은 위 "중복 제거"대로 `sid`별 최댓값 행을 취한다.
+- **task-notification 조인의 자기참조 한계:** 게이트 결과문 안에 문자열 `</task-notification>`가 그대로 인용되면(예: 이 스키마 코드를 리뷰하는 도그푸딩 세션) 비탐욕 정규식이 블록을 거기서 잘라 verdict가 `unknown`으로 떨어질 수 있다. 결과는 보수적 방향(오판 아님)이라 방치. 
+- **미발동 분모(edited/uiEdited/planned)는 근사치:** 메인 세션 transcript 기준이라 서브에이전트(code-implementer)가 대신 편집한 세션은 `edited`로 안 잡힐 수 있다. `uiEdited`는 확장자 매칭 1줄이라 프레임워크 밖 UI(비표준 확장자)는 놓친다. `planned`는 brainstorming/writing-plans 로드 여부 — 스킵하고 바로 스펙 쓴 세션은 분모에서 빠진다. 절대율보다 추세로 읽는다.
 - **PII:** `hook_block.snippet`은 차단된 명령 160자로 시크릿이 섞일 수 있으나 **로컬 홈에만** 저장, 외부 전송 없음.
 
 ## out-of-band 보장의 경계(중요)
