@@ -7,9 +7,10 @@ import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
-// 부모 env의 CHAGEUN_* 제거 후 케이스별로 주입(격리).
+// 부모 env의 CHAGEUN_* 전부 제거(케이스별로 주입) + 계측을 임시 디렉토리로 격리(실계측 파일 오염 방지).
 const BASE = { ...process.env };
-delete BASE.CHAGEUN_UNATTENDED; delete BASE.CHAGEUN_ALLOW_DEPLOY; delete BASE.CHAGEUN_SKIP_GATE_CHECK;
+for (const k of Object.keys(BASE)) { if (k.startsWith("CHAGEUN_")) delete BASE[k]; }
+BASE.CHAGEUN_METRICS_DIR = mkdtempSync(join(tmpdir(), "unatt-metrics-"));
 
 // 임시 작업트리에 유효 통과표를 심고 cwd·env를 맞춰 훅을 spawn. token=null이면 통과표 없음(게이트 테스트용).
 function runIn(input, env, opts = {}) {
