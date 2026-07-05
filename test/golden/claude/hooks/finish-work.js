@@ -123,8 +123,8 @@ function verdictOf(agent, text) {
   if (last < 0) return "unknown";
   const scope = t.slice(last, last + 40);
   if (agent === "pr-reviewer") {
+    if (/\bBLOCK\b/i.test(scope)) return "BLOCK";  // BLOCK을 RC보다 먼저(더 심각 — 둘 다 window에 있으면 심각한 쪽. plan-validator의 NO-GO 우선과 동일 원칙)
     if (/REQUEST\s*CHANGES/i.test(scope)) return "REQUEST_CHANGES";
-    if (/\bBLOCK\b/i.test(scope)) return "BLOCK";
     if (/\bAPPROVE\b/i.test(scope)) return "APPROVE";
     return "unknown";
   }

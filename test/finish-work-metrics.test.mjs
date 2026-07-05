@@ -66,6 +66,12 @@ test("extractGates: pr-reviewer REQUEST CHANGES / BLOCK 실제 어휘", () => {
   assert.equal(extractGates(bl)[0].verdict, "BLOCK");
 });
 
+test("extractGates: 앵커 window에 BLOCK+REQUEST CHANGES 공존 시 더 심각한 BLOCK(순서 버그 회귀)", () => {
+  const objs = [gateCall("bx", "pr-reviewer"),
+    gateResult("bx", "...\nPR 권고: BLOCK — REQUEST CHANGES가 아니라 BLOCK입니다")];
+  assert.equal(extractGates(objs)[0].verdict, "BLOCK");
+});
+
 test("extractGates: 본문에 APPROVE가 섞여도 최종 권고가 BLOCK이면 BLOCK(오탐 방지)", () => {
   // 옛 전체-blob 스캔이면 본문의 "APPROVE" 때문에 APPROVE로 역전됐다 → 앵커로 방지.
   const objs = [gateCall("t9", "pr-reviewer"),
