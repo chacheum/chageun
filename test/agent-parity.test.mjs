@@ -24,6 +24,8 @@ const PV_MARKERS = [
   "🙋",                          // 스펙 확인 게이트 대리결정 목록
   "대리결정",                    // AI interpolation 교차검증
   "추측",                        // plan 경로 추측 금지
+  "구조·범위를 바꿀",            // 🙋 우선순위 severity 잣대(#6a) — 양 플랫폼 표류 방어
+  "안전·권한·데이터 노출·삭제 방식 결정은 구조·범위급으로 취급", // #6a 안전-핵심: 안전 🙋 강등 금지 절이 codex에서만 지워지는 표류 방어(pr-reviewer low)
 ];
 
 test("pr-reviewer 핵심 판정 문구가 Claude·Codex 양쪽에 존재", () => {
