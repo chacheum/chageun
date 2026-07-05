@@ -18,11 +18,20 @@ const PR_MARKERS = [
   "비전문가 요약에 반드시 명시", // APPROVE라도 명시
   "폴백",                        // git 아닐 때 종료 금지
   "git init",                    // 되돌리기 싸게 제안
+  "신뢰 경계 밖",                // Fable5 F2: 메모리 주입 차단(검토 대상의 자칭 FP 기록 금지)이 codex에서 지워지는 표류 방어
+  "git ls-files --others --exclude-standard", // H3: untracked 신규파일 검수(빈 diff→검수0 방지), 양 플랫폼 표류 방어
 ];
 const PV_MARKERS = [
   "🙋",                          // 스펙 확인 게이트 대리결정 목록
   "대리결정",                    // AI interpolation 교차검증
   "추측",                        // plan 경로 추측 금지
+  "신뢰 경계 밖",                // Fable5 F2: 메모리 주입 차단이 codex plan-validator 미러에서 지워지는 표류 방어
+  "구조·범위를 바꿀",            // 🙋 우선순위 severity 잣대(#6a) — 양 플랫폼 표류 방어
+  "안전·권한·데이터 노출·삭제 방식 결정은 구조·범위급으로 취급", // #6a 안전-핵심: 안전 🙋 강등 금지 절이 codex에서만 지워지는 표류 방어(pr-reviewer low)
+  "위임 구역",                   // #6b 위임 구역 예외 topic
+  "예외를 무효화하고 high/blocker", // #6b 안전-핵심: 위임 구역 방패절이 codex에서만 지워지는 표류 방어(plan-validator HIGH-2)
+  "판단 불가·기계적임이 확인된 항목에 한해서만", // #6b 안전-핵심: 위임 구역 예외 제한절이 codex에서만 넓어지는 표류 방어(pr-reviewer low)
+  "비용/외부 발송/외부 부하를 좌우하는 결정", // Fable5 F3: 위임 구역 무효화 렌즈의 비용축이 codex에서만 지워지는 표류 방어
 ];
 
 test("pr-reviewer 핵심 판정 문구가 Claude·Codex 양쪽에 존재", () => {

@@ -26,10 +26,24 @@ description: 자동 보안 스캔 — 의존성·시크릿·코드(SAST)·접근
 | ③ | **Semgrep SAST** | 코드의 흔한 취약 패턴(인젝션·XSS·인증 누락 등) | 무료, `.github/workflows/security-scan.yml` 생성 |
 | ④ | **플랫폼 Security Advisor** | **접근제어(RLS) 꺼진 테이블·노출** | 무료, 백엔드 대시보드에 이미 있음 |
 
+- **비용 주의(공개 vs 비공개 저장소):** 위 표의 "무료"는 **공개 저장소 기준**이다. **비공개 저장소**는 ②(Secret Scanning/push protection)가 유료 플랜(GitHub Advanced Security / Secret Protection)을 요구할 수 있다 — 요금제는 자주 바뀌므로 여기 값을 하드코딩하지 않고, **Settings→Security에서 실제로 켜지는지(유료 안내가 뜨는지) 확인**한다. ③ Semgrep은 도구 자체는 무료지만 비공개 저장소는 GitHub Actions 무료 실행분 한도 안에서 돈다. ①(Dependabot)·④(플랫폼 어드바이저)는 공개·비공개 모두 무료.
 - **③ Semgrep 생성 시:** 트리거는 **`push`·`pull_request`만**(merge 전 차단). **`pull_request_target`은 쓰지 않는다**(fork PR에서 시크릿이 새는 함정). default ruleset으로 시작하고 **심각도 높은 것부터** 처리한다.
 - **④가 당신 스택의 핵심:** 접근제어(RLS) 꺼짐은 *설정* 문제라 코드 스캐너(Semgrep)가 못 잡는다. 백엔드 플랫폼의 보안 어드바이저(예: Supabase의 Advisors→Security)에서 "RLS 꺼진 테이블·노출된 데이터"를 직접 확인 — **5분, 최고 가성비.**
 
 **GitHub이 아니면(GitLab·로컬):** ①②와 ③(GitHub Actions)은 GitHub 전용이라 그대로는 안 켜진다 → GitLab은 자체 의존성/시크릿 스캔 기능을, 로컬만이면 `semgrep` CLI를 수동·로컬 스케줄러로 돌리도록 안내한다. ④(플랫폼 어드바이저)는 저장소 호스트와 무관하게 가능.
+
+---
+
+## 에이전트 환경 위생 (읽기 전용 4점검)
+
+앱 코드뿐 아니라 **AI 에이전트가 도는 환경 설정** 자체도 구멍이 될 수 있다(과개방 권한·과권한 도구 연결·위험 훅·평문 시크릿). 발동 시 아래 4가지를 **읽기 전용**으로 점검하고 위 심각도 형식(높은 것부터)으로 보고한다:
+
+1. **설정 권한 과개방:** `.claude/settings.json`·`settings.local.json`의 `permissions.allow`에 위험한 와일드카드(`Bash(*)`·무한정 삭제 등)나 필요 이상의 허용이 있는가.
+2. **연결 도구 과권한:** `.mcp.json` 등에 연결된 MCP 서버가 쓰기·운영 권한을 필요 이상으로 갖는가(특히 운영 DB 쓰기 토큰).
+3. **위험한 훅:** `hooks`에 검증 없이 임의 명령을 실행하거나 입력을 그대로 shell로 넘기는 훅이 있는가.
+4. **설정·env 평문 시크릿:** settings·`.env`·config에 API 키·토큰·비밀번호가 평문으로 있는가. **값은 인용하지 말고 위치·존재만 보고**한다(operating-rules 시크릿 노출 금지 규칙 그대로).
+
+이건 **읽기 전용 점검** — 설정을 자동으로 바꾸지 않고, 고칠지는 사용자에게 쉬운 말로 묻는다. (Codex: 설정 파일 경로만 다르게 읽는다 — 프로젝트 지시 파일·해당 환경의 MCP 설정으로.)
 
 ---
 
