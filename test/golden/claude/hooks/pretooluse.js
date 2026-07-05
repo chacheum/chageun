@@ -8,16 +8,8 @@
 const fs = require("fs");
 const path = require("path");
 const { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
-// 계측은 out-of-band. 로드 실패해도 훅 판정이 죽으면 안 됨(무인 fail-open 안전 회귀 방지) → 방어적 require.
-let log = () => {};
-try { ({ log } = require("./metrics.js")); } catch (_) { /* out-of-band: 로드 실패해도 훅은 산다 */ }
-if (typeof log !== "function") log = () => {}; // 로드는 됐으나 log 미export여도 no-op(유인 fail-open 방지)
-
-// 로깅 컨텍스트(차단·탈출구 로그에 실을 값). stdin 파싱 직후 채운다.
-let CUR = { tool: "", snippet: "", sid: "" };
 
 function deny(reasonKey, unattended) {
-  log("hook_block", { reason: reasonKey, unattended: !!unattended, tool: CUR.tool, snippet: CUR.snippet, sid: CUR.sid });
   process.stderr.write(unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey));
   process.exit(2); // PreToolUse: exit 2 = 도구 호출 차단, stderr를 Claude에 전달
 }
@@ -90,9 +82,6 @@ process.stdin.on("end", () => {
     const input = JSON.parse(raw);
     const name = input.tool_name;
     const ti = input.tool_input || {};
-    CUR.tool = String(name || "");
-    CUR.sid = String(input.session_id || "");
-    CUR.snippet = String(ti.command || ti.file_path || ti.description || "").slice(0, 160);
 
     // 0) 무인 게이트: 정지 요청 or preflight 통과표 없음 → 모든 도구 park(fail-closed).
     if (UNATTENDED) {
@@ -113,7 +102,7 @@ process.stdin.on("end", () => {
     const hit = block(name, ti);
     if (hit === "deploy") {
       if (UNATTENDED || process.env.CHAGEUN_ALLOW_DEPLOY !== "1") return deny("deploy", UNATTENDED);
-      log("escape_used", { hatch: "ALLOW_DEPLOY", tool: CUR.tool, snippet: CUR.snippet, sid: CUR.sid });
+      // ALLOW_DEPLOY=1(유인)이면 배포 통과.
     } else if (hit) {
       return deny(hit, UNATTENDED);
     }
@@ -129,9 +118,8 @@ process.stdin.on("end", () => {
     if (isPrCreate(name, ti)) {
       if (UNATTENDED || process.env.CHAGEUN_SKIP_GATE_CHECK !== "1") {
         if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
-      } else {
-        log("escape_used", { hatch: "SKIP_GATE", tool: CUR.tool, sid: CUR.sid });
       }
+      // SKIP_GATE=1(유인)이면 게이트 검사 생략.
     }
   } catch (_) {
     // 무인: 판정 중 예외 = 불확실 = 안전측(park). 유인: 기존대로 fail-open(사람이 백스톱).
