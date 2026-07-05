@@ -26,6 +26,9 @@ const PV_MARKERS = [
   "추측",                        // plan 경로 추측 금지
   "구조·범위를 바꿀",            // 🙋 우선순위 severity 잣대(#6a) — 양 플랫폼 표류 방어
   "안전·권한·데이터 노출·삭제 방식 결정은 구조·범위급으로 취급", // #6a 안전-핵심: 안전 🙋 강등 금지 절이 codex에서만 지워지는 표류 방어(pr-reviewer low)
+  "위임 구역",                   // #6b 위임 구역 예외 topic
+  "예외를 무효화하고 high/blocker", // #6b 안전-핵심: 위임 구역 방패절이 codex에서만 지워지는 표류 방어(plan-validator HIGH-2)
+  "판단 불가·기계적임이 확인된 항목에 한해서만", // #6b 안전-핵심: 위임 구역 예외 제한절이 codex에서만 넓어지는 표류 방어(pr-reviewer low)
 ];
 
 test("pr-reviewer 핵심 판정 문구가 Claude·Codex 양쪽에 존재", () => {

@@ -109,7 +109,7 @@ LIGHT일 때 표현:
 # 작업 유형별 진행 (Superpowers 연동)
 
 성격에 맞는 Superpowers 스킬을 먼저 Skill 도구로 호출한다. 이 워크플로(카드·게이트·끝 점검)는 Superpowers 위에 함께 적용 — 병행이다.
-- **새 기능·"무엇을 만들지" 모호:** `brainstorming` → `writing-plans` → plan-validator → 모델·실행 라우팅. 기획 중 레퍼런스가 도움될 지점에선 `referencing`(남용 금지; 사용자가 "비슷한 거·경쟁사·사례" 요청 시에도).
+- **새 기능·"무엇을 만들지" 모호:** `brainstorming` → `writing-plans` → plan-validator → 모델·실행 라우팅. **"blind spot pass"(unknown unknowns 점검) — 낯선 도메인이라 판단되거나 객관 신호(제품 지도 `feature-spec`이 없음·그 도메인 첫 기능·규제/결제/개인정보가 얽힘) 중 하나라도면 brainstorming 진입 시 먼저 한다: 그 도메인에서 흔히 놓치는 사각(권한 경계·데이터 수명·규제·엣지 입력 등)을 생활어 2~3줄로 짚어 🙋 후보로 연결한다(별도 모드 아님·설명 내재; 자기판정에만 기대지 않음, 매 작업 아님).** 기획 중 레퍼런스가 도움될 지점에선 `referencing`(남용 금지; 사용자가 "비슷한 거·경쟁사·사례" 요청 시에도).
 - **버그·이상 동작·테스트 실패:** 고치기 전 `systematic-debugging`.
 - **plan 실행:** `subagent-driven-development`(태스크별 순차 — 각 태스크 후 리뷰) 또는 `executing-plans`(별도 세션). 독립·파일 분리 태스크의 **Sonnet 병렬은 SDD가 아니라 아래 '병렬 위임' 규칙**을 쓴다. SDD의 최종 whole-branch 리뷰 자리는 **차근 pr-reviewer 게이트가 대신**한다(Opus 최종리뷰 중복·판정 혼선 방지; SDD를 썼다면 ledger의 누적 Minor도 pr-reviewer 입력에 얹어 triage 유실 방지).
 - **코드 작성:** 테스트 문화 있으면 `test-driven-development`.
