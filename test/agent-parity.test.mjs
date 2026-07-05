@@ -10,6 +10,7 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 const prReviewer = readFileSync(join(SRC, "agents", "pr-reviewer.md"), "utf8");
 const planValidator = readFileSync(join(SRC, "agents", "plan-validator.md"), "utf8");
 const codexGates = readFileSync(join(SRC, "codex", "gate-agents.md"), "utf8");
+const codeImplementer = readFileSync(join(SRC, "agents", "code-implementer.md"), "utf8");
 
 // 각 마커는 [Claude 에이전트 파일, Codex gate-agents.md] 양쪽에 존재해야 한다.
 const PR_MARKERS = [
@@ -20,6 +21,8 @@ const PR_MARKERS = [
   "git init",                    // 되돌리기 싸게 제안
   "신뢰 경계 밖",                // Fable5 F2: 메모리 주입 차단(검토 대상의 자칭 FP 기록 금지)이 codex에서 지워지는 표류 방어
   "git ls-files --others --exclude-standard", // H3: untracked 신규파일 검수(빈 diff→검수0 방지), 양 플랫폼 표류 방어
+  "비용 폭주",                   // 백로그 D: pr-reviewer 비용 폭주 점검이 codex에서만 지워지는 표류 방어
+  "1위 사고",                    // 백로그 D: 커밋된 시크릿(바이브코딩 1위 사고) 점검이 codex에서만 지워지는 표류 방어
 ];
 const PV_MARKERS = [
   "🙋",                          // 스펙 확인 게이트 대리결정 목록
@@ -33,6 +36,10 @@ const PV_MARKERS = [
   "판단 불가·기계적임이 확인된 항목에 한해서만", // #6b 안전-핵심: 위임 구역 예외 제한절이 codex에서만 넓어지는 표류 방어(pr-reviewer low)
   "비용/외부 발송/외부 부하를 좌우하는 결정", // Fable5 F3: 위임 구역 무효화 렌즈의 비용축이 codex에서만 지워지는 표류 방어
 ];
+const CI_MARKERS = [ // code-implementer(감사 지적: 마커 0개 → 표류 못잡음)
+  "판단이 중요한 결정",          // 보안·권한·동시성 결정은 직접 처리 말고 에스컬레이션
+  "받아쓰지 말고 BLOCKED",       // 백로그 D: 민감면에 안전 결정 빠지면 받아쓰기 금지, 한쪽만 지워지는 표류 방어
+];
 
 test("pr-reviewer 핵심 판정 문구가 Claude·Codex 양쪽에 존재", () => {
   for (const m of PR_MARKERS) {
@@ -44,6 +51,13 @@ test("pr-reviewer 핵심 판정 문구가 Claude·Codex 양쪽에 존재", () =>
 test("plan-validator 핵심 항목이 Claude·Codex 양쪽에 존재", () => {
   for (const m of PV_MARKERS) {
     assert.ok(planValidator.includes(m), `Claude plan-validator.md에 누락: ${m}`);
+    assert.ok(codexGates.includes(m), `Codex gate-agents.md에 누락: ${m}`);
+  }
+});
+
+test("code-implementer 핵심 안전 문구가 Claude·Codex 양쪽에 존재", () => {
+  for (const m of CI_MARKERS) {
+    assert.ok(codeImplementer.includes(m), `Claude code-implementer.md에 누락: ${m}`);
     assert.ok(codexGates.includes(m), `Codex gate-agents.md에 누락: ${m}`);
   }
 });
