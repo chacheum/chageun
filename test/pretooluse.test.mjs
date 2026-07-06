@@ -447,3 +447,25 @@ test("isPush: git push 변형 감지 · 비push는 침묵 · 부분문자열 한
   assert.equal(p("git log"), false);
   assert.equal(isPush("Read", { file_path: "x" }), false);
 });
+
+// P3 push 게이트 wiring: 실제 프로세스로 "git push가 리뷰 없이/stale이면 차단, fresh면 통과" 실증
+test("push 게이트 wiring: 리뷰 없음·stale → exit 2 / fresh·SKIP env → 통과", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = mkdtempSync(join(tmpdir(), "pushgate-"));
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  let n = 0;
+  const T = (lines) => { const p = join(dir, `t${n++}.jsonl`); writeFileSync(p, lines.map((o) => JSON.stringify(o)).join("\n") + "\n"); return p; };
+  const review = { message: { role: "assistant", content: [{ type: "tool_use", name: "Task", input: { subagent_type: "chageun:pr-reviewer" } }] } };
+  const edit = { message: { role: "assistant", content: [{ type: "tool_use", name: "Edit", input: { file_path: "src/app.js" } }] } };
+  const push = (transcript_path) => JSON.stringify({ tool_name: "Bash", tool_input: { command: "git push origin main" }, transcript_path });
+  let r = spawnSync(process.execPath, [HOOK], { input: push(T([edit])), env, encoding: "utf8" });
+  assert.equal(r.status, 2, "리뷰 없음 push 차단");
+  assert.match(r.stderr, /pr-reviewer/);
+  r = spawnSync(process.execPath, [HOOK], { input: push(T([review, edit])), env, encoding: "utf8" });
+  assert.equal(r.status, 2, "stale 리뷰는 통과표 아님");
+  r = spawnSync(process.execPath, [HOOK], { input: push(T([edit, review])), env, encoding: "utf8" });
+  assert.equal(r.status, 0, "fresh 리뷰면 push 통과");
+  r = spawnSync(process.execPath, [HOOK], { input: push(T([edit])), env: { ...env, CHAGEUN_SKIP_GATE_CHECK: "1" }, encoding: "utf8" });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0, "탈출구 유지");
+});
