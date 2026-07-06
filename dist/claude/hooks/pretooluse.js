@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, hasPrReviewer, planReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -133,8 +133,9 @@ process.stdin.on("end", () => {
       if (uhit) return deny(uhit, true);
     }
 
-    // 3) 게이트 생략 감지: 무인 모드는 SKIP 탈출구(CHAGEUN_SKIP_GATE_CHECK)를 무시.
-    if (isPrCreate(name, ti)) {
+    // 3) 게이트 생략 감지(P3: git push 포함 — 무인은 위 2)의 u-push가 선행 차단이라 유인 전용 확장):
+    //    무인 모드는 SKIP 탈출구(CHAGEUN_SKIP_GATE_CHECK)를 무시.
+    if (isPrCreate(name, ti) || isPush(name, ti)) {
       if (UNATTENDED || process.env.CHAGEUN_SKIP_GATE_CHECK !== "1") {
         if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
       }

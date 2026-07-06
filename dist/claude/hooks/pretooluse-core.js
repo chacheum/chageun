@@ -45,7 +45,7 @@ const REASONS = {
   "sql-delete-no-where": "차단: WHERE 없는 DELETE는 테이블 전체를 지웁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "sql-update-no-where": "차단: WHERE 없는 UPDATE는 테이블 전체를 덮어씁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "deploy": "차단(배포는 되돌리기 어려움): 사용자 확인 후 진행하려면 세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하세요(그 세션 동안 배포 검사가 꺼집니다). 이 브레이크는 CLI 배포만 막고 git push→자동배포(Vercel/Netlify 깃연동)는 못 막습니다 — 그건 멈춤 규칙으로 확인하세요.",
-  "gate-skip": "차단: PR 생성 전에 pr-reviewer 게이트를 거치세요(이 세션에 pr-reviewer 실행 흔적이 없습니다). 이미 검토했거나 예외면 CHAGEUN_SKIP_GATE_CHECK=1로 재실행하세요.",
+  "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). 이미 검토했거나 예외면 CHAGEUN_SKIP_GATE_CHECK=1로 재실행하세요.",
 };
 
 // 어떤 도구·입력이 위험한지 판정. 위험하면 사유 키를, 아니면 null.
@@ -77,24 +77,41 @@ function isPrCreate(toolName, toolInput) {
   return /\bgh\s+pr\s+(create|merge)\b/.test(String((toolInput && toolInput.command) || ""));
 }
 
-// transcript objs에 pr-reviewer가 "실제로 실행"된 흔적이 있는지(문자열 언급이 아니라
-// Task/Agent tool_use의 subagent_type/agentType에 pr-reviewer 포함). 순수함수(fs 없음).
+// transcript objs에 pr-reviewer가 "실제로 실행"된 흔적이 있고 그 흔적이 신선한지(P3) —
+// 문자열 언급이 아니라 Task/Agent tool_use의 subagent_type 기준. 리뷰 이후 코드 수정
+// (Edit/Write류, 문서 제외 — isCodeTarget)이 있으면 stale(false): 검토 안 받은 코드가
+// 검토 딱지를 달고 나가지 않게(🙋 합의: 문서 수정은 무효화 안 함 · 재검토 1회 강제 수용).
+// 한계(자인): Bash(sed·리다이렉션)로 고친 파일은 lastCodeEdit에 안 잡힌다 — 얇은 그물. 순수함수(fs 없음).
 function hasPrReviewer(objs) {
   if (!Array.isArray(objs)) return false;
+  let lastReview = -1, lastCodeEdit = -1, seq = 0;
   for (const o of objs) {
     const m = (o && o.message) || o;
     const c = m && m.content;
     if (!Array.isArray(c)) continue;
     for (const b of c) {
       if (!b || b.type !== "tool_use") continue;
+      seq++;
       const nm = String(b.name || "");
-      if (!/^(Task|Agent)$/.test(nm)) continue;
       const inp = b.input || {};
-      const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
-      if (/pr-reviewer/.test(sub)) return true;
+      if (/^(Task|Agent)$/.test(nm)) {
+        const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
+        if (/pr-reviewer/.test(sub)) lastReview = seq;
+      } else if (EDIT_TOOLS_RE.test(nm)) {
+        if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
+      }
     }
   }
-  return false;
+  return lastReview !== -1 && lastReview > lastCodeEdit;
+}
+
+// P3: git push 감지(게이트 생략 검사용) — git 다음이 플래그류뿐일 때만 push 서브커맨드로 인정
+// (bare "push" 문자열 오탐 방지 — 무인 ANY_PUSH(과차단 허용)보다 좁게). 알려진 한계:
+// 따옴표를 해석하지 않아 명령 안의 "git push" 부분문자열은 오탐 가능(SKIP env로 해소, 테스트에 고정).
+const PUSH_RE = /\bgit(?:\s+(?:-[cC]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+push\b/;
+function isPush(toolName, toolInput) {
+  if (toolName !== "Bash") return false;
+  return PUSH_RE.test(String((toolInput && toolInput.command) || ""));
 }
 
 // ── P1 plan-validator 리마인더(soft) ────────────────────────────────────────
@@ -279,4 +296,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, planReminderNeeded, unattendedBlock, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
+module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, unattendedBlock, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
