@@ -8,6 +8,14 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          { "type": "command", "command": "node \"${PLUGIN_ROOT}/hooks/pretooluse-codex.mjs\"", "timeout": 10 }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
