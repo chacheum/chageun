@@ -7,7 +7,26 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, hasPrReviewer, planReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
+
+// P1 리마인더 대상 도구(코드 수정류).
+const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
+// P1 리마인더 전용 transcript 리더 — needle 조기 탈출(plan 없는 세션의 매 편집 파싱 비용 회피).
+// 주의: prReviewerRan(게이트 생략 감지)은 이 헬퍼를 쓰지 않는다 — "pr-reviewer"에 "plan"이 없어
+// 조기 탈출을 공유하면 gate-skip이 회귀한다(게이트 CONDITIONAL 조건). 부재·예외는 null(리마인더 침묵).
+function readTranscriptIfMentions(transcriptPath, needle) {
+  try {
+    if (!transcriptPath || !fs.existsSync(transcriptPath)) return null;
+    const raw = fs.readFileSync(transcriptPath, "utf8");
+    if (raw.indexOf(needle) === -1) return null;
+    const objs = [];
+    for (const ln of raw.split("\n")) {
+      const s = ln.trim(); if (!s) continue;
+      try { objs.push(JSON.parse(s)); } catch (_) { /* skip */ }
+    }
+    return objs;
+  } catch (_) { return null; }
+}
 
 function deny(reasonKey, unattended) {
   process.stderr.write(unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey));
@@ -120,6 +139,23 @@ process.stdin.on("end", () => {
         if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
       }
       // SKIP_GATE=1(유인)이면 게이트 검사 생략.
+    }
+
+    // 4) P1 리마인더(soft): plan 문서를 쓰고 plan-validator 없이 첫 코드 수정 시작 →
+    //    차단 없이 리마인더 한 줄 주입(additionalContext). 자체 try/catch — 리마인더는 어떤
+    //    경우에도 차단·park 사유가 되지 않는다(무인 fail-closed catch로 새지 않게).
+    if (EDIT_RE.test(String(name || ""))) {
+      try {
+        const objs = readTranscriptIfMentions(input.transcript_path, "plan");
+        if (objs && planReminderNeeded(objs, name, ti)) {
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              additionalContext: "차근 리마인더: 이번 세션에 plan 문서를 작성했는데 plan-validator 게이트를 아직 거치지 않았습니다. 규칙상 구현 시작 직전 plan-validator 호출이 필수입니다(코어 '검증 게이트'). 지금 게이트를 먼저 실행하세요.",
+            },
+          }));
+        }
+      } catch (_) { /* 리마인더 실패는 조용히 무시 */ }
     }
   } catch (_) {
     // 무인: 판정 중 예외 = 불확실 = 안전측(park). 유인: 기존대로 fail-open(사람이 백스톱).

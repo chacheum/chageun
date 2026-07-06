@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-const { block, isPrCreate, hasPrReviewer } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+const { block, isPrCreate, hasPrReviewer, planReminderNeeded } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 
 const bash = (command) => block("Bash", { command });
 const sql = (query) => block("mcp__plugin_supabase_supabase__execute_sql", { query });
@@ -346,4 +349,64 @@ test("게이트 보강(감사 #2): 무인 Bash SQL이 원격 호스트 env(PGHOS
   assert.equal(ub('MYSQL_HOST=prod.db mysql -e "INSERT INTO t VALUES(1)"'), "u-db-write");
   assert.equal(ub('export PGHOST=localhost && psql -c "INSERT INTO t VALUES(1)"'), null, "localhost env는 허용(샌드박스)");
   assert.equal(ub('export PGHOST=prod.example.com && psql -c "SELECT * FROM t"'), null, "원격이어도 읽기는 허용");
+});
+
+// ── P1 plan-validator 리마인더 판정(순수함수) ──────────────────────────────
+const TU = (name, input) => ({ message: { role: "assistant", content: [{ type: "tool_use", name, input }] } });
+const editCode = { file_path: "src/app.js", old_string: "a", new_string: "b" };
+
+test("리마인더: plan 작성 후 첫 코드 수정 + validator 미실행 → true", () => {
+  const objs = [TU("Write", { file_path: "docs/2026-07-06-login-plan.md", content: "..." })];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), true);
+});
+test("리마인더: plan 없으면 침묵", () => {
+  assert.equal(planReminderNeeded([], "Edit", editCode), false);
+});
+test("리마인더: plan-validator 실행 후엔 침묵", () => {
+  const objs = [
+    TU("Write", { file_path: "docs/login-plan.md", content: "..." }),
+    TU("Task", { subagent_type: "chageun:plan-validator", prompt: "검증" }),
+  ];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), false);
+});
+test("리마인더: plan 후 이미 코드 수정이 있었으면(두 번째부터) 침묵 — 세션당 1회", () => {
+  const objs = [
+    TU("Write", { file_path: "docs/login-plan.md", content: "..." }),
+    TU("Edit", { file_path: "src/app.js" }),
+  ];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), false);
+});
+test("리마인더: 새 plan을 다시 쓰면 리마인더 재무장", () => {
+  const objs = [
+    TU("Write", { file_path: "docs/a-plan.md" }),
+    TU("Task", { subagent_type: "chageun:plan-validator" }),
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("Write", { file_path: "docs/b-plan.md" }),
+  ];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), true, "b-plan은 아직 미검증");
+});
+test("리마인더: 대상이 md/docs면 침묵(문서 작업은 구현 아님)", () => {
+  const objs = [TU("Write", { file_path: "docs/login-plan.md" })];
+  assert.equal(planReminderNeeded(objs, "Write", { file_path: "docs/notes.md" }), false);
+  assert.equal(planReminderNeeded(objs, "Write", { file_path: "README.md" }), false);
+});
+test("리마인더: 수정 도구가 아니면 침묵", () => {
+  const objs = [TU("Write", { file_path: "docs/login-plan.md" })];
+  assert.equal(planReminderNeeded(objs, "Bash", { command: "ls" }), false);
+});
+
+// wiring: 실제 프로세스로 stdout JSON(additionalContext) 확인 — 차단 아님(exit 0)
+test("리마인더 wiring: transcript에 plan만 있으면 Edit 시 additionalContext 출력", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = mkdtempSync(join(tmpdir(), "remind-"));
+  const tpath = join(dir, "t.jsonl");
+  writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "tool_use", name: "Write", input: { file_path: "docs/x-plan.md" } }] } }) + "\n");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: "Edit", tool_input: { file_path: "src/app.js" }, transcript_path: tpath }),
+    env, encoding: "utf8",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0, "차단 아님");
+  assert.match(r.stdout || "", /plan-validator/, "리마인더 주입");
 });
