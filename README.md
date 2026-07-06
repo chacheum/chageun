@@ -60,6 +60,8 @@ codex plugin marketplace add chacheum/chageun
 
 그다음 `/plugins`에서 `chageun`를 설치하고 `/reload-plugins`를 실행합니다.
 
+**훅 승인(1회):** Codex에서 `/hooks`를 열어 chageun 훅(SessionStart·Stop·PreToolUse)을 승인하세요. Codex 보안 규칙상 플러그인 훅은 승인 전까지 조용히 꺼져 있습니다.
+
 게이트 에이전트를 분리된 컨텍스트로 돌리고 싶으면 `~/.codex/config.toml`에 아래를 추가하세요. 없어도 인라인으로 동작합니다.
 
 ```toml
