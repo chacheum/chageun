@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-const { block, isPrCreate, hasPrReviewer, planReminderNeeded } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+const { block, isPrCreate, hasPrReviewer, planReminderNeeded, isPush } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 
 const bash = (command) => block("Bash", { command });
 const sql = (query) => block("mcp__plugin_supabase_supabase__execute_sql", { query });
@@ -409,4 +409,41 @@ test("리마인더 wiring: transcript에 plan만 있으면 Edit 시 additionalCo
   rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, "차단 아님");
   assert.match(r.stdout || "", /plan-validator/, "리마인더 주입");
+});
+
+// ── P3 신선도: 리뷰 흔적 이후 코드 수정이 있으면 stale(무효) ──
+test("hasPrReviewer 신선도: 리뷰 → 코드 수정 → stale(false)", () => {
+  const objs = [
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Edit", { file_path: "src/app.js" }),
+  ];
+  assert.equal(hasPrReviewer(objs), false, "리뷰 뒤 코드 수정 = 검토 안 받은 코드");
+});
+test("hasPrReviewer 신선도: 코드 수정 → 리뷰 → fresh(true)", () => {
+  const objs = [
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true);
+});
+test("hasPrReviewer 신선도: 리뷰 → 문서만 수정 → 여전히 fresh", () => {
+  const objs = [
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Edit", { file_path: "docs/note.md" }),
+    TU("Write", { file_path: "README.md" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "문서 수정은 신선도 안 깸(🙋 합의)");
+});
+
+// ── P3 push 감지 ──
+test("isPush: git push 변형 감지 · 비push는 침묵 · 부분문자열 한계 명시", () => {
+  const p = (command) => isPush("Bash", { command });
+  assert.equal(p("git push origin main"), true);
+  assert.equal(p("git -C /x push"), true);
+  assert.equal(p("git --git-dir=/x push"), true);
+  assert.equal(p("cd a && git push"), true);
+  assert.equal(p("git commit -m 'will push later'"), false, "bare push는 오탐 아님");
+  assert.equal(p('git commit -m "docs: how to git push"'), true, "알려진 한계: 'git push' 부분문자열은 오탐(따옴표 미해석) — SKIP env로 해소");
+  assert.equal(p("git log"), false);
+  assert.equal(isPush("Read", { file_path: "x" }), false);
 });
