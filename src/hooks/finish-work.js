@@ -26,6 +26,58 @@ const REASON_NOEVIDENCE = "\"돌려봤다/테스트 통과\"처럼 실제로 실
 // 실행 주장(돌려봤다/테스트 통과 등). 보고어휘(✅·성공 기준·완료)는 제외 — 정상 끝 점검 오차단 방지.
 const EXEC_CLAIM_RE = /돌려\s*(보|봤|본)|실행해\s*(보|봤|본)|테스트[^.!?\n]{0,20}통과|스크린샷[^.!?\n]{0,10}(찍|캡처)|직접\s*눌러|구동\s*검증[^.!?\n]{0,10}(완료|했|끝)|실제로\s*(확인|실행)|눌러\s*(보|봤)/;
 
+// P1 스킬갭 가드: 절차 스킬(지연로드)의 저발동 기계 백스톱 — 결정 시점(턴 종료) 검사.
+// 차단 좁게: FULL 끝 점검 채점 텍스트(끝 점검/자가점검 + 채점 표시 2개 이상, LIGHT 제외)와
+// 실구동 완료 주장만 반응. 채점 표시 1개는 설명일 수 있어 침묵(오탐 축소).
+// 세션 내 스킬 로드 1회면 통과(스펙 🙋 합의 — 훅은 바닥, "매번 로드" 규칙 자체는 각 절이 정의).
+const FINISH_TEXT_RE = /(끝\s*점검|자가점검)/;
+const LIGHT_RE = /LIGHT/;
+const RUN_CLAIM_RE = /(실구동|구동\s*검증|띄워\s*(보|봤|서))[^.!?\n]{0,20}(✅|완료|했|됐|끝|통과)/;
+
+// 세션 transcript에 Skill 도구로 해당 스킬을 로드한 흔적이 있나.
+// 형식은 실제 transcript로 검증됨(2026-07-06): {"name":"Skill","input":{"skill":"chageun:spec-gate"}}
+function hasSkillLoad(objs, name) {
+  if (!Array.isArray(objs)) return false;
+  for (const o of objs) {
+    const m = msgOf(o); const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (b && b.type === "tool_use" && String(b.name || "") === "Skill" &&
+          String((b.input && b.input.skill) || "").indexOf(name) !== -1) return true;
+    }
+  }
+  return false;
+}
+
+// 이번 요청 구간(마지막 진짜 user 이후) assistant 텍스트를 합쳐 스킬갭 판정.
+// WAIT_RE 면제 없음 — 질문으로 끝나도 이미 수행된 무절차 끝 점검/검증 선언은 위반(1회 차단이라 안전).
+function shouldBlockSkillGap(objs) {
+  if (!Array.isArray(objs) || !objs.length) return null;
+  let u = -1;
+  for (let i = objs.length - 1; i >= 0; i--) {
+    if (roleOf(objs[i]) !== "user") continue;
+    if (isToolResultOnly(msgOf(objs[i]))) continue;
+    u = i; break;
+  }
+  const texts = [];
+  for (let i = u + 1; i < objs.length; i++) {
+    if (roleOf(objs[i]) !== "assistant") continue;
+    const t = textOf(msgOf(objs[i])); if (t) texts.push(t);
+  }
+  const text = texts.join("\n");
+  if (!text) return null;
+  const marks = (text.match(/[✅❌]/g) || []).length;
+  if (FINISH_TEXT_RE.test(text) && marks >= 2 && !LIGHT_RE.test(text) &&
+      !hasSkillLoad(objs, "finish-check")) return "finish-check";
+  if (RUN_CLAIM_RE.test(text) && !hasSkillLoad(objs, "run-verify")) return "run-verify";
+  return null;
+}
+
+const REASON_SKILLGAP = {
+  "finish-check": "FULL 끝 점검을 chageun:finish-check 스킬 로드 없이 마쳤습니다. 지금 Skill 도구로 chageun:finish-check를 로드하고 그 절차(채점·제품지도 갱신·체크리스트)대로 끝 점검을 다시 마치세요. (LIGHT 끝 점검이었다면 'LIGHT'를 명시하세요.)",
+  "run-verify": "실구동 검증을 chageun:run-verify 스킬 로드 없이 완료로 선언했습니다. 지금 Skill 도구로 chageun:run-verify를 로드하고 그 절차(띄우기·엣지 눌러보기·보고)대로 검증한 뒤 보고하세요.",
+};
+
 // user 메시지가 도구결과(tool_result)로만 이뤄졌으면 '진짜 user'가 아님(도구 실행 결과).
 function isToolResultOnly(m) {
   const c = m && m.content;
@@ -130,8 +182,9 @@ function run() {
       const text = texts.join("\n").trim();
       const promise = text ? shouldBlock(text) : false;
       const noEvidence = shouldBlockNoEvidence(objs);
-      if (!promise && !noEvidence) return process.exit(0);
-      const reason = promise ? REASON : REASON_NOEVIDENCE;
+      const gap = shouldBlockSkillGap(objs);
+      if (!promise && !noEvidence && !gap) return process.exit(0);
+      const reason = promise ? REASON : noEvidence ? REASON_NOEVIDENCE : REASON_SKILLGAP[gap];
       process.stdout.write(JSON.stringify({ decision: "block", reason }));
       process.exit(0);
     } catch (_) {
@@ -140,5 +193,5 @@ function run() {
   });
 }
 
-module.exports = { shouldBlock, shouldBlockNoEvidence, WAIT_RE, PROMISE_RE };
+module.exports = { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, WAIT_RE, PROMISE_RE };
 if (require.main === module) run();

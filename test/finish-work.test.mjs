@@ -5,7 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { shouldBlock, shouldBlockNoEvidence } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js"));
+const { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js"));
 
 const U = (t) => ({ message: { role: "user", content: [{ type: "text", text: t }] } });
 const A = (t) => ({ message: { role: "assistant", content: [{ type: "text", text: t }] } });
@@ -69,4 +69,45 @@ test("증거가드: '아까' + MCP 실행(execute_sql) 증거 → 통과(Supabas
 test("증거가드: '아까' + 읽기전용 MCP(list_tables)만 → 실행 증거 아님 → 차단", () => {
   const objs = [U("확인해"), AMcp("mcp__plugin_supabase_supabase__list_tables"), UResult(), U("좋아"), A("아까 돌려보니 테스트 통과했으니 마무리합니다.")];
   assert.equal(shouldBlockNoEvidence(objs), true, "읽기전용 MCP는 실행 증거로 안 침");
+});
+
+// P1 스킬갭 가드: FULL 끝 점검/실구동 주장이 절차 스킬 로드 없이 끝나면 1회 차단.
+// 실제 transcript 형식 검증됨(2026-07-06): {"name":"Skill","input":{"skill":"chageun:spec-gate"}}
+const ASkill = (skill) => ({ message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill } }] } });
+
+test("스킬갭: FULL 끝 점검 텍스트(✅ 2개) + finish-check 미로드 → 차단", () => {
+  const objs = [U("기능 마무리해줘"), A("끝 점검 — 자가점검: 성공 기준 1 ✅ 충족, 2 ✅ 충족.")];
+  assert.equal(shouldBlockSkillGap(objs), "finish-check");
+});
+test("스킬갭: finish-check 로드했으면(세션 내 1회) 통과", () => {
+  const objs = [U("마무리해줘"), ASkill("chageun:finish-check"), UResult(), A("끝 점검 — 자가점검: 성공 기준 1 ✅, 2 ✅ 충족.")];
+  assert.equal(shouldBlockSkillGap(objs), null);
+});
+test("스킬갭: LIGHT 끝 점검은 로드 불요 → 통과", () => {
+  const objs = [U("오타 고쳐줘"), A("끝 점검(LIGHT): 성공 기준 충족 ✅✅ — 오타 2건 수정.")];
+  assert.equal(shouldBlockSkillGap(objs), null);
+});
+test("스킬갭: 끝 점검 어휘 없으면(✅만) 침묵", () => {
+  const objs = [U("요약해줘"), A("성공 기준 3개 ✅✅✅ 모두 충족했습니다.")];
+  assert.equal(shouldBlockSkillGap(objs), null);
+});
+test("스킬갭: 끝 점검 언급만 있고 채점(✅/❌) 없으면 침묵", () => {
+  const objs = [U("설명해줘"), A("다음 단계는 끝 점검입니다.")];
+  assert.equal(shouldBlockSkillGap(objs), null);
+});
+test("스킬갭: 끝 점검 설명(✅ 1개)은 침묵 — 채점 표시 2개부터 채점으로 간주(오탐 축소)", () => {
+  const objs = [U("끝 점검이 뭐야"), A("끝 점검은 성공 기준을 항목마다 ✅로 채점하는 절차입니다.")];
+  assert.equal(shouldBlockSkillGap(objs), null);
+});
+test("스킬갭: 실구동 주장 + run-verify 미로드 → 차단", () => {
+  const objs = [U("화면 고쳐줘"), ATool(), UResult(), A("실제로 띄워서 확인했습니다. 실구동 검증 완료.")];
+  assert.equal(shouldBlockSkillGap(objs), "run-verify");
+});
+test("스킬갭: 실구동 주장 + run-verify 로드 → 통과", () => {
+  const objs = [U("화면 고쳐줘"), ASkill("chageun:run-verify"), UResult(), ATool(), UResult(), A("실구동 검증 완료했습니다.")];
+  assert.equal(shouldBlockSkillGap(objs), null);
+});
+test("스킬갭: 이전 요청의 끝 점검은 이번 요청과 무관(요청 구간만 검사)", () => {
+  const objs = [U("마무리해줘"), A("끝 점검 — 자가점검 ✅✅"), U("고마워, 다른 질문"), A("네, 답변입니다.")];
+  assert.equal(shouldBlockSkillGap(objs), null);
 });
