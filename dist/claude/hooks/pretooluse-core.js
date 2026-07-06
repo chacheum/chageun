@@ -97,6 +97,45 @@ function hasPrReviewer(objs) {
   return false;
 }
 
+// ── P1 plan-validator 리마인더(soft) ────────────────────────────────────────
+// "이번 세션에 plan 문서(.md, 경로에 plan)를 썼는데 plan-validator 없이 코드 수정을 시작"의
+// 첫 1회만 참(무상태 1회 보장 — plan 이후 코드 수정 흔적이 이미 있으면 침묵).
+// 차단이 아니라 리마인더 주입 판정. 넓은 감지보다 소음 회피 우선(스펙 🙋 합의: plan 파일명 휴리스틱).
+// 새 plan을 다시 쓰면 재무장(validated·codeEdited 리셋 — 새 plan은 새 검증 대상). 순수함수(fs 없음).
+const EDIT_TOOLS_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
+function isPlanDocPath(p) { const s = String(p || ""); return /\.md$/i.test(s) && /plan/i.test(s); }
+function isCodeTarget(p) {
+  const s = String(p || "");
+  if (!s) return false;
+  if (/\.mdx?$/i.test(s)) return false;      // 문서는 구현 아님
+  if (/(^|\/)docs\//i.test(s)) return false; // docs/ 밑도 문서
+  return true;
+}
+function planReminderNeeded(objs, toolName, toolInput) {
+  if (!EDIT_TOOLS_RE.test(String(toolName || ""))) return false;
+  const ti = toolInput || {};
+  if (!isCodeTarget(ti.file_path || ti.notebook_path)) return false;
+  if (!Array.isArray(objs)) return false;
+  let planSeen = false, validated = false, codeEdited = false;
+  for (const o of objs) {
+    const m = (o && o.message) || o; const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== "tool_use") continue;
+      const nm = String(b.name || ""); const inp = b.input || {};
+      if (EDIT_TOOLS_RE.test(nm)) {
+        const p = inp.file_path || inp.notebook_path;
+        if (isPlanDocPath(p)) { planSeen = true; validated = false; codeEdited = false; }
+        else if (planSeen && isCodeTarget(p)) codeEdited = true;
+      } else if (/^(Task|Agent)$/.test(nm)) {
+        const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
+        if (planSeen && /plan-validator/.test(sub)) validated = true;
+      }
+    }
+  }
+  return planSeen && !validated && !codeEdited;
+}
+
 // ── 무인 모드(CHAGEUN_UNATTENDED=1) 전용 추가 차단 ──────────────────────────
 // 유인 모드엔 영향 없음(래퍼가 무인일 때만 호출). base block보다 넓게 막고, 탈출구 env는 래퍼에서 무시.
 // git과 push 사이에 어떤 토큰이 와도(-c key=val, -C dir, --git-dir=… 등) 차단. 과차단(커밋메시지 속 " push" 등)은 park라 안전.
@@ -240,4 +279,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, unattendedBlock, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
+module.exports = { block, reasonFor, isPrCreate, hasPrReviewer, planReminderNeeded, unattendedBlock, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
