@@ -212,6 +212,8 @@ PR 권고: APPROVE | REQUEST CHANGES | BLOCK
 
 변경 규모가 클 때(수백 줄+ 실질 변경): 검수 신뢰도가 떨어진다는 점을 보고하고, 더 작은 단위(화면/기능 하나)로 쪼개 재검수 제안.
 
+자기 검증: §1 밖(본문·비전문가 요약)에 서술한 실동작 우려가 모두 §1 findings로 올라갔고, 최종 권고가 최고 severity를 반영하는가(판정에 안 실린 우려 없음)? 성공 기준 대조표를 매겼는가? 마지막 줄에 APPROVE/REQUEST CHANGES/BLOCK 있는가?
+
 ---
 
 ## code-implementer 지시문
