@@ -23,6 +23,8 @@ const PR_MARKERS = [
   "git ls-files --others --exclude-standard", // H3: untracked 신규파일 검수(빈 diff→검수0 방지), 양 플랫폼 표류 방어
   "비용 폭주",                   // 백로그 D: pr-reviewer 비용 폭주 점검이 codex에서만 지워지는 표류 방어
   "1위 사고",                    // 백로그 D: 커밋된 시크릿(바이브코딩 1위 사고) 점검이 codex에서만 지워지는 표류 방어
+  "❌인데 APPROVE로 어긋나지 않게", // P4 F1/F2: 성공기준 ❌→verdict 배선(대조표 ❌인데 APPROVE 방지)이 codex에서만 지워지는 표류 방어
+  "재리뷰(재실행)로 해소",        // P4 F4: BLOCK/REQUEST CHANGES 수정 후 재리뷰 강제가 codex에서만 지워지는 표류 방어
 ];
 const PV_MARKERS = [
   "🙋",                          // 스펙 확인 게이트 대리결정 목록
@@ -35,6 +37,8 @@ const PV_MARKERS = [
   "예외를 무효화하고 high/blocker", // #6b 안전-핵심: 위임 구역 방패절이 codex에서만 지워지는 표류 방어(plan-validator HIGH-2)
   "판단 불가·기계적임이 확인된 항목에 한해서만", // #6b 안전-핵심: 위임 구역 예외 제한절이 codex에서만 넓어지는 표류 방어(pr-reviewer low)
   "비용/외부 발송/외부 부하를 좌우하는 결정", // Fable5 F3: 위임 구역 무효화 렌즈의 비용축이 codex에서만 지워지는 표류 방어
+  "❌인데 GO로 어긋나지 않게",   // P4 F2: plan-validator 성공기준 ❌→verdict 배선이 codex 미러에서만 지워지는 표류 방어
+  "판정에 안 실린 우려 없음",     // P4 F3: 자유서술 우려→findings·판정 배선 불변식이 codex에서만 지워지는 표류 방어
 ];
 const CI_MARKERS = [ // code-implementer(감사 지적: 마커 0개 → 표류 못잡음)
   "판단이 중요한 결정",          // 보안·권한·동시성 결정은 직접 처리 말고 에스컬레이션
