@@ -230,7 +230,7 @@ const LOOPBACK = /^(?:localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|::1)$/i;
 function egressHosts(seg) {
   const hosts = [];
   let m;
-  const url = /https?:\/\/(?:[^/\s@]*@)?(\[[^\]]*\]|[^/\s:'"@]+)/ig;   // URL(userinfo 제거·IPv6)
+  const url = /https?:\/\/(?:[^/\s]*@)?(\[[^\]]*\]|[^/\s:'"@]+)/ig;    // URL(userinfo 제거 — 마지막 @까지, IPv6)
   while ((m = url.exec(seg)) !== null) hosts.push(m[1]);
   const at = /(?:^|\s)[\w.-]+@(\[[^\]]*\]|[\w.-]+)(?=[:\s]|$)/ig;      // scp user@host
   while ((m = at.exec(seg)) !== null) hosts.push(m[1]);
