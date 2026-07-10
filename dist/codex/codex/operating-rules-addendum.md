@@ -14,14 +14,14 @@
 
 ## 도구 호출 변환
 
-운영 규칙의 "Agent tool 호출" · "서브에이전트 띄우기"는 Codex에서 `spawn_agent`로 실행합니다.
+운영 규칙의 "subagent delegation"(서브에이전트 위임·띄우기)는 Codex에서 `spawn_agent`로 실행합니다.
 `spawn_agent` 사용에는 **`[features] multi_agent=true`** 가 필요합니다.
 
 상세 도구 매핑은 `codex/codex-tools.md`를 참조하세요.
 
 ## 스킬 로드 지시 변환
 
-운영 규칙의 **"반드시 Skill 도구로 `chageun:○○`를 로드한 뒤 진행"** 류 지시(spec-gate·run-verify·finish-check·routing 등 절차 스킬 전부)는 Codex에서 **"운영 규칙 뒤에 인라인된 해당 스킬 본문을 그 시점에 따른다"**로 읽습니다 — Codex엔 Skill 도구가 없고 해당 스킬 본문들이 이미 이 세션에 첨부돼 있습니다. "로드 없이 골격만으로 마치지 않는다"는 강제는 동일하게 유효합니다(본문 절차를 건너뛰지 않음).
+운영 규칙의 **"load `chageun:○○` via the Skill tool"(반드시 Skill 도구로 로드)** 류 지시(spec-gate·run-verify·finish-check·routing·formats 등 절차 스킬 전부)는 Codex에서 **"운영 규칙 뒤에 인라인된 해당 스킬 본문을 그 시점에 따른다"**로 읽습니다 — Codex엔 Skill 도구가 없고 해당 스킬 본문들이 이미 이 세션에 첨부돼 있습니다. "로드 없이 골격만으로 마치지 않는다"는 강제는 동일하게 유효합니다(본문 절차를 건너뛰지 않음).
 
 ## 기계 훅 (승인 후 작동 — 얇은 2차 그물)
 
