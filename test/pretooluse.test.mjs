@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-const { block, isPrCreate, hasPrReviewer, planReminderNeeded, isPush } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, isPush } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 
 const bash = (command) => block("Bash", { command });
 const sql = (query) => block("mcp__plugin_supabase_supabase__execute_sql", { query });
@@ -393,6 +393,47 @@ test("리마인더: 대상이 md/docs면 침묵(문서 작업은 구현 아님)"
 test("리마인더: 수정 도구가 아니면 침묵", () => {
   const objs = [TU("Write", { file_path: "docs/login-plan.md" })];
   assert.equal(planReminderNeeded(objs, "Bash", { command: "ls" }), false);
+});
+
+// ── routing 리마인더 판정(batch6 · 순수함수) ──────────────────────────────
+const spawnCI = { subagent_type: "chageun:code-implementer", prompt: "구현" };
+
+test("routing 리마인더: 첫 code-implementer 위임 + routing 미로드 → true", () => {
+  assert.equal(routingReminderNeeded([], "Task", spawnCI), true);
+  assert.equal(routingReminderNeeded([], "Agent", spawnCI), true, "Agent 도구명도 동일");
+});
+test("routing 리마인더: chageun:routing 로드 후엔 침묵", () => {
+  const objs = [{ message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill: "chageun:routing" } }] } }];
+  assert.equal(routingReminderNeeded(objs, "Task", spawnCI), false);
+});
+test("routing 리마인더: 이미 code-implementer 위임 흔적 있으면 침묵(1회 보장)", () => {
+  const objs = [TU("Task", spawnCI)];
+  assert.equal(routingReminderNeeded(objs, "Task", spawnCI), false);
+});
+test("routing 리마인더: 게이트·다른 서브에이전트 스폰엔 침묵", () => {
+  assert.equal(routingReminderNeeded([], "Task", { subagent_type: "chageun:plan-validator" }), false);
+  assert.equal(routingReminderNeeded([], "Task", { subagent_type: "chageun:pr-reviewer" }), false);
+  assert.equal(routingReminderNeeded([], "Bash", { command: "ls" }), false, "Agent 도구가 아니면 침묵");
+});
+test("routing 리마인더: 다른 스킬 로드는 로드로 안 침(routing만)", () => {
+  const objs = [{ message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill: "chageun:finish-check" } }] } }];
+  assert.equal(routingReminderNeeded(objs, "Task", spawnCI), true);
+});
+
+// routing wiring: 실제 프로세스 — 차단 아님(exit 0) + additionalContext 주입
+test("routing 리마인더 wiring: 미로드 상태 code-implementer 스폰 시 additionalContext 출력", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = mkdtempSync(join(tmpdir(), "routing-"));
+  const tpath = join(dir, "t.jsonl");
+  writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "GO 받았습니다" }] } }) + "\n");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: "Task", tool_input: spawnCI, transcript_path: tpath }),
+    env, encoding: "utf8",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0, "차단 아님(soft)");
+  assert.match(r.stdout || "", /chageun:routing/, "리마인더 주입");
 });
 
 // wiring: 실제 프로세스로 stdout JSON(additionalContext) 확인 — 차단 아님(exit 0)
