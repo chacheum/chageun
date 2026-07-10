@@ -15,7 +15,7 @@
   },
   "components": {
     "rules": ["operating-rules.md"],
-    "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan", "unattended-loop", "finish-check", "spec-gate", "run-verify"],
+    "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan", "unattended-loop", "finish-check", "spec-gate", "run-verify", "routing"],
     "agents": ["plan-validator", "pr-reviewer", "code-implementer"],
     "hooks": ["activate.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js"],
     "assets": ["chageun-flow.png"]
