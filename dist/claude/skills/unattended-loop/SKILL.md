@@ -1,6 +1,6 @@
 ---
 name: unattended-loop
-description: 무인 빌드 loop — 사람이 자리를 비운 사이 세션이 할 일 하나를 계획→검증→구현→로컬 확인→검토→저장까지 한 바퀴 안전하게 만들어 두는 걸음마 엔진. 사용자가 "무인으로 맡길게 / 자리 비운 사이 만들어둬 / unattended loop / 밤새 돌려"라고 하거나 chageun-unattended 런처로 무인 세션을 시작할 때 발동한다. Claude 전용(무인 안전 훅이 있는 곳에서만).
+description: 무인 빌드 loop — 사람이 자리를 비운 사이 할 일 하나를 계획→구현→검증→저장까지 한 바퀴 안전하게 만들어 두는 엔진. 사용자가 "무인으로 맡길게 / 자리 비운 사이 만들어둬 / unattended loop / 밤새 돌려"라고 하거나 chageun-unattended 런처로 무인 세션을 시작할 때 발동한다. Claude 전용(무인 안전 훅이 있는 곳에서만).
 ---
 
 # 무인 빌드 loop (unattended-loop) — 걸어다니는 뼈대

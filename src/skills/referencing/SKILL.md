@@ -1,6 +1,6 @@
 ---
 name: referencing
-description: 기획·브레인스토밍 중 레퍼런스(경쟁사·유사제품·UX·사례) 조사가 필요할 때 사용. 사용자가 "비슷한 거 찾아줘 / 경쟁사 어때 / 레퍼런스 / 사례 좀" 또는 영어로 "competitor / similar apps / reference / example / benchmark" 같은 말을 하거나, 브레인스토밍에서 기획 방향 결정이 막힐 때 발동한다. 비개발자의 기획을 압축·명확화한다.
+description: 기획·브레인스토밍 중 레퍼런스(경쟁사·유사제품·UX·사례) 조사가 필요할 때 사용. 사용자가 "비슷한 거 찾아줘 / 경쟁사 어때 / 레퍼런스 / 사례 좀" 또는 영어로 "competitor / similar apps / reference / example / benchmark" 같은 말을 하거나, 브레인스토밍에서 기획 방향 결정이 막힐 때 발동한다.
 ---
 
 # 레퍼런싱
