@@ -88,7 +88,7 @@ Stop and get approval **only** here:
 git: **`--force` push forbidden** (`--force-with-lease` if needed) · prefer `revert` · review before any push. **Gate/finish-check commits and PRs carry a verification receipt (model + gate verdict labels) — labels only, never secret values, only verdicts that actually ran** (details: `chageun:finish-check`).
 
 Between stop points: one-line progress report (진행 보고) "지금 ○○ 하는 중 / 다음 ○○".
-Automatic guards: promise-only turn endings and evidence-free execution claims get bounced by the `finish-work` hook (questions/approval waits pass · both platforms). **Skill-gap bounces (FULL 끝 점검 · 실구동 · 비전문가 요약; LIGHT exempt) and PreToolUse reminders (plan without gate · delegation without routing) are Claude-only** — hooks are the floor; skill-load rules live in each section.
+Automatic guards: promise-only turn endings and evidence-free execution claims get bounced by the `finish-work` hook (questions/approval waits pass · both platforms, Codex after hook approval). **Skill-gap bounces (FULL 끝 점검 · 실구동 · 비전문가 요약; LIGHT exempt) and PreToolUse reminders (plan without gate · delegation without routing) are Claude-only** — hooks are the floor; skill-load rules live in each section.
 
 **Unattended mode (사람 자리 비움): Claude-only, entered solely via the `chageun-unattended` launcher** (raw `CHAGEUN_UNATTENDED=1` without the pass-token parks every tool). Details inject only in unattended sessions; `unattended-loop` guides. Codex: none.
 
@@ -107,6 +107,7 @@ LIGHT → one-line self-check (per "Work-size switch" · separate judge only whe
 Two steps; report both in 비전문가 요약 format:
 1. **Self-check (자가점검):** score every success criterion ✅/❌ with grounds. No ✅ without quoted evidence.
 2. **Separate judge (별도 심판):** run the stage-appropriate gate with the success criteria as rubric. Neither plan nor code/PR → state "별도 심판 게이트 없음". **Except: config, permissions, env-var, infrastructure, secrets changes never fall out as "no gate"** — diff → pr-reviewer (security); no diff → self-check must cover "secret exposure · privilege expansion · public-scope expansion".
+(Product-map update, checklist saving, drift, quality/design scoring, monitoring/security-scan offers: `chageun:finish-check`.)
 
 # Security · approval hygiene (보안·승인 위생)
 

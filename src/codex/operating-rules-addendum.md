@@ -14,7 +14,7 @@
 
 ## 도구 호출 변환
 
-운영 규칙의 "spawning a subagent"(서브에이전트 띄우기)는 Codex에서 `spawn_agent`로 실행합니다.
+운영 규칙의 "subagent delegation"(서브에이전트 위임·띄우기)는 Codex에서 `spawn_agent`로 실행합니다.
 `spawn_agent` 사용에는 **`[features] multi_agent=true`** 가 필요합니다.
 
 상세 도구 매핑은 `codex/codex-tools.md`를 참조하세요.
