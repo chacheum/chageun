@@ -77,6 +77,30 @@ function isPrCreate(toolName, toolInput) {
   return /\bgh\s+pr\s+(create|merge)\b/.test(String((toolInput && toolInput.command) || ""));
 }
 
+// ── routing 리마인더(soft) — batch6 ─────────────────────────────────────────
+// "code-implementer 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
+// 첫 1회만 참(이미 code-implementer 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
+// 차단이 아니라 리마인더 주입 판정. 게이트(plan-validator/pr-reviewer) 스폰은 대상 아님
+// (게이트=Opus 규칙은 코어 안전 바닥에 잔류). 순수함수(fs 없음).
+const AGENT_TOOLS_RE = /^(Task|Agent)$/;
+function subagentOf(inp) { return String((inp && (inp.subagent_type || inp.agentType || inp.agent_type)) || ""); }
+function routingReminderNeeded(objs, toolName, toolInput) {
+  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return false;
+  if (!/code-implementer/.test(subagentOf(toolInput))) return false;
+  if (!Array.isArray(objs)) return false;
+  for (const o of objs) {
+    const m = (o && o.message) || o; const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== "tool_use") continue;
+      const nm = String(b.name || "");
+      if (nm === "Skill" && /routing/.test(String((b.input && b.input.skill) || ""))) return false; // 로드됨
+      if (AGENT_TOOLS_RE.test(nm) && /code-implementer/.test(subagentOf(b.input))) return false; // 이미 위임 시작(1회 보장)
+    }
+  }
+  return true;
+}
+
 // transcript objs에 pr-reviewer가 "실제로 실행"된 흔적이 있고 그 흔적이 신선한지(P3) —
 // 문자열 언급이 아니라 Task/Agent tool_use의 subagent_type 기준. 리뷰 이후 코드 수정
 // (Edit/Write류, 문서 제외 — isCodeTarget)이 있으면 stale(false): 검토 안 받은 코드가
@@ -340,4 +364,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
+module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
