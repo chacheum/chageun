@@ -24,14 +24,14 @@ function procSkillBytes() {
 }
 
 // Claude 상시 주입 = operating-rules.md 단독. batch6 다이어트(라우팅 절→스킬)로 하향.
-const CEILING_BYTES = 21000;
+const CEILING_BYTES = 20000;
 // Codex 상시 주입의 '규칙' 면 = operating-rules.md + addendum. 코어 규칙을 addendum으로 옮겨
 // Claude 상한을 우회하는 걸 막는다(pr-reviewer medium 반영).
-const CODEX_CORE_CEILING = 24500;
+const CODEX_CORE_CEILING = 23800;
 // Codex 상시 주입 '총면' = 규칙면 + 인라인 절차 스킬 본문. batch6가 규칙→스킬 이동을 시작하면서
 // "스킬로 옮기면 두 상한 다 빠져나간다"는 새 우회로가 생겼다 — 이 합산 상한이 그 우회를 막는다
 // (Claude는 스킬이 지연로드라 이 면이 없고, Codex만 인라인이라 총면이 실체다).
-const CODEX_TOTAL_CEILING = 53500;
+const CODEX_TOTAL_CEILING = 53000;
 
 test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
   const bytes = normBytes(CORE);

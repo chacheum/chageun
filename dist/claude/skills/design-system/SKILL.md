@@ -1,6 +1,6 @@
 ---
 name: design-system
-description: 디자인 시스템(토큰·컴포넌트·레이아웃·UX 규칙)을 만들고 읽고 검증·갱신할 때 사용. 사용자가 "새 화면/페이지/UI를 만들자", "디자인 규칙/스타일 가이드/디자인 시스템", "이거 우리 디자인이랑 맞아?" 또는 영어로 "design system / style guide / design rules / new screen / new UI" 같은 말을 하거나, UI를 추가·변경할 때 발동한다. 새 UI가 규칙에 맞는지 보고, 규칙에 없으면 새 규칙 등록을 제안한다.
+description: 디자인 시스템(토큰·컴포넌트·레이아웃·UX 규칙)을 만들고 읽고 검증·갱신할 때 사용. 사용자가 "새 화면/페이지/UI를 만들자", "디자인 규칙/스타일 가이드/디자인 시스템", "이거 우리 디자인이랑 맞아?" 또는 영어로 "design system / style guide / design rules / new screen / new UI" 같은 말을 하거나, UI를 추가·변경할 때 발동한다.
 ---
 
 # 디자인 시스템

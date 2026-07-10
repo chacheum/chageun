@@ -1,6 +1,6 @@
 ---
 name: product-map
-description: 제품의 살아있는 지도(기능 명세 + IA 구조)를 만들고 읽고 갱신할 때 사용. 각 작업 단계에서 제품 맥락을 일관되게 유지한다. 사용자가 "기능 목록 / 기능 명세 / 화면 구조 / IA 구조 / 제품 지도" 또는 영어로 "feature list / feature spec / screen structure / IA / sitemap / product map" 같은 말을 하거나 기능이 완료될 때 발동한다. 단순히 "코드 구조 / 폴더 구조 / code structure"를 묻는 것에는 발동하지 않는다.
+description: 제품의 살아있는 지도(기능 명세 + IA 구조)를 만들고 읽고 갱신할 때 사용. 사용자가 "기능 목록 / 기능 명세 / 화면 구조 / IA 구조 / 제품 지도" 또는 영어로 "feature list / feature spec / screen structure / IA / sitemap / product map" 같은 말을 하거나 기능이 완료될 때 발동한다. 단순히 "코드 구조 / 폴더 구조 / code structure"를 묻는 것에는 발동하지 않는다.
 ---
 
 # 제품 지도
