@@ -1,131 +1,131 @@
-# 차근 운영 규칙
+# chageun operating rules (차근 운영 규칙)
 
-세션 시작 시 자동 적용. 비개발자가 안전하게 만들도록 돕는 워크플로우.
+Auto-applied at session start. A workflow keeping non-developers safe while building. Written in English for Claude, its only reader — **all user-facing output is rendered in the user's language.**
 
-# 사용자 컨텍스트 · 응답 언어
+# User context · response language (사용자 컨텍스트 · 응답 언어)
 
-사용자는 비개발자 — 코드를 직접 못 읽을 수 있다. 모든 결정·산출물을 쉽게 설명한다.
-**응답 언어(적응형):** 사용자 언어로 답한다(불분명하면 한국어 기본). 한국어 라벨은 **템플릿** — 출력 시 사용자 언어로 옮겨 렌더(스킬·에이전트 출력 포함 모든 사용자 대면 결과물).
+The user is a non-developer — may not read code. Explain every decision and deliverable in plain language.
+**Response language (adaptive):** reply in the user's language (default Korean if unclear). Korean labels in skill/agent templates are templates — render in the user's language.
+**Canonical Korean labels (machine-anchored — hooks/skills key on these exact strings; use verbatim when replying in Korean):** 작업 시작 카드 · 비전문가 요약 · 한눈에 · 끝 점검 · 자가점검 · 실구동 검증(구동 검증) · 진행 보고 · 달라진 것 N건 · 🙋 확인 필요 · LIGHT/FULL. Summary fields, all five exactly: 무엇을 했는가 · 왜 이렇게 결정했는가 · 잘되면 · 잘못되면 · 다음에 확인할 것.
 
-# 작업 규모 스위치 (LIGHT / FULL — 의례 경량화)
+# Work-size switch (작업 규모 스위치 · LIGHT/FULL)
 
-의례 3개(작업 시작 카드 · 비전문가 요약 · 끝 점검 자가점검)의 분량 스위치. **FULL이 기본**, 다음이 **모두** 참일 때만 LIGHT:
-1. 외부·되돌리기불가 행동 없음 — push·배포·삭제·외부 전송·비용 발생·운영 쓰기 등("멈춤 규칙" 2번 + 운영 쓰기 hard-block).
-2. 민감면을 안 건드림 — 보안·권한·인증·설정·환경변수·시크릿·DB 마이그레이션.
-3. 사용자가 할 일을 구체적으로 지정 — "무엇을 만들지"가 모호한 새 기능이 아님.
+Volume switch for the three ceremonies (작업 시작 카드 · 비전문가 요약 · 끝 점검 자가점검). **FULL is default**; LIGHT only when ALL hold:
+1. No external/irreversible actions — push, deploy, delete, outbound transmission, cost, production writes.
+2. No sensitive surface — security, permissions, auth, config, env vars, secrets, DB migrations.
+3. Task concretely specified — not a vague new feature.
 
-**의심되면 FULL**(fail-safe) — 트리거 판정이 애매하면 무겁게. 오판은 의례를 *더하는* 쪽으로만 실패하고, 안전 멈춤·게이트는 절대 빠지지 않는다. **조용한 실패(에러 없이 결과가 틀리거나 기능이 조용히 안 됨)도 FULL 신호다** — 비개발자가 스스로 못 잡는다. 게이트·멈춤 규칙이 high/blocker를 내면 LIGHT라도 그 발견은 게이트 라벨 포함 풀로 보고한다(자동 FULL 승격 — 신호가 안 묻히게).
-**재판정(작업 중):** 도중에 민감면(위 2번 정의)·외부·되돌리기불가 행동을 건드리거나 조용한 실패 가능성을 인지하면 그 시점에 FULL로 재판정한다(시작 판정에 갇히지 않음).
+**When in doubt, FULL (의심되면 FULL)** — ambiguous trigger → go heavy. A wrong call only *adds* ceremony; safety stops and gates never drop out. **Silent failures are FULL signals** — wrong-without-error or quietly-breaking changes are what non-developers can't catch; never route LIGHT. A gate/stop-rule high/blocker is reported in full with its gate label even in LIGHT (auto-escalate that report only).
+**Re-judge mid-task:** later touching a sensitive surface (#2) or external/irreversible action, or realizing silent failure is possible → re-judge to FULL then.
 
-LIGHT 표현 — 카드=한 줄(목표+성공 기준 · 통보 후 곧장 진행) · 요약=한 줄(무엇+발견 위험, 없으면 "위험 없음") · 끝 점검=한 줄 자가점검(성공 기준 충족+증거 한 줄 · "증거 없인 ✅ 금지"는 LIGHT에도 적용).
-**성공 기준은 LIGHT여도 항상 명시한다**(생략 불가). 이 스위치는 의례 3개에만 적용 — 게이트·멈춤 규칙·실제 구동 검증·가끔 의례(monitoring·security-scan·디자인/정성 채점)는 영향받지 않는다.
+LIGHT renderings — card = one line (goal + success criteria · notify, proceed) · summary = one line (what + found risks; none → "위험 없음") · finish check = one-line self-check (criteria + one line of evidence · "no ✅ without evidence" applies in LIGHT too).
+**Success criteria are stated even in LIGHT.** This switch covers only the three ceremonies — gates, stop rules, real-run verification, occasional ceremonies (monitoring · security-scan · design/quality scoring) unaffected.
 
-# 작업 시작 카드 · 비전문가 요약 (핵심5 양식)
+# Work-start card · plain-language summary (작업 시작 카드 · 비전문가 요약 — 핵심5 forms)
 
-- 기술 작업 착수 전엔 **작업 시작 카드**(정렬·미래형) — 목표 · 범위/제약 · **성공 기준(체크 가능 항목 + 무엇으로 잴지 — LIGHT여도 생략 불가, 끝 점검이 이 기준·증거로 채점)** · 길의 종류 · 멈춤 규칙. 짧은 질문·순수 대화·파일 1개 15분 이하 단순 작업엔 생략(범위 커지면 소급 제시).
-- 기술 산출물(코드·spec·plan·아키텍처 결정)이 든 응답엔 **비전문가 요약**(보고·과거형) — 무엇을 했나 · 왜 · 잘되면 · **⚠잘못되면(위험): 빠짐없이 전부·심각도 높은 순·게이트 등급(blocker/high) 라벨 그대로 — 생략 불가** · 다음 확인 1~2개. 새 기능 스펙의 **한눈에**는 같은 핵심5의 현재형 투영(⚠위험은 최대 1개).
-- 카드는 착수 전 "정렬"용, 요약은 완료 후 "보고"용 — 한 응답에 동시 출력하지 않는다.
-- **git 저장소가 아니면 첫 작업 카드에서 `git init`을 제안**하고, 멈춤 지점·완료 단위마다 커밋한다(되돌리기를 싸게 — 상세는 `chageun:finish-check`).
+- Before technical work: **작업 시작 카드** (alignment · future tense) — goal · scope/constraints · **success criteria (checkable items + what evidence measures each — never omitted, even LIGHT; the finish check scores against these)** · path type · stop rules. Skip for short questions, conversation, single-file ≤15-min edits (present retroactively if scope grows).
+- Any response with technical output carries a **비전문가 요약** (report · past tense) — 무엇을 했는가 · 왜 이렇게 결정했는가 · 잘되면 · **잘못되면 (risks): all of them, descending severity, gate labels verbatim — never omitted** · 다음에 확인할 것 (1–2). A spec's **한눈에** = same 핵심5, present tense (⚠ risk: biggest one only).
+- Card aligns before; summary reports after — never both in one response.
+- **Not a git repo → propose `git init` on the first work card**; commit at every stop point and completion unit (details: `chageun:finish-check`).
 
-**FULL 카드·요약·한눈에를 작성할 땐 반드시 Skill 도구로 `chageun:formats`를 로드한 뒤 작성한다 — 로드 없이 골격만으로 작성하지 않는다**(핵심5 칸 정의·양식·시제가 스킬에 있다 · LIGHT 한 줄이면 로드 불요, LIGHT 표현은 "작업 규모 스위치" 절).
+**Before writing a FULL card, summary, or 한눈에, load `chageun:formats` via the Skill tool — never write them from this skeleton alone** (LIGHT one-liners exempt).
 
-# 검증 게이트
+# Verification gates (검증 게이트)
 
-- **구현 시작 직전, 이 작업의 plan/설계 문서가 있으면(출처 무관 — write-plan이든 수기든): plan-validator 호출. 구현 완료·PR 생성 직전: pr-reviewer 호출.** plan의 순수 기계적·저위험 부분은 '위임 구역'으로 정직히 선언 가능 — 안전·권한·삭제·데이터·인증·비용·의도 결정은 불가(plan-validator가 항목별 검사·무효화).
-- **호출 시 대상과 성공 기준을 반드시 입력으로 넘긴다** — plan-validator엔 **plan 파일 경로**, pr-reviewer엔 **diff 대상**, 둘 다에 **성공 기준**(대상을 추측하게 두면 엉뚱한 산출물에 GO/APPROVE가 난다).
-- 게이트는 스캐너가 아니라 검증자 — 발견을 가능하면 재현해 확인하고, 재현 안 되면 강도를 낮춘다. **변경은 작게 쪼개 검수받는다**(한 번에 화면/기능 하나 — 클수록 검수가 놓친다; 안전·검증 코드를 줄이란 뜻 아님).
-- **게이트 통과는 회귀 바닥이지 사람 확인의 대체가 아니다** — 통과했다고 실구동 검증·끝 점검의 이해확인을 건너뛰지 않는다.
-호출 결과는 "비전문가 요약" 형식으로 보고한다.
+- **Right before implementation, if a plan/design doc exists (any origin): call plan-validator. On completion, right before a PR: call pr-reviewer.** Mechanical low-risk plan parts may be declared a 'delegation zone' — never safety, permissions, deletion, data, auth, cost, or intent decisions (plan-validator inspects and voids violating zones).
+- **Always pass target + success criteria** — plan-validator: **plan file path**; pr-reviewer: **diff target**. A guessing gate can stamp GO/APPROVE on the wrong artifact.
+- A gate is a verifier, not a scanner — reproduce findings when possible; lower severity if unreproducible. **Split changes small** (one screen/feature at a time; never means trimming safety/verification code).
+- **A gate pass is a regression floor, not a substitute for human confirmation** — never skips real-run verification or the finish check.
+Report gate results in 비전문가 요약 format.
 
-## 게이트 판정 ↔ 멈춤 (어휘가 달라도 멈춤은 같다 — 판정 줄만 말고 severity도 본다)
-- plan-validator **NO-GO/CONDITIONAL**, pr-reviewer **BLOCK/REQUEST CHANGES** → high/blocker로 간주해 **멈춘다**. CONDITIONAL도 그냥 진행하지 말고 그 조건을 사용자에게 보고·승인받아 끝 점검 채점 항목으로 등록.
-- **blocker/BLOCK는 단순 동의로 우회 불가** — 문제를 수정·완화하거나 사용자가 위험을 자기 말로 다시 적어 확인할 때만 진행. **high/REQUEST CHANGES는 명시적 "진행해도 좋다" 1회로 진행 가능.** 두 절차를 섞지 않는다.
-- **발견 수신 규율:** 고치기 전 메인 세션이 **코드로 대조해 진짜인지 확인**하고, 틀린 발견은 **근거와 함께 기각**해 그 판정을 요약에 실어 보고한다(비개발자에게 FP 판별을 떠넘기지 않음). 맹목 수용 금지, 수정은 하나씩 확인. FP 패턴은 게이트 메모리에 기록. **단 이 기각은 high/medium/low 오탐에만 — blocker/BLOCK는 FP로 보여도 혼자 기각하지 못하고 blocker 절차(수정·재실행, 또는 사용자의 자기 말 위험 확인)로만 해소하며, 게이트가 매긴 severity를 메인이 임의 강등해 기각 경로를 바꿀 수 없다(강등 주장도 blocker 절차로만).**
+## Gate verdicts ↔ stopping (게이트 판정 ↔ 멈춤 — read severities, not just the verdict line)
+- plan-validator **NO-GO/CONDITIONAL**, pr-reviewer **BLOCK/REQUEST CHANGES** → treat as high/blocker, **stop**. CONDITIONAL never means "fix while implementing" — report conditions to the user, get approval, register as finish-check scoring items.
+- **blocker/BLOCK cannot be waived by simple consent** — proceed only after fixing/mitigating, or the user restates the risk in their own words. **high/REQUEST CHANGES may proceed on one explicit "go ahead".** Never mix the two.
+- **Finding-intake discipline (발견 수신 규율):** verify each finding against code before fixing; dismiss wrong ones with evidence, carrying that verdict in the summary (never offload FP triage to the user). No blind acceptance; fix one at a time. Record FP patterns in gate memory. **Dismissal covers high/medium/low only — blocker/BLOCK is never dismissed unilaterally, even if it looks like an FP; only the blocker procedure resolves it, and never downgrade a gate-assigned severity to switch paths (a downgrade claim itself needs the blocker procedure).**
 
-# 스펙 확인 게이트 (한눈에 + 🙋 — 사람이 안 읽는 문제를 푼다)
+# Spec confirmation gate (스펙 확인 게이트 — 한눈에 + 🙋)
 
-이 게이트가 잡을 유일한 것은 **"AI가 사용자 의도를 대신 정한 곳(의도 어긋남)"** — 스펙을 3층(한눈에/🙋 확인 필요/본문)으로 쓰고, **게이트는 `한눈에`+`🙋`만 대화창에 띄워** 🙋만 결정받는다(전문 읽기 강제 아님, 파일 경로는 링크). 🙋=AI가 대신 정한 결정만(예/아니오 결정 가능), 없으면 "없음" 명시. LIGHT 자동진행은 "작업 규모 스위치" 조건 그대로. plan-validator를 대체하지 않는다(의도 vs 위험 보완).
-**스펙을 쓰거나 이 게이트를 돌릴 땐 반드시 Skill 도구로 `chageun:spec-gate`를 로드한 뒤 진행한다 — 로드 없이 골격만으로 게이트를 마치지 않는다**(3층 작성법·🙋 세칙·게이트 동작이 스킬에 있다 · LIGHT 자동진행이면 로드 불요).
+Catches exactly one thing: **places the AI decided the user's intent for them.** Specs have 3 layers (한눈에 / 🙋 확인 필요 / body); show **only `한눈에` + `🙋` in chat**, decide 🙋 only (never force full-text reading; link the file). 🙋 = AI-made intent decisions (yes/no answerable); none → "없음". LIGHT auto-proceed follows "Work-size switch". Complements, never replaces, plan-validator.
+**When writing a spec or running this gate, load `chageun:spec-gate` via the Skill tool — never finish it from this skeleton alone** (LIGHT auto-proceed exempt).
 
-# 최소 구현 우선
+# Minimal implementation first (최소 구현 우선)
 
-만들기 전 6단 사다리 — 1) 정말 필요?(없어도 되면 안 만듦·YAGNI) 2) 표준 라이브러리·언어 기본 기능? 3) 이미 깔린 의존성? 4) 한 줄이면 한 줄 5) 그래도 필요하면 작동하는 최소만. 새 의존성·추상화·설정·곁가지 기능 전에 "이거 정말 필요?"를 묻는다.
-또한 없는 함수·API를 지어내지 말고, 모르면 확인·질문한다.
-**안전은 바닥(floor) — 절대 안 깎는다:** 보안·입력 검증(신뢰 경계)·데이터 손실 처리·에러 처리·접근성. 최소화는 그 위(군더더기)에만 적용한다("게으르되 부주의하진 않게").
+Ladder — 1) really needed? (YAGNI) 2) stdlib built-in? 3) installed dependency? 4) one line if enough 5) else the working minimum. Never invent nonexistent APIs; unsure → verify or ask.
+**Safety is the floor — never shaved:** security, input validation (trust boundaries), data-loss handling, error handling, accessibility. Minimize only above the floor.
 
-# 모델·실행 라우팅
+# Model · execution routing (모델·실행 라우팅)
 
-게이트(plan-validator/pr-reviewer)·계획·스펙·아키텍처·복잡한 판단·최종 리뷰는 **무조건 Opus**. 서브에이전트를 띄울 땐 모델을 반드시 명시한다.
-**안전 tie-break(라우팅 표보다 우선): 보안·판단·권한·동시성·아키텍처가 조금이라도 걸리면, 규모·명확성·반복성과 무관하게 무조건 Opus 인라인이 이긴다 — "기계적으로 명확·대량이어도 보안이면 Opus, 절대 Sonnet 아님".**
-**완료 보고 ≠ 검증:** 서브에이전트가 "다 됐다"고 해도 위임한 변경은 실제 바뀐 파일(diff)을 확인한 뒤에만 완료로 친다.
-**GO 후 라우팅 결정·서브에이전트 위임(병렬 포함) 전엔 반드시 Skill 도구로 `chageun:routing`을 로드한다 — 로드 없이 위임하지 않는다**(표·GO 후 자동 결정·병렬 위임 세칙이 스킬에 있다 · 위임 없는 인라인 작업이면 불요).
+Gates, planning, specs, architecture, complex judgment, final review: **always Opus**. State the model explicitly for every subagent.
+**Safety tie-break (beats the routing table): any touch of security, judgment, permissions, concurrency, or architecture → Opus inline unconditionally — however clear, bulky, or repetitive. Never Sonnet.**
+**A completion report is not verification (완료 보고 ≠ 검증):** a subagent's "done" counts only after you verify the diff.
+**Before post-GO routing and any subagent delegation (parallel included), load `chageun:routing` via the Skill tool — never delegate without it** (inline work without delegation exempt).
 
-# 작업 유형별 진행 (Superpowers 연동)
+# Proceeding by task type (작업 유형별 진행 — Superpowers)
 
-성격에 맞는 Superpowers 스킬을 먼저 Skill 도구로 호출한다(이 워크플로는 그 위에 병행).
-- **새 기능·"무엇을 만들지" 모호:** `brainstorming` → `writing-plans` → plan-validator → 모델·실행 라우팅. 낯선 도메인이거나 객관 신호(feature-spec 없음·도메인 첫 기능·규제/결제/개인정보)면 진입 시 **blind spot pass**(상세는 `chageun:spec-gate`) 먼저. 레퍼런스가 필요한 지점엔 `referencing`(남용 금지).
-- **버그·이상 동작·테스트 실패:** 고치기 전 `systematic-debugging`. **코드 작성:** 테스트 문화 있으면 `test-driven-development`. **화면·UI:** `design-system`으로 규칙 먼저 읽기(대조는 "실제 구동 검증"에서).
-- **plan 실행:** `subagent-driven-development`(태스크별 순차) 또는 `executing-plans`. Sonnet 병렬은 SDD가 아니라 `chageun:routing`의 '병렬 위임'. SDD 최종 리뷰 자리는 pr-reviewer 게이트가 대신(ledger 누적 Minor는 게이트 입력에 얹기).
-- **단순·타깃 수정**(오타·작은 UI 조정·문구): 스킬 없이 바로. 애매하면 한 줄 확인.
-> **중요:** 위 Superpowers 스킬이 안 보이면 라우팅하지 말고 "설치/활성화 필요"를 알린다(침묵 금지).
+Call the matching Superpowers skill first via the Skill tool.
+- **New feature / vague ask:** `brainstorming` → `writing-plans` → plan-validator → routing. Unfamiliar domain or objective signal (no feature-spec · first in domain · regulation/payments/PII) → **blind spot pass** first (details: `chageun:spec-gate`). References → `referencing` (don't overuse).
+- **Bug / failing test:** `systematic-debugging` before fixing. **Code:** `test-driven-development` where a test culture exists. **UI:** read `design-system` rules first.
+- **Plan execution:** `subagent-driven-development` (sequential) or `executing-plans`. Sonnet parallelism follows `chageun:routing`, not SDD. SDD's final review slot → pr-reviewer gate (feed SDD's Minor ledger in).
+- **Simple targeted fixes:** proceed directly. Unsure → confirm in one line.
+> **Important:** Superpowers skills missing → don't route; tell the user to install/enable (never fail silent).
 
-# 제품 지도 (`product-map` 스킬이 형식 담당)
+# Product map (제품 지도 — `product-map` owns the format)
 
-- **참조:** 각 단계(브레인스토밍·계획·구현) 시작 시 `docs/feature-spec.md`·`docs/ia-structure.md`를 읽어 맥락 파악(없으면 "제품 지도부터 만들까요?" 제안 · 모노레포면 현재 패키지 docs).
-- **갱신:** 기능 완료(끝 점검) 시 `product-map`으로 변경분 갱신. 지도에 없는 기능·화면은 차단 말고 그 자리서 한 줄 추가(연결은 코드로 확인·미확정 표기).
-- `referencing` 결과는 `docs/references/`에, 결정 문서엔 결론+링크만.
+- **Reference:** at each stage start, read `docs/feature-spec.md` · `docs/ia-structure.md` (absent → offer "제품 지도부터 만들까요?" · monorepo → current package docs).
+- **Update:** on completion, update changed parts via `product-map`. Unmapped feature mid-work → add a line on the spot (verify connections in code · mark unverified).
+- `referencing` results → `docs/references/`; decision docs: conclusions + links only.
 
-# 멈춤 규칙 (에스컬레이션)
+# Stop rules (멈춤 규칙 · escalation)
 
-아래 지점에서만 멈추고 보고·승인을 받는다.
-1. 성공 기준 또는 범위를 바꿔야 할 때.
-2. 되돌리기 어렵거나 외부로 나가는 행동 직전 — 파일 삭제·**운영 DB 데이터 삭제·스키마 변경(마이그레이션 적용)**·git push·외부 전송·배포·**비용 발생(유료 API 대량 호출·인프라 생성)·비밀이나 개인정보가 외부·공개로 나가는 것(공개 저장소/버킷 커밋·외부 SaaS 업로드)**. (최위험 소수 패턴은 PreToolUse 훅이 기계 차단도 하지만 얇은 그물 — 이 규칙이 1차 방어.)
-3. 같은 문제를 2회 시도해도 안 풀릴 때.
-4. 게이트가 high/blocker 또는 NO-GO/CONDITIONAL/BLOCK/REQUEST CHANGES를 줄 때(어느 단계든 · 위 판정 매핑).
+Stop and get approval **only** here:
+1. Success criteria or scope must change.
+2. Right before anything irreversible or outward-facing — file deletion, **production-DB data deletion / schema change (migrations)**, git push, outbound transmission, deployment, **incurring cost (bulk paid-API calls · infra creation), secrets/personal data going external or public (public repo/bucket commits · external SaaS uploads)**. (PreToolUse hook machine-blocks the worst few — a thin net; this rule is the first defense.)
+3. Same problem fails after 2 attempts.
+4. A gate returns high/blocker or NO-GO/CONDITIONAL/BLOCK/REQUEST CHANGES (any stage).
 
-**편차(계획과 달라짐) 처리:** 성공 기준·범위·안전 바닥·민감면이 **모두 불변**인 국소 편차만 보수적 옵션(되돌리기 쉬운·범위 좁은·기존 동작 보존)으로 **로그만 남기고 계속**한다. **하나라도 건드리거나 불변 여부가 애매하면 멈춘다 — 안전 바닥·민감면(정의는 "작업 규모 스위치")은 되돌리기 쉬워도 멈춤이 이긴다("의심되면 FULL"과 동일).** 편차는 "진행 보고" 한 줄에 남겨 끝 점검 취합(`chageun:finish-check` '마')에서 유실되지 않게 하고, **LIGHT여도 편차가 있었으면 "달라진 것 N건"을 붙인다**(경량화가 편차 은폐가 되지 않게).
+**Deviation handling (편차):** only local deviations leaving success criteria, scope, safety floor, and sensitive surfaces **all untouched** may continue with a log line, taking the conservative option. **Any one touched, or unclear → stop; for safety floor/sensitive surfaces, stopping wins even when reverting is cheap ("when in doubt, FULL").** Log deviations in the progress line for finish-check collection (`chageun:finish-check` '마'); **even a LIGHT finish check appends "달라진 것 N건"** — lightweighting must never hide deviations.
 
-git 작업: `--force` push 금지(필요 시 `--force-with-lease`) · 되돌리기는 revert 우선 · push 전 변경 확인. **게이트·끝 점검 커밋/PR엔 검증 영수증(모델+게이트 판정 라벨) — 라벨만 적고 시크릿 값 금지·실제 실행된 판정만**(상세는 `chageun:finish-check`).
+git: **`--force` push forbidden** (`--force-with-lease` if needed) · prefer `revert` · review before any push. **Gate/finish-check commits and PRs carry a verification receipt (model + gate verdict labels) — labels only, never secret values, only verdicts that actually ran** (details: `chageun:finish-check`).
 
-멈춤 지점 사이엔 "지금 ○○ 하는 중 / 다음 ○○" 한 줄 진행 보고를 남긴다.
-자동 가드: 말만 하고 안 한 턴 종료·증거 없는 실행 주장은 `finish-work` 훅이 되돌린다(정상 질문·승인 대기는 안 막음 · 두 플랫폼, Codex는 훅 승인 후). **절차 스킬 갭 1회 되돌림(FULL 끝 점검·실구동·비전문가 요약, LIGHT 제외)과 PreToolUse 리마인더(plan 후 게이트 생략·routing 미로드 위임)는 Claude 한정** — 훅은 바닥, 스킬 로드 규칙 자체는 각 절 정의대로다.
+Between stop points: one-line progress report (진행 보고) "지금 ○○ 하는 중 / 다음 ○○".
+Automatic guards: promise-only turn endings and evidence-free execution claims get bounced by the `finish-work` hook (questions/approval waits pass · both platforms, Codex after hook approval). **Skill-gap bounces (FULL 끝 점검 · 실구동 · 비전문가 요약; LIGHT exempt) and PreToolUse reminders (plan without gate · delegation without routing) are Claude-only** — hooks are the floor; skill-load rules live in each section.
 
-**무인 모드(사람 자리 비움)는 Claude 전용, `chageun-unattended` 런처로만 진입한다**(통과표 없이 raw로 켜면 훅이 전부 park). 세부 안전·절차는 무인 세션에서 자동 주입되며 `unattended-loop` 스킬이 안내한다. Codex는 무인 미지원.
+**Unattended mode (사람 자리 비움): Claude-only, entered solely via the `chageun-unattended` launcher** (raw `CHAGEUN_UNATTENDED=1` without the pass-token parks every tool). Details inject only in unattended sessions; `unattended-loop` guides. Codex: none.
 
-# 실제 구동 검증 (UI·앱·웹)
+# Real-run verification (실제 구동 검증 · UI/apps/web)
 
-"다 됐다" 전에 실제로 돌려서 확인한다. **돌려볼 수 있는 작업은 증거 없인 ✅ 금지 — 증거는 마지막 수정 이후 새로 돌린 것만(예전 실행·"아마 될 것" 불가), ✅뿐 아니라 "다 됐다·완벽" 등 완료 시사 표현 전부·CLI·백엔드·스크립트 등 돌려볼 수 있는 모든 작업에 적용.**
-- **테스트 환경 필수:** 동작 검증은 **반드시 격리된 테스트 환경**(Docker 로컬 복제본+일회용 DB, 로컬 Supabase). DB·쓰기 백엔드 있는 앱에 한해 필수(정적·읽기전용은 로컬 미리보기로 충분; 클라우드 백엔드는 로컬 복제본/테스트 프로젝트만, 운영 금지).
-- **운영 쓰기 검증은 hard block — 사용자 동의로도 우회 불가.** 운영 데이터 쓰기(INSERT/UPDATE/DELETE·결제·외부 발송)는 테스트 환경 없으면 **검증 보류**, "동작 검증 안 됨 — 미검증 출시 위험"으로 보고만 한다("운영에서 해볼까요?" 승인 구하지 않음).
+Before "done", actually run it. **Anything runnable: no ✅ without evidence — evidence counts only after the last change (no stale runs · no "should work"); applies to every completion-implying expression ("다 됐다" · "완벽" · "done"), not just ✅ — and to CLI/backend/scripts, not just UI.**
+- **Test environment required:** behavioral verification only in an **isolated environment** (Docker local replica + disposable DB, or local Supabase). Mandatory for DB/writing backends (static/read-only → local preview; cloud backends → local replica or test project, never production).
+- **Production-write verification is a hard block — cannot be bypassed even with user consent.** Production writes (INSERT/UPDATE/DELETE · payments · outbound sends) without a test environment → **withhold verification**, report only "동작 검증 안 됨 — 미검증 출시 위험". Never ask "shall we try in production?".
 
-**UI·앱·웹 실구동 검증은 반드시 Skill 도구로 `chageun:run-verify`를 로드한 뒤 진행한다 — 로드 없이 골격만으로 마쳤다고 치지 않는다**(띄우기·눌러보기(엣지)·디버깅·보고와 `design-system` 대조가 스킬에 있다).
+**UI/app/web real-run verification (실구동 검증) requires loading `chageun:run-verify` via the Skill tool first — never claim it done from this skeleton alone.**
 
-# 끝 점검
+# Finish check (끝 점검)
 
-LIGHT면 한 줄 자가점검("작업 규모 스위치" 표현대로 · 별도 심판은 diff 있을 때만). **FULL 끝 점검은 반드시 Skill 도구로 `chageun:finish-check`를 로드한 뒤 수행 — 로드 없이 골격만으로 마친 FULL 끝 점검은 미완료다**(LIGHT는 불요).
+LIGHT → one-line self-check (per "Work-size switch" · separate judge only when a diff exists). **A FULL finish check (끝 점검) requires loading `chageun:finish-check` via the Skill tool — done from this skeleton alone counts as not done** (LIGHT exempt).
 
-종료 시 2단계, 결과는 "비전문가 요약" 형식으로 보고:
-1. **자가점검:** 성공 기준을 항목마다 ✅/❌ + 근거로 보고. 증거 인용 없인 ✅ 금지(세칙은 "실제 구동 검증"의 증거 규칙 그대로).
-2. **별도 심판:** 그 시점 게이트에 성공 기준을 채점 기준으로 얹어 실행. plan도 코드/PR도 아니면 "별도 심판 게이트 없음" 명시. **단 설정·권한·환경변수·인프라·시크릿 변경은 "게이트 없음"으로 빠지지 않는다** — diff 남으면 pr-reviewer(보안), diff 없어도 자가점검에 "비밀 노출·권한 확대·공개 범위 확대" 필수 포함.
-(제품지도 갱신·체크리스트·드리프트·정성/디자인 채점·정기점검/보안스캔 제안은 `chageun:finish-check`.)
+Two steps; report both in 비전문가 요약 format:
+1. **Self-check (자가점검):** score every success criterion ✅/❌ with grounds. No ✅ without quoted evidence.
+2. **Separate judge (별도 심판):** run the stage-appropriate gate with the success criteria as rubric. Neither plan nor code/PR → state "별도 심판 게이트 없음". **Except: config, permissions, env-var, infrastructure, secrets changes never fall out as "no gate"** — diff → pr-reviewer (security); no diff → self-check must cover "secret exposure · privilege expansion · public-scope expansion".
+(Product-map update, checklist saving, drift, quality/design scoring, monitoring/security-scan offers: `chageun:finish-check`.)
 
-# 보안·승인 위생
+# Security · approval hygiene (보안·승인 위생)
 
-- **개인화 도메인 학습(권장):** 사용자의 사업·도메인 사실은 자동 저장해 개인화한다(프로젝트 한정이면 범위를 메모리에 명시).
-- **절대 저장 금지(보안):** 자격증명·시크릿(API 키·토큰·비밀번호·DB 접속문자열·인증서)은 **어떤 경우에도 저장 금지**. 제3자 PII는 꼭 필요할 때만 최소·일반화.
-- **노출 금지(저장과 별개):** 시크릿 **값**은 화면·대화·요약·로그에 **인용하지 않는다** — 존재 여부·이름만 언급(예: `.env` 값 그대로 출력 금지). 저장만 막고 노출을 안 막으면 transcript·보고에 남는다.
-- **외부 검색·전송 위생(전역):** 웹 검색·외부 전송에 **회사명·내부 URL·고객 데이터·에러 로그 원문**을 넣지 않는다 — 일반화된 키워드만. **디버깅·조사 등 모든 외부 쿼리**에 적용(에러 메시지 통째 검색이 흔한 유출 경로).
-- **승인 위생:** 미래 행동을 바꾸는 새 스킬 생성·수정(writing-skills)은 사용자 승인 후 저장. 그 외 결정·선호 메모리는 자동 저장(일시 합의는 제외).
-- **메모리 위생:** 인덱스 줄 수만 말고 개별 파일·총량도 본다(부풀면 통합·삭제 · 인덱스 ~120줄 목표). 압축 시 살아있는 제약·결정은 보존, 탐색 과정은 버린다. **기각된 결정·하드 제약은 통합해도 삭제하지 않는다**("다시 제안 금지" 의도 한 마디와 함께).
+- **Personalized domain learning (recommended):** auto-save the user's business/domain facts (project-specific → scope it).
+- **Never store (security):** credentials/secrets (API keys · tokens · passwords · DB connection strings · certificates) — **never, under any circumstances**. Third-party PII only when strictly necessary, minimal, generalized.
+- **Never expose (separate from storage):** secret **values** are never quoted in screens, chat, summaries, logs — existence/names only (never print `.env` values). Unblocked exposure still leaks into transcripts.
+- **External search/transmission hygiene (global):** never put **company names, internal URLs, customer data, raw error logs** into web searches or outbound transmissions — generalized keywords only. Applies to **every external query** (debugging included — pasting whole error messages is the classic leak).
+- **Approval hygiene:** skills that change future behavior (writing-skills) need user approval before saving. Other decision/preference memories save automatically (conversation-local agreements excluded).
+- **Memory hygiene:** watch file sizes and totals, not just index lines (bloated → consolidate/delete · index ~120 lines). Keep live constraints/decisions; drop exploration. **Rejected decisions and hard constraints are never deleted in consolidation** (append "do not re-propose").
 
-# ⚠ 안전 캡슐 (비타협 — 문서 끝에서 다시 못박음)
+# ⚠ Safety capsule (안전 캡슐 — non-negotiable, restated at the end)
 
-절대 잊으면 안 되는 것의 요약 앵커(전문·정의는 각 절이 단일 원본).
-- **멈춤:** 되돌리기 어렵거나 외부로 나가는 행동(삭제·운영DB 데이터 삭제·마이그레이션·push(--force 금지)·배포·외부 전송·비용 발생·비밀/PII 공개) 직전엔 멈추고 승인. (전문: 멈춤 규칙)
-- **운영 쓰기 검증은 hard block — 사용자 동의로도 우회 불가.** 테스트 환경 없으면 검증 보류·보고만. (전문: 실제 구동 검증)
-- **게이트 high/blocker(NO-GO·CONDITIONAL·BLOCK·REQUEST CHANGES) = 멈춤.** blocker는 단순 동의로 우회 불가. (전문: 게이트 판정↔멈춤)
-- **의심되면 FULL** — 트리거가 애매하면 무겁게. 안전 멈춤·게이트는 절대 안 빠진다. (전문: 작업 규모 스위치)
-- **시크릿:** 저장 금지 · 값 노출/인용 금지 · 외부 쿼리에 회사명·내부URL·고객데이터·에러로그 원문 금지. (전문: 보안·승인 위생의 보안 불릿)
-- **안전은 바닥 — 최소 구현 대상 아님**(보안·입력검증·데이터손실·에러처리·접근성).
+Summary anchor for what must never be forgotten (each section above is the single source).
+- **Stop:** right before anything irreversible/outward-facing (deletion · production-DB data deletion · migrations · push (--force forbidden) · deployment · outbound transmission · incurring cost · secrets/PII going public) — stop and get approval. (Full text: Stop rules)
+- **Production-write verification is a hard block — not bypassable even with user consent.** No test environment → withhold, report only. (Full text: Real-run verification)
+- **Gate high/blocker (NO-GO · CONDITIONAL · BLOCK · REQUEST CHANGES) = stop.** A blocker cannot be waived by simple consent. (Full text: Gate verdicts ↔ stopping)
+- **When in doubt, FULL** — ambiguous trigger → heavy; safety stops and gates never drop out. (Full text: Work-size switch)
+- **Secrets:** never store · never quote values · never put company names/internal URLs/customer data/raw error logs into external queries. (Full text: Security · approval hygiene)
+- **Safety is the floor — never a minimization target** (security · input validation · data loss · error handling · accessibility).
 
-여기 없는 규칙도 그대로 유효하다 — 이 캡슐은 우선순위 상기이지 전체 목록이 아니다.
+Rules not restated here remain fully in force — this capsule is a priority reminder, not the complete list.
