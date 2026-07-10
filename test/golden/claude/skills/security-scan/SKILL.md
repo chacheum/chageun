@@ -1,6 +1,6 @@
 ---
 name: security-scan
-description: 자동 보안 스캔 — 의존성·시크릿·코드(SAST)·접근제어(RLS)를 무료 도구로 자동 점검해 바이브 코딩의 흔한 구멍을 잡는다. 사용자가 "보안 스캔 / 취약점 / RLS / 시크릿 노출 / 해킹 걱정 / 안전한가" 또는 영어로 "security scan / vulnerability / SAST / secret leak"를 말하거나, 실데이터·운영(배포) 앱일 때 발동한다. 단순 정적·읽기전용 토이에는 발동하지 않는다.
+description: 자동 보안 스캔 — 의존성·시크릿·코드(SAST)·접근제어(RLS)를 무료 도구로 자동 점검한다. 사용자가 "보안 스캔 / 취약점 / RLS / 시크릿 노출 / 해킹 걱정 / 안전한가" 또는 영어로 "security scan / vulnerability / SAST / secret leak"를 말하거나, 실데이터·운영(배포) 앱일 때 발동한다. 단순 정적·읽기전용 토이에는 발동하지 않는다.
 ---
 
 # 자동 보안 스캔 (security-scan)

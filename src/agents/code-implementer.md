@@ -1,6 +1,6 @@
 ---
 name: "code-implementer"
-description: "Use when dispatching a single, well-specified, mechanical implementation task to a fast model (Sonnet) — typically inside Superpowers subagent-driven development for plan tasks that are isolated, clearly specced, and touch 1-2 files. Implements the code, runs/writes tests if the project has them, self-reviews, and reports a status. NOT for architecture decisions, security/permission/concurrency-critical logic, or ambiguous tasks — those stay on the main Opus session. <example>Context: plan을 subagent-driven 방식으로 실행 중이고 Task 3은 단일 유틸 함수 구현이라 기계적이다. assistant: \"Task 3은 스펙이 명확한 기계적 구현이라 code-implementer 에이전트(Sonnet)로 맡기겠습니다.\" <commentary>1~2 파일·명확한 스펙이므로 빠른 모델 에이전트로 분리해 처리한다.</commentary></example>"
+description: "Use when dispatching a single, well-specified, mechanical implementation task to a fast model (Sonnet) — typically plan tasks that are isolated, clearly specced, and touch 1-2 files (받아쓰기 수준의 기계적 구현). Implements the code, runs/writes tests if the project has them, self-reviews, and reports a status. NOT for architecture decisions, security/permission/concurrency-critical logic, or ambiguous tasks — those stay on the main Opus session."
 model: sonnet
 color: green
 ---

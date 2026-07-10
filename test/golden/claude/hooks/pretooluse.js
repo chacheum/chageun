@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -153,6 +153,24 @@ process.stdin.on("end", () => {
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
               additionalContext: "차근 리마인더: 이번 세션에 plan 문서를 작성했는데 plan-validator 게이트를 아직 거치지 않았습니다. 규칙상 구현 시작 직전 plan-validator 호출이 필수입니다(코어 '검증 게이트'). 지금 게이트를 먼저 실행하세요.",
+            },
+          }));
+        }
+      } catch (_) { /* 리마인더 실패는 조용히 무시 */ }
+    }
+
+    // 4.5) routing 리마인더(soft, batch6): code-implementer 첫 위임 직전 chageun:routing
+    //    스킬 미로드 → 리마인더 1회 주입. P1과 동일하게 자체 try/catch로 격리(예외가 무인
+    //    fail-closed catch로 새어 park가 되지 않게 — plan-validator medium 반영). needle 조기
+    //    탈출은 못 쓴다(부재가 신호) — Agent 스폰은 드물어 전체 파싱 비용 수용.
+    if (/^(Task|Agent)$/.test(String(name || ""))) {
+      try {
+        const objs = readTranscriptIfMentions(input.transcript_path, "");
+        if (objs && routingReminderNeeded(objs, name, ti)) {
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              additionalContext: "차근 리마인더: code-implementer에 위임하려는데 이번 세션에 chageun:routing 스킬을 아직 로드하지 않았습니다. 규칙상 서브에이전트 위임(병렬 포함) 전 로드가 필수입니다(코어 '모델·실행 라우팅'). 지금 Skill 도구로 로드해 라우팅 표·병렬 위임 규칙을 확인한 뒤 위임하세요.",
             },
           }));
         }
