@@ -1,0 +1,2 @@
+# 크기 게이트(test/core-size.test.mjs) 재현성 — 규칙 파일 개행을 LF로 고정(OS 무관 바이트 수).
+*.md text eol=lf
