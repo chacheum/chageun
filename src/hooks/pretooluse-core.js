@@ -215,35 +215,45 @@ const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed
 
 // ── P7 무인 egress(외부 데이터 전송) 차단 ──────────────────────────────────
 // 되돌리기 불가 외부 유출을 무인 중 park. localhost는 허용(loop의 로컬 API 검증·포트 체크 보존).
-// 트리거: curl 업로드/POST·PUT·PATCH, wget --post, scp/sftp/원격rsync, nc/ncat/telnet 원시 소켓.
+// 트리거: curl 업로드/POST·PUT·PATCH, wget --post, scp/sftp/원격rsync, nc/ncat/telnet(명령 위치).
+// 명령치환($()·백틱)은 먼저 제거 — curl 인자 위치 밖의 타 도구 플래그(date -d 등) 오탐 방지.
+function stripSubst(s) { return String(s).replace(/\$\([^)]*\)/g, " ").replace(/`[^`]*`/g, " "); }
 const EGRESS_SEND = /\bcurl\b[^\n]*?(?:--data(?:-\w+)?\b|(?:^|\s)-d\b|--form\b|(?:^|\s)-F\b|--upload-file\b|(?:^|\s)-T\b|-X\s*(?:POST|PUT|PATCH)\b)|\bwget\b[^\n]*?--post-(?:data|file)\b/i;
 const EGRESS_XFER = /\b(?:scp|sftp)\b|\brsync\b[^\n]*(?:::|[\w.-]+@)/i;
-const EGRESS_SOCKET = /\b(?:nc|ncat|netcat|telnet)\b/i;
+// nc/telnet은 '명령 위치'(세그먼트 선두, env·wrapper 프리픽스 허용)에서 인자를 받을 때만 — 문자열·플래그(-nc)·커밋메시지 오탐 방지.
+const EGRESS_SOCKET = /^\s*(?:[A-Za-z_]\w*=\S+\s+)*(?:sudo\s+|env\s+\S+\s+|timeout\s+\S+\s+)?(?:nc|ncat|netcat|telnet)\b\s+\S/i;
+// 파일명(호스트 아님) 제외용 흔한 확장자.
+const FILE_EXT = /\.(?:pdf|jsonl?|zip|tar|gz|tgz|png|jpe?g|gif|svg|webp|csv|tsv|txt|html?|css|jsx?|mjs|tsx?|md|xml|ya?ml|toml|sql|log|env|pem|key|crt|der|db|sqlite3?|bin|dat|bak|lock)$/i;
+const LOOPBACK = /^(?:localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|::1)$/i;
 // 목적지 호스트 '전부' 추출(하나라도 외부면 차단 — querystring에 localhost 심는 substring 우회 방어).
-// URL scheme://host, scp host:path, bare 도메인, 리터럴 IP/localhost 순으로 후보 수집.
+// URL은 userinfo(user@) 제거 후 실제 host 캡처, 파일명은 제외. 브라켓 IPv6 지원.
 function egressHosts(seg) {
   const hosts = [];
-  const pats = [
-    /https?:\/\/(\[[^\]]*\]|[^/\s:'"@]+)/ig,                        // URL(브라켓 IPv6 또는 host)
-    /(?:^|\s)(?:[\w.-]+@)?((?:[\w-]+\.)+[\w-]+):(?:\d+)?[~/]/ig,     // scp host:path
-    /(?:^|\s)((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?(?=[/\s]|$)/ig,    // bare 도메인
-    /(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|(?:^|\s)::1|\d+\.\d+\.\d+\.\d+)/ig, // 리터럴 host/IP(IPv6 loopback 포함)
-  ];
-  for (const re of pats) { let m; while ((m = re.exec(seg)) !== null) hosts.push(m[1].trim()); }
+  let m;
+  const url = /https?:\/\/(?:[^/\s@]*@)?(\[[^\]]*\]|[^/\s:'"@]+)/ig;   // URL(userinfo 제거·IPv6)
+  while ((m = url.exec(seg)) !== null) hosts.push(m[1]);
+  const at = /(?:^|\s)[\w.-]+@(\[[^\]]*\]|[\w.-]+)(?=[:\s]|$)/ig;      // scp user@host
+  while ((m = at.exec(seg)) !== null) hosts.push(m[1]);
+  const hp = /(?:^|\s)((?:[a-z0-9-]+\.)+[a-z]{2,}|\d+\.\d+\.\d+\.\d+):\d/ig; // host:port
+  while ((m = hp.exec(seg)) !== null) hosts.push(m[1]);
+  const lit = /(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|\d+\.\d+\.\d+\.\d+)/ig; // 리터럴
+  while ((m = lit.exec(seg)) !== null) hosts.push(m[1]);
+  const bare = /(?:^|\s)((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?(?=[/\s]|$)/ig; // bare 도메인(파일명 제외)
+  while ((m = bare.exec(seg)) !== null) if (!FILE_EXT.test(m[1])) hosts.push(m[1]);
   return hosts;
 }
-const LOOPBACK = /^(?:localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|::1)$/i;
-function isEgress(seg) {
+function isEgress(rawSeg) {
+  const seg = stripSubst(rawSeg);
   if (!EGRESS_SEND.test(seg) && !EGRESS_XFER.test(seg) && !EGRESS_SOCKET.test(seg)) return false;
   const hosts = egressHosts(seg);
   if (hosts.length === 0) return true;                 // 목적지 판정 불가 → fail-safe park
   return hosts.some((h) => !LOOPBACK.test(h));         // 하나라도 외부면 park
 }
 // 못 잡는 것(정직 고지): GET 쿼리스트링 유출(curl external/?data=…), python/node/ruby 인라인 HTTP,
-// base64 파이프, DNS 터널, 셸 래퍼(sh -c) 우회, $VAR 호스트. python/node는 loop가 앱 실행에 정상
-// 사용하므로 오차단 위험이 커 의도적 미포함. 이 그물은 흔한 업로드/전송 동사만 park하는 심층방어
-// 한 겹이며 완전한 경계가 아니다 — 근본대책은 OS 샌드박스 network allowlist(미룸: 이 환경서 실차단
-// 검증 불가라 blind 구현하지 않음, 계측 제거 교훈과 동형).
+// base64 파이프, DNS 터널, 셸 래퍼(sh -c) 우회, $VAR 호스트, localhost POST 본문에 든 외부 URL은
+// 안전측 park(오차단). python/node는 loop가 앱 실행에 정상 사용해 오차단 위험이 커 의도적 미포함.
+// 이 그물은 흔한 업로드/전송 동사만 park하는 심층방어 한 겹이며 완전한 경계가 아니다 — 근본대책은
+// OS 샌드박스 network allowlist(미룸: 이 환경서 실차단 검증 불가라 blind 구현 안 함, 계측 제거 교훈).
 
 // 무인 예산·워치독 기본 한도. 8시간 / 2000 도구호출 / 30분 무진전.
 const BUDGET = { maxMs: 8 * 60 * 60 * 1000, maxCalls: 2000, watchdogMs: 30 * 60 * 1000 };
