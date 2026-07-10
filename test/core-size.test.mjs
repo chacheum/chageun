@@ -14,7 +14,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(ROOT, "src", "rules", "operating-rules.md");
 const CODEX_ADDENDUM = join(ROOT, "src", "codex", "operating-rules-addendum.md");
 // activate-codex.mjs가 인라인하는 절차 스킬 — 아래 drift 가드가 실제 소스와 일치를 강제한다.
-const PROC_SKILLS = ["finish-check", "spec-gate", "run-verify", "routing"];
+const PROC_SKILLS = ["finish-check", "spec-gate", "run-verify", "routing", "formats"];
 
 function normBytes(p) {
   return Buffer.byteLength(readFileSync(p, "utf8").replace(/\r\n/g, "\n"), "utf8");
@@ -24,14 +24,15 @@ function procSkillBytes() {
 }
 
 // Claude 상시 주입 = operating-rules.md 단독. batch6 다이어트(라우팅 절→스킬)로 하향.
-const CEILING_BYTES = 30000;
+const CEILING_BYTES = 27000;
 // Codex 상시 주입의 '규칙' 면 = operating-rules.md + addendum. 코어 규칙을 addendum으로 옮겨
 // Claude 상한을 우회하는 걸 막는다(pr-reviewer medium 반영).
-const CODEX_CORE_CEILING = 34000;
+const CODEX_CORE_CEILING = 31000;
 // Codex 상시 주입 '총면' = 규칙면 + 인라인 절차 스킬 본문. batch6가 규칙→스킬 이동을 시작하면서
 // "스킬로 옮기면 두 상한 다 빠져나간다"는 새 우회로가 생겼다 — 이 합산 상한이 그 우회를 막는다
 // (Claude는 스킬이 지연로드라 이 면이 없고, Codex만 인라인이라 총면이 실체다).
-const CODEX_TOTAL_CEILING = 56000;
+// formats 분리로 Codex 총면은 일시 +1.6KB(골격 잔류+frontmatter 중복 비용) — 커밋 3 압축이 내린다.
+const CODEX_TOTAL_CEILING = 57000;
 
 test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
   const bytes = normBytes(CORE);

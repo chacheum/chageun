@@ -19,7 +19,7 @@ function stripFrontmatter(t) {
   return m ? t.slice(m[0].length).trimStart() : (t || "");
 }
 // Claude는 이 절차 스킬을 트리거 시 지연로드하지만 Codex는 자동발동이 없어 본문을 인라인한다(단일원본=SKILL.md).
-const procSkills = ["finish-check", "spec-gate", "run-verify", "routing"];
+const procSkills = ["finish-check", "spec-gate", "run-verify", "routing", "formats"];
 let procBodies = "";
 for (const s of procSkills) {
   const skillBody = stripFrontmatter(readSafe(path.join(root, "skills", s, "SKILL.md")));
