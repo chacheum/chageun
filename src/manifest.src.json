@@ -1,6 +1,6 @@
 {
   "name": "chageun",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Safe build workflow for non-developers — task cards, verification gates, real run-through, plain-language summaries (replies in your language; default Korean). 비개발자가 안전하게 만들도록 돕는 워크플로우.",
   "license": "MIT",
   "keywords": ["workflow", "non-developer", "vibe-coding", "review", "safety", "korean", "english"],
