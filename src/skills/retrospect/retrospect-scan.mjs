@@ -88,4 +88,30 @@ function detectGateGaps(objs, sessionId) {
   return out;
 }
 
-export { transcriptDir, listSessionFiles, parseSession, detectGateGaps };
+const CORRECTION_RE = /(아니(야|요)?|그게\s*아니|그거\s*말고|말고|다시\s*(해|만들|봐)|하지\s*마|틀렸|왜\s*(그렇게|안)|안\s*돼|되돌려|\bno\b|\bnot\b|instead|actually,|revert|undo|that's wrong)/i;
+function userText(o) {
+  const c = (o.message || o).content;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) {
+    if (c.length && c.every(b => b && b.type === "tool_result")) return null; // tool-result-only = not a real user msg
+    return c.filter(b => b && b.type === "text").map(b => b.text || "").join("\n");
+  }
+  return "";
+}
+function detectUserCorrections(objs, sessionId) {
+  const out = [];
+  for (let i = 1; i < objs.length; i++) {
+    const o = objs[i];
+    const role = o.type || (o.message && o.message.role);
+    if (role !== "user") continue;
+    const t = userText(o);
+    if (!t) continue;
+    const prevRole = objs[i - 1].type || (objs[i - 1].message && objs[i - 1].message.role);
+    if (prevRole !== "assistant") continue;         // only reactions to assistant output
+    if (t.length > 200) continue;                    // long = new task, not a terse correction
+    if (CORRECTION_RE.test(t)) out.push({ type: "user-correction", phrase: t.slice(0, 160), sessionId, evidence: t.slice(0, 160) });
+  }
+  return out;
+}
+
+export { transcriptDir, listSessionFiles, parseSession, detectGateGaps, detectUserCorrections };
