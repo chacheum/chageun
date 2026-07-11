@@ -33,3 +33,21 @@ test("parseSession: parses jsonl, skips malformed lines", () => {
   const objs = parseSession(p);
   assert.deepEqual(objs.map(o => o.type), ["user", "assistant"]);
 });
+
+import { detectGateGaps } from "../src/skills/retrospect/retrospect-scan.mjs";
+const A = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
+const Skill = (id) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill: id } }] } });
+
+test("detectGateGaps: completion claim without finish-check load → gap", () => {
+  const objs = [A("기능 다 됐습니다. 끝 점검하겠습니다."), A("자가점검: 성공 기준 ✅✅")];
+  const gaps = detectGateGaps(objs, "sess1");
+  assert.ok(gaps.some(g => g.gate === "finish-check"), "finish-check gap flagged");
+});
+test("detectGateGaps: finish-check loaded → no gap (JSON-precise)", () => {
+  const objs = [A("다 됐습니다."), Skill("chageun:finish-check"), A("끝 점검 완료 ✅✅")];
+  const gaps = detectGateGaps(objs, "sess2");
+  assert.ok(!gaps.some(g => g.gate === "finish-check"), "no gap when loaded");
+});
+test("detectGateGaps: no completion context → no gap (avoids false positive)", () => {
+  assert.deepEqual(detectGateGaps([A("작업을 시작하겠습니다.")], "s3"), []);
+});

@@ -50,4 +50,42 @@ function parseSession(path) {
   return objs;
 }
 
-export { transcriptDir, listSessionFiles, parseSession };
+const GATES = [
+  { gate: "finish-check", skill: "chageun:finish-check", ctx: /끝\s*점검|자가점검|마무리(했|합니다|하겠)|다\s*됐|완료(했|됐|됨|입니다)|모두\s*충족/ },
+  { gate: "run-verify",  skill: "chageun:run-verify",  ctx: /실구동|구동\s*검증|띄워\s*(보|봤|서)|화면[^\n]{0,10}(확인|점검)/ },
+  // spec-gate: context (ambiguous new-feature request) is a coarser signal — conservative slot, precision deferred.
+  { gate: "spec-gate",   skill: "chageun:spec-gate",   ctx: /스펙\s*확인|한눈에[^\n]{0,10}🙋/ },
+];
+function assistantText(objs) {
+  return objs.filter(o => (o.type === "assistant") || (o.message && o.message.role === "assistant"))
+    .map(o => {
+      const c = (o.message || o).content;
+      if (typeof c === "string") return c;
+      if (Array.isArray(c)) return c.filter(b => b && b.type === "text").map(b => b.text || "").join("\n");
+      return "";
+    }).join("\n");
+}
+function skillLoaded(objs, skillId) {
+  for (const o of objs) {
+    const c = (o.message || o).content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (b && b.type === "tool_use" && String(b.name || "") === "Skill" &&
+          String((b.input && b.input.skill) || "") === skillId) return true; // JSON-precise, exact skill id
+    }
+  }
+  return false;
+}
+function detectGateGaps(objs, sessionId) {
+  const text = assistantText(objs);
+  const out = [];
+  for (const g of GATES) {
+    if (g.ctx.test(text) && !skillLoaded(objs, g.skill)) {
+      const m = text.match(g.ctx);
+      out.push({ type: "gate-gap", gate: g.gate, sessionId, evidence: (m ? m[0] : "").slice(0, 120) });
+    }
+  }
+  return out;
+}
+
+export { transcriptDir, listSessionFiles, parseSession, detectGateGaps };
