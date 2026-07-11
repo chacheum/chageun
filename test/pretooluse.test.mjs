@@ -559,3 +559,19 @@ test("무인 egress 회귀(pr-reviewer): userinfo 우회 차단 + 정당 localho
   // 명령치환 속 타 도구 -d 오탐 없음(외부 GET 읽기)
   assert.equal(ub('curl "https://localhost:3000/x?since=$(date -d yesterday +%F)"'), null, "치환 속 date -d 오탐 없음");
 });
+
+// ── G7: .env를 인코더/슬라이서로 변형 노출 시도 차단(마스킹 우회 companion) ──
+test("게이트(G7): .env 인코딩/조각 노출 시도 차단 · 평문 cat·example 계열 허용", () => {
+  assert.equal(bash("base64 .env"), "env-encoder", "base64 인코딩");
+  assert.equal(bash("xxd .env | head"), "env-encoder", "hexdump");
+  assert.equal(bash("rev .env"), "env-encoder", "역순 변형");
+  assert.equal(bash("cut -d= -f2 .env"), "env-encoder", "값 슬라이스");
+  assert.equal(bash("openssl enc -base64 -in .env"), "env-encoder", "openssl enc");
+  assert.equal(bash("cat .env.local | tr -d '\\n'"), "env-encoder", ".env.local + tr 조각");
+  // 허용: 평문 읽기는 마스킹이 처리, example 계열은 제외(F4)
+  assert.equal(bash("cat .env"), null, "평문 cat은 허용(PostToolUse 마스킹이 처리)");
+  assert.equal(bash("echo hi"), null);
+  assert.equal(bash("cut -d= -f1 .env.example"), null, "example 계열은 제외(F4)");
+  assert.equal(bash("base64 .env.sample"), null, "sample 계열도 제외");
+  assert.equal(bash("grep KEY .env"), null, "grep은 인코더 아님 — 평문 읽기라 허용(마스킹 처리)");
+});
