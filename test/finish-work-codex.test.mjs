@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { decide, decideNoEvidence } from "../src/hooks/finish-work-codex.mjs";
+import { decide, decideNoEvidence, decideLeak } from "../src/hooks/finish-work-codex.mjs";
 
 test("stop_hook_active면 통과(재귀가드)", () => {
   assert.equal(decide({ stop_hook_active: true, last_assistant_message: "이제 구현하겠습니다" }).block, false);
@@ -103,4 +103,45 @@ test("증거가드 wiring(CLI): transcript_path의 rollout을 읽어 차단 JSON
   });
   rmSync(dir, { recursive: true, force: true });
   assert.equal(r2.stdout || "", "", "증거 있으면 통과");
+});
+
+// ── G7 Codex Stop 백스톱(decideLeak): .env 값이 답에 인용되면 차단. Codex 유일 기계 그물. ──
+// [실기기 미검증: Codex CLI 없음] — last_assistant_message(검증된 필드)를 바닥으로, rollout agent_message는
+// 리포 인코딩 shape(payload.message) 기반 가산 스캔. 픽스처는 이 파일이 이미 쓰는 실제 shape 재사용(C1).
+function envCwdC(line) { const d = mkdtempSync(join(tmpdir(), "g7cx-")); writeFileSync(join(d, ".env"), line + "\n"); return d; }
+const AGENT_LEAK = L("event_msg", { type: "agent_message", message: "the key is sk-secret12345678" });
+
+test("G7 codex (a): 최종 메시지에 .env 값 인용 → 차단 · reason은 키만(M7)", () => {
+  const cwd = envCwdC("API_KEY=sk-secret12345678");
+  const r = decideLeak({ cwd, last_assistant_message: "the key is sk-secret12345678", stop_hook_active: false }, null);
+  assert.equal(r.block, true);
+  assert.match(r.reason, /API_KEY/);
+  assert.doesNotMatch(r.reason, /sk-secret12345678/, "reason에 값 절대 금지");
+});
+test("G7 codex (b): 시크릿 미인용 → 통과", () => {
+  const cwd = envCwdC("API_KEY=sk-secret12345678");
+  assert.equal(decideLeak({ cwd, last_assistant_message: "API_KEY is set, not printing it" }, null).block, false);
+});
+test("G7 codex (c) F1: 재작성 + 최신 메시지 깨끗 → 옛 rollout 누출 무시 → 통과(루프차단)", () => {
+  const cwd = envCwdC("API_KEY=sk-secret12345678");
+  const r = decideLeak({ cwd, last_assistant_message: "API_KEY는 설정됨(값 안 찍음)", stop_hook_active: true },
+    roll(META, USER, AGENT_LEAK)); // rollout엔 옛 누출이 있어도 재작성이라 스캔 안 함
+  assert.equal(r.block, false);
+});
+test("G7 codex (d) H3: 재작성에서 값 재인용 → 차단", () => {
+  const cwd = envCwdC("API_KEY=sk-secret12345678");
+  const r = decideLeak({ cwd, last_assistant_message: "네, sk-secret12345678 입니다", stop_hook_active: true }, null);
+  assert.equal(r.block, true);
+  assert.match(r.reason, /API_KEY/);
+});
+test("G7 codex (e) H4: 첫 Stop엔 rollout 턴경계 이후 agent_message도 스캔(중간 누출 보강)", () => {
+  const cwd = envCwdC("API_KEY=sk-secret12345678");
+  // 최종 메시지는 깨끗하나 rollout의 agent_message에 값이 있음(payload.message shape)
+  const r = decideLeak({ cwd, last_assistant_message: "done", stop_hook_active: false }, roll(META, USER, AGENT_LEAK));
+  assert.equal(r.block, true, "가산 rollout 스캔이 중간 누출 포착");
+});
+test("G7 codex: cwd에 .env 없으면 통과 · 기형 입력 통과(fail-open)", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "g7cx-"));
+  assert.equal(decideLeak({ cwd, last_assistant_message: "sk-secret12345678" }, null).block, false, ".env 없음");
+  assert.equal(decideLeak(null, null).block, false, "null 입력");
 });
