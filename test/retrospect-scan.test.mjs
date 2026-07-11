@@ -68,3 +68,29 @@ test("detectUserCorrections: normal instruction (no cue) → ignored", () => {
 test("detectUserCorrections: tool-result user turns ignored", () => {
   assert.deepEqual(detectUserCorrections([A("x"), UResult()], "s3"), []);
 });
+
+import { detectNearMisses, driftSignal } from "../src/skills/retrospect/retrospect-scan.mjs";
+// Real shapes (Task-0 spike, docs/…-retrospect-spike.md): BOTH hook blocks land as type:"user" entries.
+const Deny = (reason) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", is_error: true, content: "PreToolUse:Bash hook error: [node pretooluse.js]: " + reason }] } });
+const StopBlock = (reason) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: "Stop hook feedback: " + reason }] } });
+
+test("detectNearMisses: PreToolUse deny (user tool_result is_error) → near-miss", () => {
+  const nm = detectNearMisses([A("강제 푸시 시도"), Deny("차단: `git push --force`는 되돌리기 어렵습니다")], "s1");
+  assert.equal(nm.length, 1);
+  assert.equal(nm[0].type, "near-miss");
+});
+test("detectNearMisses: Stop-block (user text 'Stop hook feedback:') → near-miss", () => {
+  const nm = detectNearMisses([A("이제 구현하겠습니다"), StopBlock("직전 응답이 작업을 하겠다고 말만 하고 끝났습니다")], "s2");
+  assert.equal(nm.length, 1);
+});
+test("detectNearMisses: FP guard — ASSISTANT text mentioning the rule is NOT a near-miss (C1)", () => {
+  const objs = [A('That "Stop hook feedback" wasn\'t from you'), A("차단: 이 규칙을 설명하면…")];
+  assert.deepEqual(detectNearMisses(objs, "s3"), []);
+});
+test("detectNearMisses: normal turn → none", () => {
+  assert.deepEqual(detectNearMisses([A("완료했습니다")], "s4"), []);
+});
+test("driftSignal: no feature-spec → null", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-drift-"));
+  assert.equal(driftSignal(dir), null, "no feature-spec → no drift claim");
+});
