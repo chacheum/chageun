@@ -51,3 +51,20 @@ test("detectGateGaps: finish-check loaded → no gap (JSON-precise)", () => {
 test("detectGateGaps: no completion context → no gap (avoids false positive)", () => {
   assert.deepEqual(detectGateGaps([A("작업을 시작하겠습니다.")], "s3"), []);
 });
+
+import { detectUserCorrections } from "../src/skills/retrospect/retrospect-scan.mjs";
+const U = (t) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: t }] } });
+const UResult = () => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", content: "ok" }] } });
+
+test("detectUserCorrections: correction cue after assistant → candidate", () => {
+  const objs = [A("이렇게 했습니다"), U("아니 그게 아니라 다시 해줘")];
+  const c = detectUserCorrections(objs, "s1");
+  assert.equal(c.length, 1);
+  assert.equal(c[0].type, "user-correction");
+});
+test("detectUserCorrections: normal instruction (no cue) → ignored", () => {
+  assert.deepEqual(detectUserCorrections([A("done"), U("이제 로그인 화면 만들어줘")], "s2"), []);
+});
+test("detectUserCorrections: tool-result user turns ignored", () => {
+  assert.deepEqual(detectUserCorrections([A("x"), UResult()], "s3"), []);
+});
