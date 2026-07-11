@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const require = createRequire(import.meta.url);
-const { isSecret, parseEnv, collectSecrets } = require("../src/hooks/secret-scan-core.js");
+const { isSecret, parseEnv, collectSecrets, redact } = require("../src/hooks/secret-scan-core.js");
 
 test("isSecret: length branch (>=12, no whitespace)", () => {
   assert.equal(isSecret("X", "sk-1234abcd9999"), true);
@@ -61,4 +61,20 @@ test("collectSecrets: depth-2 glob, example excluded, node_modules skipped", () 
   assert.ok(!vals.includes("your-key-here-xxxxx"));   // .env.example excluded
   assert.ok(!vals.includes("should-not-appear-xx"));  // node_modules skipped
   assert.ok(!vals.includes("3000"));                  // not a secret
+});
+
+test("redact: all occurrences, longest-first, no regex, keeps key name", () => {
+  const secrets = [{key:"API_KEY", value:"abc123456789"}, {key:"FULL", value:"abc123456789xyz"}];
+  const { text, count } = redact("v1=abc123456789xyz v2=abc123456789", secrets);
+  assert.ok(!text.includes("abc123456789xyz"));
+  assert.ok(!text.includes("abc123456789"));   // no dangling partial
+  assert.ok(text.includes("(FULL)") && text.includes("(API_KEY)"));
+  assert.equal(count, 2);
+});
+test("redact: regex-special value handled literally", () => {
+  const { text } = redact("pw=p@$$w+rd(1)xx here", [{key:"PWD", value:"p@$$w+rd(1)xx"}]);
+  assert.ok(!text.includes("p@$$w+rd(1)xx"));
+});
+test("redact: non-string / empty passthrough", () => {
+  assert.deepEqual(redact(123, [{key:"K",value:"x"}]), { text: 123, count: 0 });
 });
