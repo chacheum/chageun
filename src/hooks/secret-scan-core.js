@@ -95,4 +95,19 @@ function collectSecrets(cwd) {
   return secrets.slice(0, MAX_SECRETS);
 }
 
-module.exports = { isSecret, parseEnv, collectSecrets };
+function redact(text, secrets) {
+  if (typeof text !== "string" || !text || !Array.isArray(secrets) || !secrets.length) {
+    return { text, count: 0 };
+  }
+  let out = text, count = 0;
+  const sorted = [...secrets].sort((a, b) => b.value.length - a.value.length);
+  for (const { key, value } of sorted) {
+    if (!value || out.indexOf(value) === -1) continue;
+    const marker = `«chageun G7: secret redacted (${key}) — report name/existence only; do not reconstruct; to place a secret into config use shell (cp/sed) without printing»`;
+    out = out.split(value).join(marker);
+    count++;
+  }
+  return { text: out, count };
+}
+
+module.exports = { isSecret, parseEnv, collectSecrets, redact };
