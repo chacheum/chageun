@@ -559,3 +559,33 @@ test("무인 egress 회귀(pr-reviewer): userinfo 우회 차단 + 정당 localho
   // 명령치환 속 타 도구 -d 오탐 없음(외부 GET 읽기)
   assert.equal(ub('curl "https://localhost:3000/x?since=$(date -d yesterday +%F)"'), null, "치환 속 date -d 오탐 없음");
 });
+
+// ── G7: .env를 인코더/슬라이서로 변형 노출 시도 차단(마스킹 우회 companion) ──
+test("게이트(G7): .env 인코딩/조각 노출 시도 차단 · 평문 cat·example 계열 허용", () => {
+  assert.equal(bash("base64 .env"), "env-encoder", "base64 인코딩");
+  assert.equal(bash("xxd .env | head"), "env-encoder", "hexdump");
+  assert.equal(bash("rev .env"), "env-encoder", "역순 변형");
+  assert.equal(bash("cut -d= -f2 .env"), "env-encoder", "값 슬라이스");
+  assert.equal(bash("openssl enc -base64 -in .env"), "env-encoder", "openssl enc");
+  assert.equal(bash("cat .env.local | tr -d '\\n'"), "env-encoder", ".env.local + tr 조각");
+  // 허용: 평문 읽기는 마스킹이 처리, example 계열은 제외(F4)
+  assert.equal(bash("cat .env"), null, "평문 cat은 허용(PostToolUse 마스킹이 처리)");
+  assert.equal(bash("echo hi"), null);
+  assert.equal(bash("cut -d= -f1 .env.example"), null, "example 계열은 제외(F4)");
+  assert.equal(bash("base64 .env.sample"), null, "sample 계열도 제외");
+  assert.equal(bash("grep KEY .env"), null, "grep은 인코더 아님 — 평문 읽기라 허용(마스킹 처리)");
+});
+
+// ── L1: G7 새 훅 파일(posttooluse·secret-scan·finish-work)도 무인 변조 차단(읽기 허용, 오탐 방지) ──
+test("무인 tamper 가드(L1): 새 G7 훅 파일 변조 차단 · 읽기 허용 · 오탐 없음", () => {
+  const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const ub = (command) => unattendedBlock("Bash", { command }, {});
+  assert.equal(ub("sed -i s/x/y/ .claude/hooks/posttooluse.js"), "u-protected-path", "PostToolUse 훅 변조 차단");
+  assert.equal(ub("cp evil.js .claude/hooks/secret-scan-core.js"), "u-protected-path", "공유 core 변조 차단");
+  assert.equal(ub("echo x > ~/.claude/plugins/x/hooks/finish-work-codex.mjs"), "u-protected-path", "codex Stop 훅 변조 차단");
+  assert.equal(ub("cat .claude/hooks/posttooluse.js"), null, "읽기는 허용");
+  assert.equal(ub("git checkout -b finish-work-feature"), null, "브랜치명 finish-work-*는 오탐 아님(.js/.mjs 앵커)");
+  assert.equal(ub("git commit -m 'add posttooluse note'"), null, "커밋 메시지 언급은 오탐 아님");
+  // Write 도구 pathGuard도 새 파일 보호
+  assert.equal(unattendedBlock("Write", { file_path: "/w/hooks/posttooluse.js" }, { worktreeRoot: "/w" }), "u-protected-path");
+});
