@@ -19,6 +19,32 @@ function transcriptDir(cwd) {
   return join(homedir(), ".claude", "projects", String(cwd).replace(/[^A-Za-z0-9]/g, "-"));
 }
 
+// C4 fallback: the encoded dir is normally correct, but an exotic path (or a `cwd` string that doesn't
+// round-trip through the encoding, e.g. two distinct real paths colliding after non-alnum→'-') could miss
+// it. If the encoded dir is absent, glob every sibling under ~/.claude/projects/* and read the FIRST
+// .jsonl in each candidate; Claude Code stamps a top-level `cwd` field on most transcript lines (confirmed
+// on real honclwd transcripts, Task-0 spike-adjacent check) — match the candidate whose transcript's `cwd`
+// equals the target. Any glob/read error, or no match found anywhere, fails safe back to the encoded path.
+function resolveTranscriptDir(cwd) {
+  const encoded = transcriptDir(cwd);
+  if (existsSync(encoded)) return encoded;
+  try {
+    const root = join(homedir(), ".claude", "projects");
+    const entries = readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dir = join(root, entry.name);
+      let names;
+      try { names = readdirSync(dir).filter((n) => n.endsWith(".jsonl")); } catch (_) { continue; }
+      if (!names.length) continue;
+      const objs = parseSession(join(dir, names[0]));
+      const match = objs.find((o) => o && typeof o === "object" && typeof o.cwd === "string" && o.cwd === cwd);
+      if (match) return dir;
+    }
+  } catch (_) { /* fail-safe → fall back to encoded */ }
+  return encoded;
+}
+
 function listSessionFiles(dir, opts = {}) {
   const { sinceMtime = 0, maxSessions = MAX_SESSIONS, maxBytes = MAX_BYTES } = opts;
   let names;
@@ -49,17 +75,28 @@ function parseSession(path) {
   const objs = [];
   for (const ln of raw.split("\n")) {
     const s = ln.trim(); if (!s) continue;
-    try { objs.push(JSON.parse(s)); } catch (_) { /* skip malformed */ }
+    let o;
+    try { o = JSON.parse(s); } catch (_) { continue; } // skip malformed
+    // FIX 4: a bare `null`/number/string is valid JSON but not a transcript record — every downstream
+    // consumer assumes an object (`o.type`, `o.message`, ...) and would crash on a literal null. Skip it
+    // here so the fail-safe lives in one place instead of every caller re-guarding.
+    if (o && typeof o === "object") objs.push(o);
   }
   return objs;
 }
 
 const GATES = [
-  { gate: "finish-check", skill: "chageun:finish-check", ctx: /끝\s*점검|자가점검|마무리(했|합니다|하겠)|다\s*됐|완료(했|됐|됨|입니다)|모두\s*충족/ },
+  // requireScoring (FIX 1 / C3): honclwd DEVELOPS the gates, so 끝점검/완료/자가점검 wording appears
+  // constantly in ordinary dev chatter → context-only matching over-counts. Mirror finish-work.js's
+  // battle-tested shouldBlockSkillGap heuristic (FINISH_TEXT_RE + marks>=2 + !LIGHT_RE): only flag a
+  // finish-check gap when the assistant text ALSO carries ≥2 ✅/❌ scoring marks and isn't LIGHT-labeled.
+  { gate: "finish-check", skill: "chageun:finish-check", ctx: /끝\s*점검|자가점검|마무리(했|합니다|하겠)|다\s*됐|완료(했|됐|됨|입니다)|모두\s*충족/, requireScoring: true },
   { gate: "run-verify",  skill: "chageun:run-verify",  ctx: /실구동|구동\s*검증|띄워\s*(보|봤|서)|화면[^\n]{0,10}(확인|점검)/ },
   // spec-gate: context (ambiguous new-feature request) is a coarser signal — conservative slot, precision deferred.
   { gate: "spec-gate",   skill: "chageun:spec-gate",   ctx: /스펙\s*확인|한눈에[^\n]{0,10}🙋/ },
 ];
+const SCORING_MARKS_RE = /[✅❌]/g;
+const SCORING_LIGHT_RE = /LIGHT/;
 function assistantText(objs) {
   return objs.filter(o => (o.type === "assistant") || (o.message && o.message.role === "assistant"))
     .map(o => {
@@ -82,12 +119,14 @@ function skillLoaded(objs, skillId) {
 }
 function detectGateGaps(objs, sessionId) {
   const text = assistantText(objs);
+  const scored = (text.match(SCORING_MARKS_RE) || []).length >= 2 && !SCORING_LIGHT_RE.test(text);
   const out = [];
   for (const g of GATES) {
-    if (g.ctx.test(text) && !skillLoaded(objs, g.skill)) {
-      const m = text.match(g.ctx);
-      out.push({ type: "gate-gap", gate: g.gate, sessionId, evidence: (m ? m[0] : "").slice(0, 120) });
-    }
+    if (!g.ctx.test(text)) continue;
+    if (g.requireScoring && !scored) continue; // FIX 1 / C3: tighten finish-check to avoid dev-chatter over-count
+    if (skillLoaded(objs, g.skill)) continue;
+    const m = text.match(g.ctx);
+    out.push({ type: "gate-gap", gate: g.gate, sessionId, evidence: (m ? m[0] : "").slice(0, 120) });
   }
   return out;
 }
@@ -196,6 +235,10 @@ function maskFindings(findings, secrets) {
     if (typeof g.evidence === "string") g.evidence = maskTokens(redact(g.evidence, secrets).text);
     if (Array.isArray(g.evidence)) g.evidence = g.evidence.map(e => maskTokens(redact(String(e), secrets).text));
     if (typeof g.phrase === "string") g.phrase = maskTokens(redact(g.phrase, secrets).text);
+    // FIX 3: `rule` (near-miss detector) is content-derived too — it's sliced straight out of the raw hook
+    // deny/block text (detectNearMisses), so a secret quoted in that text could land in `rule` unmasked
+    // even though `evidence` was masked. Route it through the same .env + token masking.
+    if (typeof g.rule === "string") g.rule = maskTokens(redact(g.rule, secrets).text);
     return g;
   });
 }
@@ -212,7 +255,7 @@ function aggregate(raw) {
   return [...byKey.values()].sort((a, b) => b.count - a.count);
 }
 function scan(cwd, opts = {}) {
-  const dir = opts.transcriptDirOverride || transcriptDir(cwd);
+  const dir = opts.transcriptDirOverride || resolveTranscriptDir(cwd); // FIX 2: glob fallback (C4)
   const marker = readMarker(cwd);
   const files = listSessionFiles(dir, { sinceMtime: (marker && marker.lastRunNewestMtime) || 0 });
   const raw = [];
@@ -245,7 +288,7 @@ function writeMarker(cwd, obj) {
 }
 function isDue(cwd, opts = {}) {
   const { minSessions = 5, minDays = 1, transcriptDirOverride } = opts;
-  const dir = transcriptDirOverride || transcriptDir(cwd);
+  const dir = transcriptDirOverride || resolveTranscriptDir(cwd); // FIX 2: glob fallback (C4)
   const marker = readMarker(cwd);
   const since = (marker && marker.lastRunNewestMtime) || 0;
   const freshFiles = listSessionFiles(dir, { sinceMtime: since });
@@ -259,7 +302,7 @@ function isDue(cwd, opts = {}) {
 }
 
 export {
-  transcriptDir, listSessionFiles, parseSession,
+  transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession,
   detectGateGaps, detectUserCorrections, detectNearMisses, driftSignal,
   scan, readMarker, writeMarker, isDue,
 };
