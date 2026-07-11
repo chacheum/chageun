@@ -1,6 +1,9 @@
 // chageun finish-work (Codex Stop 훅). Claude판과 동일 판정, 입력만 Codex식.
 // 보수적: 통과 넓게/차단 좁게. 외부 호출 없음. 실패 시 안전 통과. 개인/회사 정보 없음.
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { collectSecrets, findLeaks } = require("./secret-scan-core.js");
 
 // Claude판 finish-work.js와 동일 로직(듀얼 미러 — 함께 갱신). bare 알려·검토는 WAIT에서 제외.
 const WAIT_RE = /[?]|할까요|갈까요|드릴까요|주세요|골라|선택|진행해도|어느|확인해|괜찮(을까|나요)|승인|합의|기다리|다음\s*단계|진행\s*보고|멈춤|shall i|would you|do you want|let me know|which option|approve|confirm|waiting for/i;
@@ -85,18 +88,66 @@ export function decideNoEvidence(input, rawTranscript) {
   } catch (_) { return { block: false }; }
 }
 
+// ── G7 Codex Stop 백스톱(decideLeak): .env 시크릿 값이 답에 인용되면 차단. Codex 유일 기계 그물(PostToolUse 없음). ──
+// 설계(C1): last_assistant_message(decide/decideNoEvidence가 이미 쓰는 검증된 필드)를 '바닥'으로 최종답 누출을
+// 확실히 잡는다 — 매 Stop 실행이라 재작성 시 최신 메시지만 봐 F1 루프차단·H3 재범 포착이 자연히 성립.
+// 첫 Stop엔 rollout의 턴경계 이후 agent_message(형식: event_msg/response_item의 payload.message —
+// 이 파일·테스트가 이미 인코딩한 shape. [실기기 미검증: 이 머신에 Codex CLI 없음])도 '가산' 스캔해 중간
+// 누출(H4)을 보강. 가산이라 payload 필드가 실제와 달라도 바닥(last_assistant_message)이 받쳐 silent 전면
+// 무동작이 되지 않는다. 값은 어디에도 로깅/전송 안 함. reason엔 키 이름만(M7).
+function agentTextSinceBoundary(rawTranscript) {
+  if (!rawTranscript || typeof rawTranscript !== "string") return "";
+  const objs = [];
+  for (const ln of rawTranscript.split("\n")) {
+    const s = ln.trim(); if (!s) continue;
+    let o; try { o = JSON.parse(s); } catch (_) { continue; } // 알 수 없는 줄은 스킵(중단 아님 — 스캔 보존)
+    if (o && typeof o.type === "string") objs.push(o);
+  }
+  let lastBoundary = -1;
+  for (let i = objs.length - 1; i >= 0; i--) { if (isTurnBoundary(objs[i])) { lastBoundary = i; break; } }
+  const parts = [];
+  for (let i = lastBoundary + 1; i < objs.length; i++) { // -1이면 0부터
+    const o = objs[i], p = (o && o.payload) || {};
+    const isAgent = (o.type === "response_item" && (p.type === "agent_message" || p.type === "message")) ||
+                    (o.type === "event_msg" && p.type === "agent_message");
+    if (!isAgent) continue;
+    const t = typeof p.message === "string" ? p.message
+      : typeof p.text === "string" ? p.text
+      : Array.isArray(p.content) ? p.content.map((c) => (c && (c.text || (typeof c === "string" ? c : ""))) || "").join("") : "";
+    if (t) parts.push(t);
+  }
+  return parts.join("\n");
+}
+
+export function decideLeak(input, rawTranscript) {
+  try {
+    if (!input) return { block: false };
+    const secrets = collectSecrets(input.cwd || process.cwd());
+    if (!secrets.length) return { block: false };
+    const latestOnly = input.stop_hook_active === true;
+    let text = String(input.last_assistant_message || "");
+    if (!latestOnly) text += "\n" + agentTextSinceBoundary(rawTranscript); // 첫 Stop만 whole-turn(재작성은 최신만 — F1)
+    const leaked = findLeaks(text, secrets);
+    if (!leaked.length) return { block: false };
+    return { block: true, reason: `비밀값을 답변에 인용했습니다(키: ${leaked.join(", ")}). 값 빼고 이름/존재만 다시 보고. 진짜/가짜 판단 안 함.` };
+  } catch (_) { return { block: false }; }
+}
+
 // CLI 진입: stdin JSON → 차단 시 {decision:block} 출력. 어떤 예외든 안전 통과.
-// 순서: 약속가드(decide) 차단이면 즉시 종료 → 아니면 rollout을 읽어 증거가드(중복 출력 없음).
+// 순서: G7 누출 백스톱(독립·재작성에도 실행, N3) → 약속가드(decide) → 증거가드. rollout은 1회만 읽음.
 if (import.meta.url === `file://${process.argv[1]}`) {
   let raw = "";
   process.stdin.on("data", (d) => (raw += d));
   process.stdin.on("end", () => {
     try {
       const input = JSON.parse(raw);
-      const r = decide(input);
-      if (r.block) { process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason })); process.exit(0); }
       let rawT = null;
       try { if (input.transcript_path) rawT = readFileSync(input.transcript_path, "utf8"); } catch (_) { /* fail-open */ }
+      // G7 누출 백스톱 — 독립 경로, 재작성(stop_hook_active)에도 실행(N3). 가장 치명적이라 최우선.
+      const lk = decideLeak(input, rawT);
+      if (lk.block) { process.stdout.write(JSON.stringify({ decision: "block", reason: lk.reason })); process.exit(0); }
+      const r = decide(input);
+      if (r.block) { process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason })); process.exit(0); }
       const ne = decideNoEvidence(input, rawT);
       if (ne.block) process.stdout.write(JSON.stringify({ decision: "block", reason: ne.reason }));
     } catch (_) { /* 안전 통과 */ }

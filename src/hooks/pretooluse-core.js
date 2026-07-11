@@ -13,6 +13,11 @@ const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/
 // 파괴적 SQL(스키마·대량삭제). DELETE는 WHERE 없을 때만.
 const SQL_DESTRUCTIVE = /\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+(TABLE\s+)?\w)/i;
 
+// G7 변형 우회 차단: .env(.local 등)를 인코더/슬라이서로 변형해 마스킹을 우회하려는 Bash. 평문 cat은 허용(PostToolUse 마스킹이 처리).
+// example 계열(.env.example|sample|template|dist)은 제외 — collectSecrets 제외 목록과 정합(F4).
+const ENV_REF_RE = /\.env\b(?!\.(?:example|sample|template|dist))/i;
+const ENCODER_RE = /\b(base64|xxd|od|hexdump|rev|tr|fold|cut|dd|uuencode|openssl\s+enc)\b/;
+
 // 되돌리기 불가 배포·퍼블리시 CLI(프리뷰·dry-run 제외). 탈출구는 래퍼(process.env.CHAGEUN_ALLOW_DEPLOY).
 // 한계: git push→자동배포(Vercel/Netlify 깃연동)는 못 잡음 — 텍스트 멈춤규칙 의존(래퍼 메시지에 명시).
 const DEPLOY = /\b(vercel|netlify)\b[^\n]*--prod\b|\bfly(ctl)?\s+deploy\b|\bwrangler\s+(pages\s+)?deploy\b|\brailway\s+up\b|\b(npm|yarn|pnpm)\s+publish\b|\bgh\s+release\s+create\b|\bsupabase\s+db\s+push\b/;
@@ -46,6 +51,7 @@ const REASONS = {
   "sql-update-no-where": "차단: WHERE 없는 UPDATE는 테이블 전체를 덮어씁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "deploy": "차단(배포는 되돌리기 어려움): 사용자 확인 후 진행하려면 세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하세요(그 세션 동안 배포 검사가 꺼집니다). 이 브레이크는 CLI 배포만 막고 git push→자동배포(Vercel/Netlify 깃연동)는 못 막습니다 — 그건 멈춤 규칙으로 확인하세요.",
   "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). 이미 검토했거나 예외면 CHAGEUN_SKIP_GATE_CHECK=1로 재실행하세요.",
+  "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
 };
 
 // 어떤 도구·입력이 위험한지 판정. 위험하면 사유 키를, 아니면 null.
@@ -56,6 +62,8 @@ function block(toolName, toolInput) {
     if (FORCE_PUSH.test(cmd)) return "force-push";
     if (RM_RECURSIVE.test(cmd) && RM_DANGER_TARGET.test(cmd)) return "rm-recursive";
     if (isDeploy(cmd)) return "deploy";
+    // .env를 인코딩/조각내 마스킹을 우회하려는 시도 차단(G7). 평문 cat/grep은 허용 — PostToolUse 마스킹이 처리.
+    if (ENV_REF_RE.test(cmd) && ENCODER_RE.test(cmd)) return "env-encoder";
     // 파괴적 SQL은 SQL 클라이언트 명령일 때만 검사(커밋 메시지·문자열에 "DROP TABLE"이 들어간
     // 무해한 명령을 오탐하지 않도록).
     if (/\b(psql|mysql|mariadb|sqlite3|mongosh?|clickhouse-client)\b/.test(cmd)) return destructiveSql(cmd);
@@ -234,7 +242,7 @@ const NESTED_AGENT = /(?:^|[;|&(){]|\bthen\b|\bdo\b|\$\(|`|\bsh\s+-c\s+["']?|\bb
 // 보호 경로(.chageun 통과표·STOP + .claude 안전판 + pretooluse 훅 파일)를 읽기 외로 건드리는 Bash 차단.
 // H1: pathGuard는 Write류만 봐서 Bash `tee`/`>`/`sed -i`로 안전판 쓰기가 새던 구멍을 막는다. 순수 읽기(cat/grep/ls)는 통과.
 // 차근 안전판은 항상 `.claude`/`.chageun` 아래라 그 둘로 충분 — bare `hooks/`·`settings.json`은 사용자 프로젝트(React src/hooks·.vscode/settings.json)를 오탐해 제외. ($HOME 밖 임의 절대경로 쓰기는 미커버 — 샌드박스가 근본대책.)
-const PROTECTED_REF = /\.(?:claude|chageun)\b|pretooluse[^/\s]*\.js\b/i;
+const PROTECTED_REF = /\.(?:claude|chageun)\b|(?:pre|post)tooluse[^/\s]*\.js\b|secret-scan[^/\s]*\.js\b|finish-work[^/\s]*\.(?:js|mjs)\b/i;
 const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed|awk|python3?|node|perl|ruby|cd|find|shred|rsync|git)\b|>>?/i;
 
 // ── P7 무인 egress(외부 데이터 전송) 차단 ──────────────────────────────────
@@ -306,7 +314,7 @@ function budgetStep(prevState, now, isProgress, limits) {
 }
 
 // 무인 모드: worktree 밖 쓰기 / 안전장치·설정·훅 / 동결된 성공기준 파일 수정 차단. Write류만 대상.
-const PROTECTED = /(^|\/)\.(?:claude|chageun)(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/i;
+const PROTECTED = /(^|\/)\.(?:claude|chageun)(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|(?:pre|post)tooluse[^/]*\.js$|secret-scan[^/]*\.js$|finish-work[^/]*\.(?:js|mjs)$/i;
 function pathGuard(toolName, toolInput, opts) {
   if (!/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(String(toolName || ""))) return null;
   const fp = (toolInput && (toolInput.file_path || toolInput.notebook_path)) || "";

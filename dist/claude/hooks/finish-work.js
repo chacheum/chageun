@@ -1,7 +1,7 @@
 // chageun finish-work — Stop 훅.
 // 에이전트가 "이제 ~하겠습니다"처럼 작업을 하겠다고 말만 하고 실제 도구 실행 없이 턴을 끝내면
 // 되돌려 지금 하게 한다(보수적: 통과 넓게 / 차단 좁게). 결정론적, 외부 호출 없음, 실패 시 안전 통과.
-// 개인/회사 정보 없음. shouldBlock는 finish-work-codex.mjs와 동일 로직(듀얼 미러 — 함께 갱신).
+// 개인/회사 정보 없음. shouldBlock·G7 누출 백스톱은 finish-work-codex.mjs와 동일 로직(듀얼 미러 — 함께 갱신).
 
 // 사용자 대기/질문 신호가 있으면 통과(chageun가 정상적으로 묻고 멈추는 경우).
 // bare "알려"·"검토"는 제외 — 약속 문장("검토하겠습니다")까지 통과시켜 브레이크를 무력화했음.
@@ -62,18 +62,7 @@ function hasSkillLoad(objs, name) {
 // WAIT_RE 면제 없음 — 질문으로 끝나도 이미 수행된 무절차 끝 점검/검증 선언은 위반(1회 차단이라 안전).
 function shouldBlockSkillGap(objs) {
   if (!Array.isArray(objs) || !objs.length) return null;
-  let u = -1;
-  for (let i = objs.length - 1; i >= 0; i--) {
-    if (roleOf(objs[i]) !== "user") continue;
-    if (isToolResultOnly(msgOf(objs[i]))) continue;
-    u = i; break;
-  }
-  const texts = [];
-  for (let i = u + 1; i < objs.length; i++) {
-    if (roleOf(objs[i]) !== "assistant") continue;
-    const t = textOf(msgOf(objs[i])); if (t) texts.push(t);
-  }
-  const text = texts.join("\n");
+  const text = assistantTextSinceLastUser(objs, false); // F7: shared window(마지막 진짜 user 이후 assistant 텍스트)
   if (!text) return null;
   const marks = (text.match(/[✅❌]/g) || []).length;
   if (FINISH_TEXT_RE.test(text) && marks >= 2 && !LIGHT_RE.test(text) &&
@@ -159,13 +148,48 @@ function endedWithTool(m) {
   return false;
 }
 
+// F7: 단일 검증된 창 함수 — 마지막 '진짜 user'(도구결과-only user는 건너뜀, N2) 이후 assistant 텍스트.
+// latestOnly=true(재작성)면 마지막 assistant 메시지 하나만 스캔한다(F1 무한루프 차단 — 불변 기록의
+// 옛 누출 메시지가 매 Stop 재탐지돼 영구 block되는 걸 막음; 최신 메시지의 재범은 여전히 잡힘 H3).
+function assistantTextSinceLastUser(objs, latestOnly) {
+  if (!Array.isArray(objs) || !objs.length) return "";
+  let start = 0;
+  for (let i = objs.length - 1; i >= 0; i--) {
+    if (roleOf(objs[i]) === "user" && !isToolResultOnly(msgOf(objs[i]))) { start = i + 1; break; }
+  }
+  const seg = [];
+  for (let i = start; i < objs.length; i++) {
+    if (roleOf(objs[i]) === "assistant") {
+      const t = textOf(msgOf(objs[i]));
+      if (t) seg.push(t);
+    }
+  }
+  const chosen = latestOnly ? seg.slice(-1) : seg;
+  return chosen.join("\n");
+}
+
+// G7 Stop 백스톱: .env 시크릿 '값'이 최종답에 인용됐으면 사유(키 이름만, 값 없음)를, 아니면 null.
+// stopHookActive(재작성)면 최신 메시지만 스캔(F1). 어떤 오류든 fail-open(null) — chageun를 막지 않는다.
+// 값은 어디에도 로깅/전송하지 않는다(secret-scan-core가 메모리 내에서만 처리).
+function leakBlockReason(objs, cwd, stopHookActive) {
+  try {
+    const { collectSecrets, findLeaks } = require("./secret-scan-core.js");
+    const secrets = collectSecrets(cwd);
+    if (!secrets.length) return null;
+    const leaked = findLeaks(assistantTextSinceLastUser(objs, stopHookActive === true), secrets);
+    if (!leaked.length) return null;
+    return `비밀값을 답변에 인용했습니다(키: ${leaked.join(", ")}). 값은 빼고 이름/존재만 다시 보고하세요. 진짜/가짜 판단은 하지 않습니다.`;
+  } catch (_) {
+    return null; // fail-open
+  }
+}
+
 function run() {
   let raw = "";
   process.stdin.on("data", (d) => { raw += d; });
   process.stdin.on("end", () => {
     try {
       const input = JSON.parse(raw);
-      if (input.stop_hook_active === true) return process.exit(0);
       const tpath = input.transcript_path;
       if (!tpath) return process.exit(0);
       const fs = require("fs");
@@ -177,6 +201,15 @@ function run() {
         if (!s) continue;
         try { objs.push(JSON.parse(s)); } catch (_) { /* skip */ }
       }
+
+      // G7 누출 백스톱: stop_hook_active 조기종료보다 먼저 실행(첫 Stop 누출도 잡음).
+      // 재작성이면 최신 메시지만 스캔해 옛 누출 무한루프를 끊는다(F1). leakBlockReason은 자체 fail-open.
+      const leak = leakBlockReason(objs, input.cwd || process.cwd(), input.stop_hook_active === true);
+      if (leak) { process.stdout.write(JSON.stringify({ decision: "block", reason: leak })); return process.exit(0); }
+
+      // 재작성(재프롬프트)이면 아래 약속/무증거/스킬갭 검사는 건너뛴다(기존 동작 유지) — 누출검사만 항상 돈다.
+      if (input.stop_hook_active === true) return process.exit(0);
+
       let lastIdx = -1;
       for (let i = objs.length - 1; i >= 0; i--) {
         if (roleOf(objs[i]) === "assistant") { lastIdx = i; break; }
@@ -204,5 +237,5 @@ function run() {
   });
 }
 
-module.exports = { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, WAIT_RE, PROMISE_RE };
+module.exports = { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, assistantTextSinceLastUser, leakBlockReason, WAIT_RE, PROMISE_RE };
 if (require.main === module) run();

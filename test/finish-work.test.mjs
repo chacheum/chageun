@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-const { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js"));
+const { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, assistantTextSinceLastUser, leakBlockReason } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js"));
 
 const U = (t) => ({ message: { role: "user", content: [{ type: "text", text: t }] } });
 const A = (t) => ({ message: { role: "assistant", content: [{ type: "text", text: t }] } });
@@ -134,4 +136,49 @@ test("formats 갭: LIGHT 한 줄 요약은 로드 불요 → 통과", () => {
 test("formats 갭: '비전문가 요약' 언급만(필드 어휘 2개 미만)이면 침묵", () => {
   const objs = [U("설명해줘"), A("비전문가 요약은 작업 끝에 붙는 보고 형식입니다.")];
   assert.equal(shouldBlockSkillGap(objs), null);
+});
+
+// ── G7 Stop 백스톱: .env 시크릿 값이 최종답에 인용되면 차단(값 빼고 이름/존재만) ──
+function envCwd(line) { const d = mkdtempSync(join(tmpdir(), "g7fw-")); writeFileSync(join(d, ".env"), line + "\n"); return d; }
+
+test("assistantTextSinceLastUser: tool-result-only user 건너뜀 + latestOnly=최종 메시지만(F7·F1)", () => {
+  const objs = [U("real"), A("first"), UResult(), A("second")];
+  assert.equal(assistantTextSinceLastUser(objs, false), "first\nsecond", "도구결과 user는 경계 아님 → 둘 다 창 안(H4)");
+  assert.equal(assistantTextSinceLastUser(objs, true), "second", "재작성: 마지막 assistant 메시지만");
+  assert.equal(assistantTextSinceLastUser([], false), "");
+});
+
+test("G7 백스톱 (a): 중간 누출이 도구결과 user 뒤에도 창에 남아 차단(H4) · reason은 키만(M7)", () => {
+  const cwd = envCwd("API_KEY=sk-secret12345678");
+  const objs = [U("show me"), A("the key is sk-secret12345678"), UResult(), A("done")];
+  const r = leakBlockReason(objs, cwd, false);
+  assert.ok(r && r.includes("API_KEY"), "누출 키 이름 포함");
+  assert.ok(!r.includes("sk-secret12345678"), "reason에 값 절대 금지(M7)");
+});
+
+test("G7 백스톱 (b): 시크릿 미인용 → null", () => {
+  const cwd = envCwd("API_KEY=sk-secret12345678");
+  assert.equal(leakBlockReason([U("hi"), A("all good, API_KEY is set")], cwd, false), null);
+});
+
+test("G7 백스톱 (c) BLOCKER회귀: 재작성 시 옛 누출은 창 밖 → 무한루프 안 됨(N1)", () => {
+  const cwd = envCwd("API_KEY=sk-secret12345678");
+  // 스파이크 실측 구조: [user][asst 누출][user 'Stop hook feedback'][asst 깨끗한 최종]
+  const objs = [U("show"), A("leak: sk-secret12345678"),
+    U("Stop hook feedback: 값 빼고 다시"), A("API_KEY는 설정돼 있습니다(값은 안 찍습니다)")];
+  assert.equal(leakBlockReason(objs, cwd, true), null, "stop_hook_active=true + 깨끗한 최종 → 차단 안 함(루프 끊김)");
+});
+
+test("G7 백스톱 (d): 재작성에서 값 재인용하면 여전히 차단(H3)", () => {
+  const cwd = envCwd("API_KEY=sk-secret12345678");
+  const objs = [U("show"), A("leak: sk-secret12345678"),
+    U("Stop hook feedback: 다시"), A("네, sk-secret12345678 입니다")];
+  const r = leakBlockReason(objs, cwd, true);
+  assert.ok(r && r.includes("API_KEY"), "재범은 최신 메시지에서 잡힘");
+});
+
+test("G7 백스톱: .env 없으면 null(fail-open) · 빈 objs null", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "g7fw-"));
+  assert.equal(leakBlockReason([U("x"), A("sk-secret12345678")], cwd, false), null, "cwd에 .env 없음 → no-op");
+  assert.equal(leakBlockReason([], envCwd("API_KEY=sk-secret12345678"), false), null, "빈 대화");
 });
