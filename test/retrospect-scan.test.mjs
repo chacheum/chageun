@@ -4,11 +4,55 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { transcriptDir, listSessionFiles, parseSession } from "../src/skills/retrospect/retrospect-scan.mjs";
+import { transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession } from "../src/skills/retrospect/retrospect-scan.mjs";
 
 test("transcriptDir: encodes cwd like Claude Code (slashes → dashes)", () => {
   const d = transcriptDir("/home/mokgam/projects/honclwd");
   assert.ok(d.endsWith("/.claude/projects/-home-mokgam-projects-honclwd"), d);
+});
+test("resolveTranscriptDir: encoded dir present → returns it directly (no glob needed) (FIX 2)", () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), "rs-home-"));
+  const targetCwd = "/home/mokgam/projects/honclwd";
+  const encoded = join(tmpHome, ".claude", "projects", targetCwd.replace(/[^A-Za-z0-9]/g, "-"));
+  mkdirSync(encoded, { recursive: true });
+  const prevHome = process.env.HOME;
+  process.env.HOME = tmpHome;
+  try {
+    assert.equal(resolveTranscriptDir(targetCwd), encoded);
+  } finally {
+    process.env.HOME = prevHome;
+  }
+});
+test("resolveTranscriptDir: encoded dir absent → globs sibling dirs, matches by transcript cwd field (FIX 2 fallback)", () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), "rs-home2-"));
+  const projectsRoot = join(tmpHome, ".claude", "projects");
+  const targetCwd = "/home/mokgam/projects/weird.path";
+  const siblingDir = join(projectsRoot, "-mismatched-encoded-name");
+  mkdirSync(siblingDir, { recursive: true });
+  writeFileSync(join(siblingDir, "a.jsonl"), JSON.stringify({ type: "user", cwd: targetCwd }) + "\n");
+  const prevHome = process.env.HOME;
+  process.env.HOME = tmpHome;
+  try {
+    assert.equal(resolveTranscriptDir(targetCwd), siblingDir);
+  } finally {
+    process.env.HOME = prevHome;
+  }
+});
+test("resolveTranscriptDir: no candidate matches anywhere → falls back to the encoded path (FIX 2 fail-safe)", () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), "rs-home3-"));
+  const projectsRoot = join(tmpHome, ".claude", "projects");
+  const targetCwd = "/home/mokgam/projects/never-matched";
+  const siblingDir = join(projectsRoot, "-some-other-project");
+  mkdirSync(siblingDir, { recursive: true });
+  writeFileSync(join(siblingDir, "a.jsonl"), JSON.stringify({ type: "user", cwd: "/completely/different/cwd" }) + "\n");
+  const prevHome = process.env.HOME;
+  process.env.HOME = tmpHome;
+  try {
+    const expected = join(tmpHome, ".claude", "projects", targetCwd.replace(/[^A-Za-z0-9]/g, "-"));
+    assert.equal(resolveTranscriptDir(targetCwd), expected);
+  } finally {
+    process.env.HOME = prevHome;
+  }
 });
 test("listSessionFiles: newest-first, sinceMtime filter, maxSessions cap", () => {
   const dir = mkdtempSync(join(tmpdir(), "rs-"));
@@ -26,12 +70,41 @@ test("listSessionFiles: newest-first, sinceMtime filter, maxSessions cap", () =>
 test("listSessionFiles: missing dir → [] (fail-safe)", () => {
   assert.deepEqual(listSessionFiles("/nonexistent-xyz-123", {}), []);
 });
+test("listSessionFiles: maxBytes cap stops adding files once the budget is exceeded (FIX 5)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-bytes-"));
+  const mk = (name, bytes, t) => {
+    const p = join(dir, name);
+    writeFileSync(p, "x".repeat(bytes));
+    utimesSync(p, t, t);
+  };
+  mk("a.jsonl", 100, 1000); // newest
+  mk("b.jsonl", 100, 900);
+  mk("c.jsonl", 100, 800); // oldest — excluded: cumulative 200+100=300 > 250
+  const out = listSessionFiles(dir, { sinceMtime: 0, maxSessions: 10, maxBytes: 250 });
+  assert.equal(out.length, 2, "third file excluded once cumulative bytes would exceed maxBytes");
+  const totalBytes = out.reduce((s, f) => s + f.size, 0);
+  assert.ok(totalBytes <= 250, "total bytes respects the cap");
+  assert.deepEqual(out.map(f => f.path.split("/").pop()), ["a.jsonl", "b.jsonl"], "newest-first order preserved under cap");
+});
 test("parseSession: parses jsonl, skips malformed lines", () => {
   const dir = mkdtempSync(join(tmpdir(), "rs-"));
   const p = join(dir, "s.jsonl");
   writeFileSync(p, '{"type":"user"}\nNOT JSON\n{"type":"assistant"}\n\n');
   const objs = parseSession(p);
   assert.deepEqual(objs.map(o => o.type), ["user", "assistant"]);
+});
+test("parseSession: skips bare null/scalar valid-JSON lines, keeps real objects (FIX 4 fail-safe)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-null-"));
+  const p = join(dir, "n.jsonl");
+  writeFileSync(
+    p,
+    'null\n' +
+      JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } }) +
+      "\n42\n\"just a string\"\n"
+  );
+  const objs = parseSession(p);
+  assert.equal(objs.length, 1, "null/number/string valid-JSON lines are skipped, not crashed on");
+  assert.equal(objs[0].type, "assistant");
 });
 
 import { detectGateGaps } from "../src/skills/retrospect/retrospect-scan.mjs";
@@ -50,6 +123,16 @@ test("detectGateGaps: finish-check loaded → no gap (JSON-precise)", () => {
 });
 test("detectGateGaps: no completion context → no gap (avoids false positive)", () => {
   assert.deepEqual(detectGateGaps([A("작업을 시작하겠습니다.")], "s3"), []);
+});
+test("detectGateGaps: finish-check completion text without ≥2 ✅/❌ marks → NOT flagged (FIX 1 / C3 scoring)", () => {
+  const objs = [A("기능 다 됐습니다. 끝 점검하겠습니다.")]; // 0 marks
+  const gaps = detectGateGaps(objs, "s-noscore");
+  assert.ok(!gaps.some(g => g.gate === "finish-check"), "no finish-check gap without ≥2 scoring marks");
+});
+test("detectGateGaps: finish-check text scored but labeled LIGHT → NOT flagged (FIX 1 / C3 scoring)", () => {
+  const objs = [A("다 됐습니다. 끝 점검(LIGHT) 자가점검 ✅✅")];
+  const gaps = detectGateGaps(objs, "s-light");
+  assert.ok(!gaps.some(g => g.gate === "finish-check"), "LIGHT finish-check not flagged even with marks");
 });
 
 import { detectUserCorrections } from "../src/skills/retrospect/retrospect-scan.mjs";
@@ -114,8 +197,10 @@ test("scan(dir override): aggregates by (type,key) with count + masks secret evi
   const asst = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
   const usr = (t) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: t }] } });
   // two sessions with finish-check gaps → count 2; s2's user-correction quotes the .env secret → must be masked.
-  writeFileSync(join(sessDir, "s1.jsonl"), line(asst("다 됐습니다")));
-  writeFileSync(join(sessDir, "s2.jsonl"), line(asst("완료했습니다")) + line(usr("아니 sk-secret12345678 이거 말고 다시 해줘")));
+  // FIX 1/C3: finish-check now also requires ≥2 ✅/❌ marks (not LIGHT) — fixtures include scoring marks
+  // so this test still exercises aggregation across 2 sessions under the new stricter gate.
+  writeFileSync(join(sessDir, "s1.jsonl"), line(asst("다 됐습니다. 자가점검 ✅✅")));
+  writeFileSync(join(sessDir, "s2.jsonl"), line(asst("완료했습니다. 자가점검 ✅✅")) + line(usr("아니 sk-secret12345678 이거 말고 다시 해줘")));
   const { findings } = scan(cwd, { transcriptDirOverride: sessDir });
   const gap = findings.find(f => f.type === "gate-gap" && f.gate === "finish-check");
   assert.ok(gap && gap.count === 2, "two sessions aggregated");
@@ -157,4 +242,29 @@ test("isDue: metadata-only hollow sessions do NOT count toward the threshold (C6
   const hollow = JSON.stringify({ type: "system" }) + "\n" + JSON.stringify({ type: "file-history-snapshot" }) + "\n";
   for (let i = 0; i < 6; i++) { const p = join(sessDir, `h${i}.jsonl`); writeFileSync(p, hollow); utimesSync(p, 7000 + i, 7000 + i); }
   assert.equal(isDue(cwd, { transcriptDirOverride: sessDir, minSessions: 5 }), false, "hollow sessions must not trip the threshold");
+});
+test("scan: masks the `rule` field too, not just evidence/phrase (FIX 3)", () => {
+  const cwd = fakeProject(); // .env holds API_KEY=sk-secret12345678
+  const sessDir = mkdtempSync(join(tmpdir(), "rssess-rule-"));
+  const line = (o) => JSON.stringify(o) + "\n";
+  // the deny reason (which detectNearMisses extracts into `rule`) itself quotes the .env secret.
+  writeFileSync(
+    join(sessDir, "s1.jsonl"),
+    line(A("강제 푸시 시도")) + line(Deny("차단: sk-secret12345678 이 값은 위험합니다"))
+  );
+  const { findings } = scan(cwd, { transcriptDirOverride: sessDir });
+  const nearMiss = findings.find(f => f.type === "near-miss");
+  assert.ok(nearMiss, "near-miss surfaced");
+  assert.ok(!String(nearMiss.rule).includes("sk-secret12345678"), "secret masked from the rule field too");
+  assert.ok(!JSON.stringify(findings).includes("sk-secret12345678"), "secret absent from findings JSON entirely");
+});
+test("scan: a session file with a bare null line does not throw and the real line still processes (FIX 4)", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "rsproj-nullline-"));
+  const sessDir = mkdtempSync(join(tmpdir(), "rssess-nullline-"));
+  const line = (o) => JSON.stringify(o) + "\n";
+  const asst = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
+  writeFileSync(join(sessDir, "s1.jsonl"), "null\n" + line(asst("다 됐습니다. 자가점검 ✅✅")));
+  assert.doesNotThrow(() => scan(cwd, { transcriptDirOverride: sessDir }));
+  const { findings } = scan(cwd, { transcriptDirOverride: sessDir });
+  assert.ok(findings.some(f => f.type === "gate-gap" && f.gate === "finish-check"), "the real assistant line after the null line still gets processed");
 });
