@@ -25,6 +25,7 @@ const PR_MARKERS = [
   "1위 사고",                    // 백로그 D: 커밋된 시크릿(바이브코딩 1위 사고) 점검이 codex에서만 지워지는 표류 방어
   "❌인데 APPROVE로 어긋나지 않게", // P4 F1/F2: 성공기준 ❌→verdict 배선(대조표 ❌인데 APPROVE 방지)이 codex에서만 지워지는 표류 방어
   "재리뷰(재실행)로 해소",        // P4 F4: BLOCK/REQUEST CHANGES 수정 후 재리뷰 강제가 codex에서만 지워지는 표류 방어
+  "진짜/가짜 판단을 하지 않는다", // G7: .env 값이 가짜로 보여도 인용 금지(anti-rationalization)가 한 플랫폼에서만 지워지는 표류 방어
 ];
 const PV_MARKERS = [
   "🙋",                          // 스펙 확인 게이트 대리결정 목록
