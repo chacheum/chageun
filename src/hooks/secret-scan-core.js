@@ -55,4 +55,44 @@ function parseEnv(content) {
   return out;
 }
 
-module.exports = { isSecret, parseEnv };
+const fs = require("fs");
+const path = require("path");
+const MAX_FILE = 256 * 1024, MAX_SECRETS = 200, MAX_FILES = 20;
+const SKIP_DIRS = new Set(["node_modules", ".git"]);
+const EXAMPLE_RE = /\.(example|sample|template|dist)$/i;
+
+function envFiles(cwd) {
+  const found = [];
+  (function walk(dir, depth) {
+    if (found.length >= MAX_FILES) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) {
+      if (found.length >= MAX_FILES) break;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (depth < 2 && !SKIP_DIRS.has(e.name) && !e.name.startsWith(".")) walk(full, depth + 1);
+      } else if (e.isFile() && (e.name === ".env" || e.name.startsWith(".env.")) && !EXAMPLE_RE.test(e.name)) {
+        found.push(full);
+      }
+    }
+  })(cwd, 0);
+  return found;
+}
+
+function collectSecrets(cwd) {
+  const secrets = [];
+  for (const f of envFiles(cwd)) {
+    try {
+      const st = fs.statSync(f);
+      if (!st.isFile() || st.size > MAX_FILE) continue;
+      for (const { key, value } of parseEnv(fs.readFileSync(f, "utf8"))) {
+        if (isSecret(key, value)) secrets.push({ key, value });
+      }
+    } catch (_) { /* per-file isolation */ }
+  }
+  secrets.sort((a, b) => b.value.length - a.value.length);
+  return secrets.slice(0, MAX_SECRETS);
+}
+
+module.exports = { isSecret, parseEnv, collectSecrets };

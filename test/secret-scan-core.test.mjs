@@ -1,8 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 const require = createRequire(import.meta.url);
-const { isSecret, parseEnv } = require("../src/hooks/secret-scan-core.js");
+const { isSecret, parseEnv, collectSecrets } = require("../src/hooks/secret-scan-core.js");
 
 test("isSecret: length branch (>=12, no whitespace)", () => {
   assert.equal(isSecret("X", "sk-1234abcd9999"), true);
@@ -41,4 +44,21 @@ test("parseEnv: export, quotes, first =, comments, CRLF", () => {
   assert.deepEqual(got.find(x=>x.key==="PORT"), {key:"PORT", value:"3000"});
   assert.deepEqual(got.find(x=>x.key==="PWD"), {key:"PWD", value:"p@ss w0rd"});
   assert.equal(got.find(x=>x.key==="BAD"), undefined);
+});
+
+test("collectSecrets: depth-2 glob, example excluded, node_modules skipped", () => {
+  const d = mkdtempSync(join(tmpdir(), "g7-"));
+  writeFileSync(join(d, ".env"), "API_KEY=sk-root12345678\nPORT=3000\n");
+  writeFileSync(join(d, ".env.example"), "API_KEY=your-key-here-xxxxx\n");
+  mkdirSync(join(d, "apps", "web"), { recursive: true });
+  writeFileSync(join(d, "apps", "web", ".env"), "TOKEN=tok-web987654321\n");
+  mkdirSync(join(d, "node_modules", "x"), { recursive: true });
+  writeFileSync(join(d, "node_modules", "x", ".env"), "SECRET=should-not-appear-xx\n");
+  const s = collectSecrets(d);
+  const vals = s.map(x => x.value);
+  assert.ok(vals.includes("sk-root12345678"));
+  assert.ok(vals.includes("tok-web987654321"));      // depth-2
+  assert.ok(!vals.includes("your-key-here-xxxxx"));   // .env.example excluded
+  assert.ok(!vals.includes("should-not-appear-xx"));  // node_modules skipped
+  assert.ok(!vals.includes("3000"));                  // not a secret
 });
