@@ -114,4 +114,48 @@ function detectUserCorrections(objs, sessionId) {
   return out;
 }
 
-export { transcriptDir, listSessionFiles, parseSession, detectGateGaps, detectUserCorrections };
+// Near-miss = a chageun safety net that actually reverted a model attempt. Task-0 spike: BOTH block kinds
+// land ONLY as type:"user" entries — a PreToolUse deny as a tool_result with is_error + hook-error marker,
+// or a Stop block as text starting "Stop hook feedback:". Anchor to user-role STRUCTURE — assistant text,
+// attachments, or bare rule phrases (which appear verbatim in this repo's own docs) would false-positive (C1).
+const DENY_MARKER_RE = /PreToolUse:[^\n]*hook error|무인 모드 차단:|(?:^|[\s:`])차단:/;
+function detectNearMisses(objs, sessionId) {
+  const out = [];
+  for (const o of objs) {
+    const role = o.type || (o.message && o.message.role);
+    if (role !== "user") continue;                       // real block records are user entries only
+    const c = (o.message || o).content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (b && b.type === "tool_result" && b.is_error) { // PreToolUse deny
+        const t = typeof b.content === "string" ? b.content : JSON.stringify(b.content || "");
+        if (DENY_MARKER_RE.test(t)) {
+          out.push({ type: "near-miss", rule: (t.match(/차단:[^\n`]{0,40}/) || ["hook-deny"])[0].trim(), sessionId, evidence: t.slice(0, 200) });
+        }
+      } else if (b && b.type === "text" && /^\s*Stop hook feedback:/.test(b.text || "")) { // Stop block
+        out.push({ type: "near-miss", rule: "stop-block", sessionId, evidence: (b.text || "").slice(0, 200) });
+      }
+    }
+  }
+  return out;
+}
+function driftSignal(cwd) {
+  // Heuristic pointer only — deep map↔code comparison stays in finish-check 1-hop / monitoring.
+  // Limit: directory-mtime proxy only changes on direct child add/remove; editing a file's contents
+  // in place doesn't bump the dir mtime. Signal only (C6).
+  const spec = join(cwd, "docs", "feature-spec.md");
+  if (!existsSync(spec)) return null;
+  try {
+    const specM = statSync(spec).mtimeMs;
+    // "recent code work" proxy: any tracked source newer than the spec by > 14 days.
+    const srcDirs = ["src", "app", "lib"].map(d => join(cwd, d)).filter(existsSync);
+    let newest = 0;
+    for (const d of srcDirs) { try { newest = Math.max(newest, statSync(d).mtimeMs); } catch (_) {} }
+    if (newest - specM > 14 * 24 * 3600 * 1000) {
+      return { type: "drift", evidence: "feature-spec.md가 소스보다 14일+ 오래됨 — 드리프트 점검(끝점검 1-hop / monitoring) 권장" };
+    }
+  } catch (_) {}
+  return null;
+}
+
+export { transcriptDir, listSessionFiles, parseSession, detectGateGaps, detectUserCorrections, detectNearMisses, driftSignal };
