@@ -268,3 +268,59 @@ test("scan: a session file with a bare null line does not throw and the real lin
   const { findings } = scan(cwd, { transcriptDirOverride: sessDir });
   assert.ok(findings.some(f => f.type === "gate-gap" && f.gate === "finish-check"), "the real assistant line after the null line still gets processed");
 });
+
+// C5: the finish-check trigger calls `retrospect-scan.mjs --due "$(pwd)"`, whose isDue(cwd) uses the REAL
+// resolveTranscriptDir(cwd) (no transcriptDirOverride) — exercise the actual CLI subprocess against a temp
+// HOME so this proves the real code path finish-check depends on, not just a unit call to isDue().
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const RETROSPECT_SCRIPT = fileURLToPath(new URL("../src/skills/retrospect/retrospect-scan.mjs", import.meta.url));
+
+function freshSessionLine(i) {
+  return JSON.stringify({
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text: `세션 ${i} 실제 사용자 메시지 — 회고 due 테스트용 텍스트입니다.` }] },
+  }) + "\n" + JSON.stringify({
+    type: "assistant",
+    message: { role: "assistant", content: [{ type: "text", text: `세션 ${i}에 대한 실제 어시스턴트 응답입니다.` }] },
+  }) + "\n";
+}
+
+test("--due CLI (C5): DUE — real subprocess, real resolveTranscriptDir(cwd) under a temp HOME", () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), "rs-due-home-"));
+  const cwd = mkdtempSync(join(tmpdir(), "rs-due-cwd-"));
+  const encoded = cwd.replace(/[^A-Za-z0-9]/g, "-");
+  const transcriptDirReal = join(tmpHome, ".claude", "projects", encoded);
+  mkdirSync(transcriptDirReal, { recursive: true });
+  // ≥5 fresh, non-hollow sessions (real user+assistant text, not metadata-only) — crosses the default minSessions:5 threshold.
+  for (let i = 0; i < 6; i++) {
+    writeFileSync(join(transcriptDirReal, `sess${i}.jsonl`), freshSessionLine(i));
+  }
+  // no marker under <cwd>/docs/ → readMarker(cwd) is null → sinceMtime=0 → all 6 fresh sessions count.
+  const res = spawnSync(process.execPath, [RETROSPECT_SCRIPT, "--due", cwd], {
+    env: { ...process.env, HOME: tmpHome },
+    encoding: "utf8",
+  });
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(res.stdout, "DUE");
+});
+
+test("--due CLI (C5): NOT_DUE — marker already covers all fresh sessions", () => {
+  const tmpHome = mkdtempSync(join(tmpdir(), "rs-notdue-home-"));
+  const cwd = mkdtempSync(join(tmpdir(), "rs-notdue-cwd-"));
+  const encoded = cwd.replace(/[^A-Za-z0-9]/g, "-");
+  const transcriptDirReal = join(tmpHome, ".claude", "projects", encoded);
+  mkdirSync(transcriptDirReal, { recursive: true });
+  for (let i = 0; i < 6; i++) {
+    writeFileSync(join(transcriptDirReal, `sess${i}.jsonl`), freshSessionLine(i));
+  }
+  // marker's lastRunNewestMtime set far in the future → every fresh session's mtime <= it → 0 sessions counted.
+  writeMarker(cwd, { lastRunAt: new Date().toISOString(), lastRunNewestMtime: Math.floor(Date.now() / 1000) + 100000 });
+  const res = spawnSync(process.execPath, [RETROSPECT_SCRIPT, "--due", cwd], {
+    env: { ...process.env, HOME: tmpHome },
+    encoding: "utf8",
+  });
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(res.stdout, "NOT_DUE");
+});

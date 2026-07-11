@@ -312,6 +312,10 @@ export {
 // Note (isDue determinism): new Date() is used at runtime; do NOT call it in workflow scripts, but this
 // is a plain CLI/skill module so it's fine.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const cwd = process.argv[2] || process.cwd();
-  process.stdout.write(JSON.stringify(scan(cwd), null, 2));
+  const args = process.argv.slice(2);
+  if (args[0] === "--due") {
+    process.stdout.write(isDue(args[1] || process.cwd()) ? "DUE" : "NOT_DUE");
+  } else {
+    process.stdout.write(JSON.stringify(scan(args[0] || process.cwd()), null, 2));
+  }
 }
