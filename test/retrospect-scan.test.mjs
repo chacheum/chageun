@@ -94,3 +94,67 @@ test("driftSignal: no feature-spec → null", () => {
   const dir = mkdtempSync(join(tmpdir(), "rs-drift-"));
   assert.equal(driftSignal(dir), null, "no feature-spec → no drift claim");
 });
+
+import { scan, readMarker, writeMarker, isDue } from "../src/skills/retrospect/retrospect-scan.mjs";
+import { rmSync } from "node:fs";
+
+function fakeProject() {
+  // build a fake transcript dir the scanner will find via transcriptDir(cwd) — so use a real cwd whose
+  // encoded dir we create under a temp HOME is impractical; instead test scan() against an explicit dir override.
+  const cwd = mkdtempSync(join(tmpdir(), "rsproj-"));
+  mkdirSync(join(cwd, ".env-holder"), { recursive: true });
+  writeFileSync(join(cwd, ".env"), "API_KEY=sk-secret12345678\n");
+  return cwd;
+}
+
+test("scan(dir override): aggregates by (type,key) with count + masks secret evidence", () => {
+  const cwd = fakeProject();
+  const sessDir = mkdtempSync(join(tmpdir(), "rssess-"));
+  const line = (o) => JSON.stringify(o) + "\n";
+  const asst = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
+  const usr = (t) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: t }] } });
+  // two sessions with finish-check gaps → count 2; s2's user-correction quotes the .env secret → must be masked.
+  writeFileSync(join(sessDir, "s1.jsonl"), line(asst("다 됐습니다")));
+  writeFileSync(join(sessDir, "s2.jsonl"), line(asst("완료했습니다")) + line(usr("아니 sk-secret12345678 이거 말고 다시 해줘")));
+  const { findings } = scan(cwd, { transcriptDirOverride: sessDir });
+  const gap = findings.find(f => f.type === "gate-gap" && f.gate === "finish-check");
+  assert.ok(gap && gap.count === 2, "two sessions aggregated");
+  assert.ok(findings.some(f => f.type === "user-correction"), "correction candidate surfaced");
+  const asJson = JSON.stringify(findings);
+  assert.ok(!asJson.includes("sk-secret12345678"), "secret value masked in ALL evidence (correction snippet)");
+});
+test("scan: also masks a high-entropy PASTED token not present in .env (C2)", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "rsproj-nopasted-"));
+  const sessDir = mkdtempSync(join(tmpdir(), "rssess-nopasted-"));
+  const line = (o) => JSON.stringify(o) + "\n";
+  const asst = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
+  const usr = (t) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: t }] } });
+  writeFileSync(join(sessDir, "s1.jsonl"), line(asst("완료했습니다")) + line(usr("아니 ghp_AbCdEfGh12345678 이거 말고 다시 해줘")));
+  const { findings } = scan(cwd, { transcriptDirOverride: sessDir });
+  const asJson = JSON.stringify(findings);
+  assert.ok(!asJson.includes("ghp_AbCdEfGh12345678"), "pasted token-shaped secret masked even though absent from .env");
+  assert.ok(findings.some(f => f.type === "user-correction"), "correction candidate still surfaced (masked, not dropped)");
+});
+test("marker + isDue: below threshold → not due; above → due", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "rsmark-"));
+  // lastRunAt must be recent — an old lastRunAt would trip isDue's separate age-based OR-branch
+  // (>= minDays since last run AND >= 1 fresh session) regardless of minSessions, defeating this
+  // test's purpose of isolating the session-count threshold behavior.
+  writeMarker(cwd, { lastRunAt: new Date().toISOString(), lastRunNewestMtime: 5000 });
+  assert.deepEqual(readMarker(cwd).lastRunNewestMtime, 5000);
+  const sessDir = mkdtempSync(join(tmpdir(), "rsdue-"));
+  // C6: isDue only counts sessions with real user/assistant text — use non-hollow fixtures here (hollow
+  // case is covered separately below) so this test exercises the threshold-crossing logic, not C6 itself.
+  const real = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "실제 세션 내용" }] } }) + "\n";
+  for (let i = 0; i < 6; i++) { const p = join(sessDir, `x${i}.jsonl`); writeFileSync(p, real); utimesSync(p, 6000 + i, 6000 + i); }
+  assert.equal(isDue(cwd, { transcriptDirOverride: sessDir, minSessions: 5 }), true);
+  assert.equal(isDue(cwd, { transcriptDirOverride: sessDir, minSessions: 50 }), false);
+});
+test("isDue: metadata-only hollow sessions do NOT count toward the threshold (C6)", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "rsmark-hollow-"));
+  const sessDir = mkdtempSync(join(tmpdir(), "rsdue-hollow-"));
+  // 6 hollow files (only metadata types, 0 real user/assistant text lines) — must NOT trip minSessions:5.
+  const hollow = JSON.stringify({ type: "system" }) + "\n" + JSON.stringify({ type: "file-history-snapshot" }) + "\n";
+  for (let i = 0; i < 6; i++) { const p = join(sessDir, `h${i}.jsonl`); writeFileSync(p, hollow); utimesSync(p, 7000 + i, 7000 + i); }
+  assert.equal(isDue(cwd, { transcriptDirOverride: sessDir, minSessions: 5 }), false, "hollow sessions must not trip the threshold");
+});

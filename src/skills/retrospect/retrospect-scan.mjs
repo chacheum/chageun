@@ -1,9 +1,13 @@
 // src/skills/retrospect/retrospect-scan.mjs
 // chageun retrospect scanner — deterministic, no LLM, no always-on logging (reads existing transcripts once).
 // v1 Claude transcript format only. Values never logged/emitted raw (masked before output).
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+// shared masking core (src & dist layouts both resolve this relative path)
+const { collectSecrets, redact, isSecret } = require("../../hooks/secret-scan-core.js");
 
 const MAX_SESSIONS = 30, MAX_BYTES = 20 * 1024 * 1024;
 
@@ -158,4 +162,113 @@ function driftSignal(cwd) {
   return null;
 }
 
-export { transcriptDir, listSessionFiles, parseSession, detectGateGaps, detectUserCorrections, detectNearMisses, driftSignal };
+// C6: a parsed session with 0 real user/assistant text lines is "hollow" (session-shell metadata only —
+// custom-title/mode/file-history-snapshot/attachment/system/last-prompt/queue-operation, Task-0 spike).
+// Hollow sessions must not count toward the isDue threshold ("nothing to analyze" runs).
+function hasRealContent(objs) {
+  for (const o of objs) {
+    const role = o.type || (o.message && o.message.role);
+    if (role !== "user" && role !== "assistant") continue;
+    const c = (o.message || o).content;
+    if (typeof c === "string" && c.trim()) return true;
+    if (Array.isArray(c) && c.some(b => b && (
+      (b.type === "text" && (b.text || "").trim()) || b.type === "tool_use" || b.type === "tool_result"
+    ))) return true;
+  }
+  return false;
+}
+
+// C2: redact() only masks THIS project's .env values. A secret pasted into chat (not in .env) would
+// otherwise reach findings raw. maskTokens additionally masks any whitespace-delimited token flagged
+// high-entropy by isSecret (key="" — no named-key branch, so only URL-userinfo/token-shape heuristics
+// apply). Narrowed honesty: masks .env values AND high-entropy token-shaped strings — not a guarantee
+// against every secret form (e.g. multi-word secrets, secrets split across tokens).
+function maskTokens(text) {
+  if (typeof text !== "string" || !text) return text;
+  return text.split(/(\s+)/).map(tok => {
+    if (!tok || /^\s+$/.test(tok)) return tok;
+    return isSecret("", tok) ? "«token»" : tok;
+  }).join("");
+}
+function maskFindings(findings, secrets) {
+  return findings.map(f => {
+    const g = { ...f };
+    if (typeof g.evidence === "string") g.evidence = maskTokens(redact(g.evidence, secrets).text);
+    if (Array.isArray(g.evidence)) g.evidence = g.evidence.map(e => maskTokens(redact(String(e), secrets).text));
+    if (typeof g.phrase === "string") g.phrase = maskTokens(redact(g.phrase, secrets).text);
+    return g;
+  });
+}
+function aggregate(raw) {
+  const byKey = new Map();
+  for (const f of raw) {
+    const key = `${f.type}::${f.gate || f.rule || f.phrase || ""}`.slice(0, 200);
+    const cur = byKey.get(key) || { type: f.type, gate: f.gate, rule: f.rule, phrase: f.phrase, count: 0, sessions: [], evidence: [] };
+    cur.count++;
+    if (f.sessionId && !cur.sessions.includes(f.sessionId)) cur.sessions.push(f.sessionId);
+    if (f.evidence && cur.evidence.length < 3) cur.evidence.push(f.evidence);
+    byKey.set(key, cur);
+  }
+  return [...byKey.values()].sort((a, b) => b.count - a.count);
+}
+function scan(cwd, opts = {}) {
+  const dir = opts.transcriptDirOverride || transcriptDir(cwd);
+  const marker = readMarker(cwd);
+  const files = listSessionFiles(dir, { sinceMtime: (marker && marker.lastRunNewestMtime) || 0 });
+  const raw = [];
+  let newestMtime = (marker && marker.lastRunNewestMtime) || 0;
+  let realSessions = 0;
+  for (const f of files) {
+    newestMtime = Math.max(newestMtime, f.mtime);
+    const objs = parseSession(f.path);
+    if (!hasRealContent(objs)) continue; // C6: skip metadata-only hollow sessions
+    realSessions++;
+    const sid = f.path.split("/").pop().replace(/\.jsonl$/, "");
+    raw.push(...detectGateGaps(objs, sid), ...detectUserCorrections(objs, sid), ...detectNearMisses(objs, sid));
+  }
+  const drift = driftSignal(cwd); if (drift) raw.push({ ...drift, sessionId: null });
+  let secrets = []; try { secrets = collectSecrets(cwd); } catch (_) {}
+  const findings = maskFindings(aggregate(raw), secrets);
+  return { findings, meta: { sessionsScanned: realSessions, newestMtime, cwd } };
+}
+
+const MARKER = (cwd) => join(cwd, "docs", "retrospect-state.json");
+function readMarker(cwd) { try { return JSON.parse(readFileSync(MARKER(cwd), "utf8")); } catch (_) { return null; } }
+function writeMarker(cwd, obj) {
+  // Creates docs/ if missing (recursive mkdir) so a fresh project can persist the marker on the first
+  // run without requiring the caller to pre-create docs/. Any failure (permission, odd path) is caught
+  // and silent — fail-safe; a missed marker write just means the next scan re-reads a bit more.
+  try {
+    mkdirSync(join(cwd, "docs"), { recursive: true });
+    writeFileSync(MARKER(cwd), JSON.stringify(obj, null, 2));
+  } catch (_) { /* fail-safe */ }
+}
+function isDue(cwd, opts = {}) {
+  const { minSessions = 5, minDays = 1, transcriptDirOverride } = opts;
+  const dir = transcriptDirOverride || transcriptDir(cwd);
+  const marker = readMarker(cwd);
+  const since = (marker && marker.lastRunNewestMtime) || 0;
+  const freshFiles = listSessionFiles(dir, { sinceMtime: since });
+  const fresh = freshFiles.filter(f => hasRealContent(parseSession(f.path))); // C6: hollow sessions don't count
+  if (fresh.length >= minSessions) return true;
+  if (marker && marker.lastRunAt && fresh.length >= 1) {
+    const ageDays = (Date.parse(new Date().toISOString()) - Date.parse(marker.lastRunAt)) / 86400000;
+    if (ageDays >= minDays) return true;
+  }
+  return false;
+}
+
+export {
+  transcriptDir, listSessionFiles, parseSession,
+  detectGateGaps, detectUserCorrections, detectNearMisses, driftSignal,
+  scan, readMarker, writeMarker, isDue,
+};
+
+// Note (marker docs/ dir): writeMarker creates <cwd>/docs/ if missing (recursive mkdir) then writes the
+// marker; any failure is caught and silent (fail-safe — a missed marker write never blocks/crashes).
+// Note (isDue determinism): new Date() is used at runtime; do NOT call it in workflow scripts, but this
+// is a plain CLI/skill module so it's fine.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const cwd = process.argv[2] || process.cwd();
+  process.stdout.write(JSON.stringify(scan(cwd), null, 2));
+}
