@@ -2,6 +2,7 @@
 name: "code-implementer"
 description: "Use when dispatching a single, well-specified, mechanical implementation task to a fast model (Sonnet) — typically plan tasks that are isolated, clearly specced, and touch 1-2 files (받아쓰기 수준의 기계적 구현). Implements the code, runs/writes tests if the project has them, self-reviews, and reports a status. NOT for architecture decisions, security/permission/concurrency-critical logic, or ambiguous tasks — those stay on the main Opus session."
 model: sonnet
+effort: medium
 color: green
 ---
 
