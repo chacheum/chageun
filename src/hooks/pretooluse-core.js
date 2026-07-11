@@ -242,7 +242,7 @@ const NESTED_AGENT = /(?:^|[;|&(){]|\bthen\b|\bdo\b|\$\(|`|\bsh\s+-c\s+["']?|\bb
 // 보호 경로(.chageun 통과표·STOP + .claude 안전판 + pretooluse 훅 파일)를 읽기 외로 건드리는 Bash 차단.
 // H1: pathGuard는 Write류만 봐서 Bash `tee`/`>`/`sed -i`로 안전판 쓰기가 새던 구멍을 막는다. 순수 읽기(cat/grep/ls)는 통과.
 // 차근 안전판은 항상 `.claude`/`.chageun` 아래라 그 둘로 충분 — bare `hooks/`·`settings.json`은 사용자 프로젝트(React src/hooks·.vscode/settings.json)를 오탐해 제외. ($HOME 밖 임의 절대경로 쓰기는 미커버 — 샌드박스가 근본대책.)
-const PROTECTED_REF = /\.(?:claude|chageun)\b|pretooluse[^/\s]*\.js\b/i;
+const PROTECTED_REF = /\.(?:claude|chageun)\b|(?:pre|post)tooluse[^/\s]*\.js\b|secret-scan[^/\s]*\.js\b|finish-work[^/\s]*\.(?:js|mjs)\b/i;
 const CHAGEUN_TOUCH = /\b(?:rm|mv|cp|unlink|truncate|tee|dd|install|ln|chmod|sed|awk|python3?|node|perl|ruby|cd|find|shred|rsync|git)\b|>>?/i;
 
 // ── P7 무인 egress(외부 데이터 전송) 차단 ──────────────────────────────────
@@ -314,7 +314,7 @@ function budgetStep(prevState, now, isProgress, limits) {
 }
 
 // 무인 모드: worktree 밖 쓰기 / 안전장치·설정·훅 / 동결된 성공기준 파일 수정 차단. Write류만 대상.
-const PROTECTED = /(^|\/)\.(?:claude|chageun)(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|pretooluse[^/]*\.js$/i;
+const PROTECTED = /(^|\/)\.(?:claude|chageun)(\/|$)|(^|\/)settings(\.local)?\.json$|(^|\/)hooks(\/|$)|(?:pre|post)tooluse[^/]*\.js$|secret-scan[^/]*\.js$|finish-work[^/]*\.(?:js|mjs)$/i;
 function pathGuard(toolName, toolInput, opts) {
   if (!/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(String(toolName || ""))) return null;
   const fp = (toolInput && (toolInput.file_path || toolInput.notebook_path)) || "";

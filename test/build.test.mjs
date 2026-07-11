@@ -15,6 +15,9 @@ test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
   assert.ok(existsSync(join(out, ".claude-plugin/marketplace.json")));
   assert.ok(existsSync(join(out, "hooks/hooks.json")));
   assert.ok(existsSync(join(out, "hooks/activate.js")));
+  assert.ok(existsSync(join(out, "hooks/posttooluse.js")), "G7 PostToolUse redaction hook");
+  assert.ok(existsSync(join(out, "hooks/secret-scan-core.js")), "G7 shared secret-scan core");
+  assert.match(readFileSync(join(out, "hooks/hooks.json"), "utf8"), /PostToolUse[\s\S]*posttooluse\.js/, "hooks.json wires PostToolUse → posttooluse.js");
   assert.ok(existsSync(join(out, "rules/operating-rules.md")));
   for (const s of ["referencing", "product-map", "design-system", "monitoring", "security-scan"])
     assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), s);
