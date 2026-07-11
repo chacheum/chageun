@@ -17,7 +17,7 @@
     "rules": ["operating-rules.md"],
     "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan", "unattended-loop", "finish-check", "spec-gate", "run-verify", "routing", "formats"],
     "agents": ["plan-validator", "pr-reviewer", "code-implementer"],
-    "hooks": ["activate.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js"],
+    "hooks": ["activate.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js", "posttooluse.js", "secret-scan-core.js"],
     "assets": ["chageun-flow.png"]
   },
   "codex": {

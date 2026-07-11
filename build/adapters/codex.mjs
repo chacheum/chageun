@@ -12,7 +12,7 @@ export function buildCodex(srcDir, outDir) {
 
   // 훅 (Codex)
   mkdirSync(join(outDir, "hooks"), { recursive: true });
-  for (const f of ["hooks-codex.json", "activate-codex.mjs", "finish-work-codex.mjs", "pretooluse-codex.mjs", "pretooluse-core.js"])
+  for (const f of ["hooks-codex.json", "activate-codex.mjs", "finish-work-codex.mjs", "pretooluse-codex.mjs", "pretooluse-core.js", "secret-scan-core.js"])
     cpSync(join(srcDir, "hooks", f), join(outDir, "hooks", f));
 
   // 공유 콘텐츠(미수정 복사)

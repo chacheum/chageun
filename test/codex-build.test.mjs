@@ -18,7 +18,7 @@ test("buildCodex는 Codex 플러그인 트리를 만든다", () => {
   assert.ok(!("dependencies" in p), "Codex plugin.json에 dependencies 없어야");
   for (const f of [
     "hooks/hooks-codex.json", "hooks/activate-codex.mjs", "hooks/finish-work-codex.mjs",
-    "hooks/pretooluse-codex.mjs", "hooks/pretooluse-core.js",
+    "hooks/pretooluse-codex.mjs", "hooks/pretooluse-core.js", "hooks/secret-scan-core.js",
     "rules/operating-rules.md", "codex/operating-rules-addendum.md", "codex/gate-agents.md", "codex/codex-tools.md",
     "README.md", "LICENSE",
   ]) assert.ok(existsSync(join(out, f)), f);
@@ -43,4 +43,10 @@ test("codex README는 Codex 설치 안내를 덧붙인다(claude는 불변)", ()
 
   // codex README는 원본보다 길어야 함 (append 확인)
   assert.ok(codexReadme.length > srcReadme.length, "codex README는 원본보다 길어야 함");
+});
+
+// H5: 공유 core 누락 시 finish-work-codex import가 로드시 throw → Codex Stop 훅 3개 통째 사망(golden은 Claude만이라 못 잡음).
+// 파일 존재가 아니라 실제 import로 확인 — secret-scan-core.js가 dist/codex에 없으면 이 테스트가 실패한다.
+test("dist/codex finish-work-codex imports cleanly (shared secret-scan-core present)", async () => {
+  await import(new URL("../dist/codex/hooks/finish-work-codex.mjs", import.meta.url));
 });
