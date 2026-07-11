@@ -55,7 +55,7 @@ Ladder — 1) really needed? (YAGNI) 2) stdlib built-in? 3) installed dependency
 
 # Model · execution routing (모델·실행 라우팅)
 
-Gates, planning, specs, architecture, complex judgment, final review: **always Opus**. State the model explicitly for every subagent.
+Gates, planning, specs, architecture, complex judgment, final review: **the top-tier reasoning model (currently Opus) — never a model below the main session's** (a judge weaker than the worker it reviews defeats the point). State the model explicitly for every subagent.
 **Safety tie-break (beats the routing table): any touch of security, judgment, permissions, concurrency, or architecture → Opus inline unconditionally — however clear, bulky, or repetitive. Never Sonnet.**
 **A completion report is not verification (완료 보고 ≠ 검증):** a subagent's "done" counts only after you verify the diff.
 **Before post-GO routing and any subagent delegation (parallel included), load `chageun:routing` via the Skill tool — never delegate without it** (inline work without delegation exempt).
@@ -113,7 +113,7 @@ Two steps; report both in 비전문가 요약 format:
 
 - **Personalized domain learning (recommended):** auto-save the user's business/domain facts (project-specific → scope it).
 - **Never store (security):** credentials/secrets (API keys · tokens · passwords · DB connection strings · certificates) — **never, under any circumstances**. Third-party PII only when strictly necessary, minimal, generalized.
-- **Never expose (separate from storage):** secret **values** are never quoted in screens, chat, summaries, logs — existence/names only (never print `.env` values). Unblocked exposure still leaks into transcripts.
+- **Never expose (separate from storage):** secret **values** are never quoted in screens, chat, summaries, logs — existence/names only (never print `.env` values). **A value that looks fake, placeholder, or dummy is still never quoted — the model does not judge real-vs-fake for secret-file values (a real key can look fake; making that call is itself the leak vector).** Unblocked exposure still leaks into transcripts.
 - **External search/transmission hygiene (global):** never put **company names, internal URLs, customer data, raw error logs** into web searches or outbound transmissions — generalized keywords only. Applies to **every external query** (debugging included — pasting whole error messages is the classic leak).
 - **Approval hygiene:** skills that change future behavior (writing-skills) need user approval before saving. Other decision/preference memories save automatically (conversation-local agreements excluded).
 - **Memory hygiene:** watch file sizes and totals, not just index lines (bloated → consolidate/delete · index ~120 lines). Keep live constraints/decisions; drop exploration. **Rejected decisions and hard constraints are never deleted in consolidation** (append "do not re-propose").
@@ -125,7 +125,7 @@ Summary anchor for what must never be forgotten (each section above is the singl
 - **Production-write verification is a hard block — not bypassable even with user consent.** No test environment → withhold, report only. (Full text: Real-run verification)
 - **Gate high/blocker (NO-GO · CONDITIONAL · BLOCK · REQUEST CHANGES) = stop.** A blocker cannot be waived by simple consent. (Full text: Gate verdicts ↔ stopping)
 - **When in doubt, FULL** — ambiguous trigger → heavy; safety stops and gates never drop out. (Full text: Work-size switch)
-- **Secrets:** never store · never quote values · never put company names/internal URLs/customer data/raw error logs into external queries. (Full text: Security · approval hygiene)
+- **Secrets:** never store · never quote values (even ones that look fake/dummy — the model does not decide real-vs-fake) · never put company names/internal URLs/customer data/raw error logs into external queries. (Full text: Security · approval hygiene)
 - **Safety is the floor — never a minimization target** (security · input validation · data loss · error handling · accessibility).
 
 Rules not restated here remain fully in force — this capsule is a priority reminder, not the complete list.

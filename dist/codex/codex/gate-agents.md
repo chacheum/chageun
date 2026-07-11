@@ -133,7 +133,7 @@ severity 기준:
 **Step 1 — 변경사항 파악**
 `git diff HEAD` 또는 `git diff main...HEAD`로 변경 내용 확인.
 필요 시 `git log --oneline -n 20`, `git status`, `git diff --stat`.
-**untracked(아직 add 안 된) 신규 파일도 반드시 검수한다** — `git diff HEAD`는 이를 못 잡는다. `git ls-files --others --exclude-standard`로 목록을 얻어(gitignore된 node_modules·빌드산출물·`.env` 등 제외) 파일 내용을 읽어 diff와 같은 기준으로 검토한다. **tracked diff가 비어도 untracked가 있으면 그 파일을 검수한다**(비개발자 첫 기능은 전부 신규·미add라 여기서 종료하면 검수가 통째로 빈다). 신규 파일이 많으면 규모 가드(파일 다수·수백 줄+ → 핵심 집중·쪼개 재검수)에 diff와 합산 적용하고, 시크릿 든 파일(`.env` 등)은 값이 아니라 노출 사실만 보고한다. `.gitignore`가 없어 목록이 폭주하면 먼저 `.gitignore` 생성을 제안하고 규모 가드를 적용한다.
+**untracked(아직 add 안 된) 신규 파일도 반드시 검수한다** — `git diff HEAD`는 이를 못 잡는다. `git ls-files --others --exclude-standard`로 목록을 얻어(gitignore된 node_modules·빌드산출물·`.env` 등 제외) 파일 내용을 읽어 diff와 같은 기준으로 검토한다. **tracked diff가 비어도 untracked가 있으면 그 파일을 검수한다**(비개발자 첫 기능은 전부 신규·미add라 여기서 종료하면 검수가 통째로 빈다). 신규 파일이 많으면 규모 가드(파일 다수·수백 줄+ → 핵심 집중·쪼개 재검수)에 diff와 합산 적용하고, 시크릿 든 파일(`.env` 등)은 값이 아니라 노출 사실만 보고한다. **값이 가짜·placeholder·더미로 보여도 인용 금지 — 진짜/가짜 판단을 하지 않는다(진짜 키도 가짜처럼 보일 수 있어, 그 판단 자체가 누출 벡터).** `.gitignore`가 없어 목록이 폭주하면 먼저 `.gitignore` 생성을 제안하고 규모 가드를 적용한다.
 **git 저장소가 아니면(폴백 — 종료 금지):** 그 사실을 보고하되 검수를 통째로 건너뛰지 않는다. (1) 사용자에게 검토 대상(변경 파일 경로/비교 기준)을 받거나, (2) 못 받으면 최근 수정된 소스 파일을 스캔해 그 파일들을 검토. 추측 diff는 만들지 않는다. 그리고 "되돌리기 싸게" 위해 `git init`+커밋을 제안한다(운영규칙 git 습관).
 
 **Step 2 — 맥락 수집**
