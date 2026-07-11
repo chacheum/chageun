@@ -110,4 +110,23 @@ function redact(text, secrets) {
   return { text: out, count };
 }
 
-module.exports = { isSecret, parseEnv, collectSecrets, redact };
+// strip whitespace, backticks, quotes, and zero-width chars (U+200B ZWSP .. U+200D ZWJ, U+FEFF BOM)
+// so a value re-quoted with cosmetic spacing/backticks is still caught.
+function normalize(s) {
+  return String(s).replace(/[\s`'"​-‍﻿]/g, "");
+}
+function findLeaks(text, secrets) {
+  if (typeof text !== "string" || !text || !Array.isArray(secrets)) return [];
+  const nText = normalize(text);
+  const hits = [];
+  for (const { key, value } of secrets) {
+    if (!value || value.length < 6) continue;
+    const b64 = Buffer.from(value).toString("base64");
+    if (text.includes(value) || nText.includes(normalize(value)) || text.includes(b64)) {
+      hits.push(key);
+    }
+  }
+  return hits;
+}
+
+module.exports = { isSecret, parseEnv, collectSecrets, redact, findLeaks };
