@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const require = createRequire(import.meta.url);
-const { isSecret, parseEnv, collectSecrets, redact } = require("../src/hooks/secret-scan-core.js");
+const { isSecret, parseEnv, collectSecrets, redact, findLeaks } = require("../src/hooks/secret-scan-core.js");
 
 test("isSecret: length branch (>=12, no whitespace)", () => {
   assert.equal(isSecret("X", "sk-1234abcd9999"), true);
@@ -77,4 +77,16 @@ test("redact: regex-special value handled literally", () => {
 });
 test("redact: non-string / empty passthrough", () => {
   assert.deepEqual(redact(123, [{key:"K",value:"x"}]), { text: 123, count: 0 });
+});
+
+const S = [{key:"API_KEY", value:"sk-abc123def456"}];
+test("findLeaks: raw, normalized (spaces/backticks), base64", () => {
+  assert.deepEqual(findLeaks("value is sk-abc123def456", S), ["API_KEY"]);
+  assert.deepEqual(findLeaks("`sk-abc123 def456`", S), ["API_KEY"]);        // spaced+backtick
+  const b64 = Buffer.from("sk-abc123def456").toString("base64");
+  assert.deepEqual(findLeaks("encoded: " + b64, S), ["API_KEY"]);
+  assert.deepEqual(findLeaks("nothing here", S), []);
+});
+test("findLeaks: short values ignored", () => {
+  assert.deepEqual(findLeaks("val=abc", [{key:"P", value:"abc"}]), []);
 });
