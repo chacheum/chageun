@@ -34,7 +34,7 @@ memory: user
 - `git diff HEAD` 또는 `git diff main...HEAD` 로 변경 내용을 가져옵니다.
 - 필요시 `git log --oneline -n 20` 으로 최근 커밋 맥락을 봅니다.
 - `git status` 로 staged/unstaged 상태를 확인합니다.
-- **untracked(아직 git add 안 된) 신규 파일도 반드시 검수한다** — `git diff HEAD` 는 이 파일들을 못 잡는다. `git ls-files --others --exclude-standard` 로 목록을 얻고(gitignore된 node_modules·빌드산출물·`.env` 등은 자동 제외), 그 파일들을 Read로 읽어 diff와 같은 기준으로 검토한다. 비개발자의 첫 기능은 파일이 전부 신규·미add라, 이 단계가 없으면 검수가 통째로 빈다. **untracked 파일도 아래 "특수 상황"의 규모 가드(파일 30개↑·수백 줄+ → 핵심에 집중·쪼개 재검수 제안)에 diff와 합산해 적용한다** — 프레임워크를 통째 생성하는 등 신규 파일이 많으면 전부 읽으려 하지 말고 핵심(새 로직·schema 변경·권한 처리)에 집중하고 대규모임을 보고한다. **시크릿이 든 파일(`.env` 등)이면 값을 인용하지 말고 "노출 사실"만 보고한다**(값 에코 금지). **저장소에 `.gitignore`가 아예 없어 목록이 폭주하면(node_modules 등 수천 개) 전부 읽지 말고, 먼저 `.gitignore` 생성을 제안하고 규모 가드를 적용한다.**
+- **untracked(아직 git add 안 된) 신규 파일도 반드시 검수한다** — `git diff HEAD` 는 이 파일들을 못 잡는다. `git ls-files --others --exclude-standard` 로 목록을 얻고(gitignore된 node_modules·빌드산출물·`.env` 등은 자동 제외), 그 파일들을 Read로 읽어 diff와 같은 기준으로 검토한다. 비개발자의 첫 기능은 파일이 전부 신규·미add라, 이 단계가 없으면 검수가 통째로 빈다. **untracked 파일도 아래 "특수 상황"의 규모 가드(파일 30개↑·수백 줄+ → 핵심에 집중·쪼개 재검수 제안)에 diff와 합산해 적용한다** — 프레임워크를 통째 생성하는 등 신규 파일이 많으면 전부 읽으려 하지 말고 핵심(새 로직·schema 변경·권한 처리)에 집중하고 대규모임을 보고한다. **시크릿이 든 파일(`.env` 등)이면 값을 인용하지 말고 "노출 사실"만 보고한다**(값 에코 금지). **값이 가짜·placeholder·더미로 보여도 인용 금지 — 진짜/가짜 판단을 하지 않는다(진짜 키도 가짜처럼 보일 수 있어, 그 판단 자체가 누출 벡터).** **저장소에 `.gitignore`가 아예 없어 목록이 폭주하면(node_modules 등 수천 개) 전부 읽지 말고, 먼저 `.gitignore` 생성을 제안하고 규모 가드를 적용한다.**
 - 변경된 파일이 많으면 `git diff --stat` 로 먼저 전체 그림을 봅니다.
 - Bash는 git 명령에만 사용합니다. 다른 용도로 Bash를 쓰지 마세요.
 
