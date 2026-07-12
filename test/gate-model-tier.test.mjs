@@ -44,3 +44,38 @@ test("일꾼(code-implementer)은 게이트보다 강한 티어가 아니다 —
     `code-implementer(${worker})가 게이트(${TOP_TIER})보다 강함 — 심판이 일꾼보다 약함(R6가 막으려는 역전).`
   );
 });
+
+// R6 Codex 미러 가드 — Fable5 R6 재감사가 찾은 구멍(2026-07-12).
+// 위 두 테스트는 Claude 프론트매터(src/agents/*.md)만 읽는다. Codex 게이트는 모델을 산문으로 지정하므로
+// (src/codex/gate-agents.md) 어떤 테스트도 그 지정을 지키지 않았다 — agent-parity는 판정 문구만 잠글 뿐
+// 모델 티어는 안 잠갔다. 누가 Codex 쪽 게이트를 "강한 모델"→"빠른 모델"로 조용히 강등해도 전 테스트가
+// 통과했다(behavior hole 아닌 coverage hole). 이 가드가 그 조용한 강등을 시끄러운 실패로 바꾼다.
+// ([[chageun-dual-platform-mirror]] 원칙의 실물: golden은 Claude만 봐서 Codex 표류를 못 잡는다.)
+const CODEX_GATES = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "codex", "gate-agents.md");
+
+test("Codex 게이트 미러도 심판=강한 모델·일꾼=빠른 모델을 유지한다 — R6 표류 가드", () => {
+  const g = readFileSync(CODEX_GATES, "utf8");
+  // 1. 모델 매핑 앵커: 차근 Opus=강한 모델 / Sonnet=빠른 모델. 이 산문이 뒤집히면 게이트 심판이 약화된다.
+  assert.ok(/"Opus"\s*=\s*Codex에서\s*강한 모델/.test(g),
+    'Codex 매핑에서 "Opus = 강한 모델"이 사라지거나 바뀜 — 게이트 심판이 약해질 표류');
+  assert.ok(/"Sonnet"\s*=\s*빠른 모델/.test(g),
+    'Codex 매핑에서 "Sonnet = 빠른 모델"이 사라지거나 바뀜');
+  // 2. plan-validator(게이트) spawn 예시는 강한 모델. **그 예시 블록만** 잘라 검사한다 —
+  //    전역 부정검사는 나중에 일꾼 spawn 예시(정당한 빠른 모델)를 오탐한다(pr-reviewer low). 앵커는
+  //    예시 헤딩 전문("분리 실행 예시")까지 잡아 아래 `## plan-validator 지시문` 헤딩으로 흘러가지 않게 한다.
+  const gateSpawn = /# plan-validator 분리 실행 예시[\s\S]*?```/.exec(g);
+  assert.ok(gateSpawn, "Codex plan-validator spawn 예시 블록을 못 찾음(문서 구조 변경?)");
+  assert.ok(/model="강한 모델"/.test(gateSpawn[0]),
+    'Codex plan-validator(게이트) spawn 예시가 강한 모델이 아님 — 심판 약화');
+  assert.ok(!/model="빠른 모델"/.test(gateSpawn[0]),
+    'Codex plan-validator(게이트) spawn 예시가 빠른 모델로 강등됨 — R6 역전');
+  // 3. code-implementer(일꾼)는 빠른 모델. code-implementer 섹션으로 국한(전역 검사는 다른 곳
+  //    같은 포맷 줄에 마스킹될 수 있어 — pr-reviewer low; 승격도 직접 부정검사로 잡아 게이트와 대칭).
+  const ciIdx = g.indexOf("## code-implementer 지시문");
+  assert.ok(ciIdx >= 0, "Codex code-implementer 섹션을 못 찾음(문서 구조 변경?)");
+  const workerSection = g.slice(ciIdx);
+  assert.ok(/\*\*모델:\*\*\s*빠른 모델/.test(workerSection),
+    'Codex code-implementer 일꾼이 빠른 모델이 아님 — 심판<일꾼 역전(R6)');
+  assert.ok(!/\*\*모델:\*\*\s*강한 모델/.test(workerSection),
+    'Codex code-implementer 일꾼이 강한 모델로 승격됨 — 심판<일꾼 역전(R6)');
+});
