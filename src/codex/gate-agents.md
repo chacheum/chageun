@@ -27,6 +27,11 @@ close_agent(agent_id)
 
 > **모델 매핑:** 차근의 "Opus" = Codex에서 강한 모델(높은 reasoning effort). "Sonnet" = 빠른 모델.
 
+**정직 고지(플랫폼별 강제 수준):** 리뷰 게이트가 "리뷰만·자기 메모리에만 쓰기"를 지키는 강도는 플랫폼·모드마다 다르다 —
+- **Claude(서브에이전트):** PreToolUse 훅이 `agent_type`을 보고 쓰기를 agent-memory로 가두고 비-git Bash를 차단(기계 강제).
+- **Codex spawn 모드(multi_agent):** `sandbox_mode="read-only"` OS 샌드박스가 모든 쓰기(git checkout 포함) 차단(기계 강제).
+- **Codex 인라인 모드(기본):** 메인 에이전트가 지시문을 직접 따르는 구조라 **기계 강제가 없다 — 텍스트 규칙에만 의존**(같은 구멍). 안전이 중요하면 spawn 모드를 쓰라.
+
 ---
 
 ## plan-validator 지시문
