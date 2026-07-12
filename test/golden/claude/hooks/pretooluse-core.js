@@ -343,7 +343,8 @@ function isReviewAgent(agentType) {
   return typeof agentType === "string" && REVIEW_AGENT_RE.test(agentType);
 }
 const AGENT_MEM = path.join(os.homedir(), ".claude", "agent-memory");
-const GIT_READ_SUB = /^(?:diff|log|status|show|ls-files|ls-tree|blame|rev-parse|rev-list|shortlog|describe|cat-file|for-each-ref|symbolic-ref|name-rev|reflog|whatchanged|grep)$/;
+// symbolic-ref(HEAD 재기록)·reflog(expire/delete로 복구로그 파기)는 변경 명령이라 제외(pr-reviewer low).
+const GIT_READ_SUB = /^(?:diff|log|status|show|ls-files|ls-tree|blame|rev-parse|rev-list|shortlog|describe|cat-file|for-each-ref|name-rev|whatchanged|grep)$/;
 // 읽기 필터(파이프 우측): stdin→stdout만, 위치인자 파일쓰기 불가한 것만. sort(-o)·uniq(OUTPUT 위치인자)·
 // less/more(대화형 !cmd)는 쓰기·탈출 가능해 제외(plan-validator medium).
 const READ_FILTER = /^(?:head|tail|grep|egrep|fgrep|wc|cat|cut|nl|tr)$/;
@@ -368,7 +369,13 @@ function bashSegmentAllowed(rawSeg) {
     if (t === "--no-pager") { i += 1; continue; }
     return false;                                              // 알 수 없는 글로벌 옵션 → 안전측 거부
   }
-  return GIT_READ_SUB.test(toks[i] || "");
+  if (!GIT_READ_SUB.test(toks[i] || "")) return false;
+  // (pr-reviewer low) 읽기 서브명령이어도 파일쓰기·명령실행 옵션은 차단:
+  // git diff --output=경로(파일 씀), git grep -O<cmd>/--open-files-in-pager(명령 실행).
+  for (let j = i + 1; j < toks.length; j++) {
+    if (/^--output|^--open-files-in-pager$|^-O/.test(toks[j])) return false;
+  }
+  return true;
 }
 // 리뷰 에이전트의 도구 호출 판정: 쓰기는 agent-memory 안만, Bash는 git 읽기 허용목록만. 사유 or null.
 function reviewAgentBlock(agentType, toolName, toolInput) {
@@ -383,8 +390,9 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
     return null;
   }
   if (name === "Bash") {
-    const cmd = String((toolInput && toolInput.command) || "");
-    // 분할에 단일 `&`(백그라운드) 포함 — `git diff & npm test` 우회 차단(`&&`가 먼저 매칭돼 안전).
+    // 따옴표를 먼저 떼고 조각낸다 — 따옴표 속 `|`(`git grep 'a|b'`의 정규식 교대 등)를 셸 파이프로
+    // 오인해 정상 명령을 과차단하던 것 방지(pr-reviewer low). 단일 `&`(백그라운드)도 분할에 포함.
+    const cmd = stripQuotes(String((toolInput && toolInput.command) || ""));
     for (const seg of cmd.split(/&&|\|\||[;|&\n]/)) if (!bashSegmentAllowed(seg)) return "ra-bash";
     return null;
   }
