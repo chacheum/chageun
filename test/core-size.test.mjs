@@ -31,7 +31,10 @@ const CODEX_CORE_CEILING = 21500;
 // Codex 상시 주입 '총면' = 규칙면 + 인라인 절차 스킬 본문. batch6가 규칙→스킬 이동을 시작하면서
 // "스킬로 옮기면 두 상한 다 빠져나간다"는 새 우회로가 생겼다 — 이 합산 상한이 그 우회를 막는다
 // (Claude는 스킬이 지연로드라 이 면이 없고, Codex만 인라인이라 총면이 실체다).
-const CODEX_TOTAL_CEILING = 49700;
+// 2026-07-12 +348 (49700→50048): retrospect(회고) 완료-트리거 한 줄이 인라인 procSkill인 finish-check에
+// 들어가 총면이 커짐(retrospect 스킬 본문은 procSkill 아님=총면 무관). 트리거는 최소화(상세는 비인라인
+// retrospect 스킬로). 잔여는 근거 있는 소폭 상향 — v1.1에서 트리거를 Claude 전용 Stop-훅으로 옮기면 회수 가능.
+const CODEX_TOTAL_CEILING = 50048;
 
 test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
   const bytes = normBytes(CORE);
