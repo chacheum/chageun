@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
+import { readFileSync } from "node:fs";
 const require = createRequire(import.meta.url);
 const core = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 const { isReviewAgent, reviewAgentBlock, reasonFor } = core;
@@ -55,4 +56,11 @@ test("REASONS 3키가 행동 지시형으로 존재", () => {
     assert.ok(msg && msg !== "차단: 되돌리기 어려운 고위험 명령입니다.", k + " 문구 부재");
     assert.ok(/발견으로 보고|Read\/Grep|계속/.test(msg), k + " 행동지시 아님");
   }
+});
+
+test("Codex gate-agents.md: spawn 예시 read-only + 정직 3단 고지 유지(산문 잠금·강제 아님)", () => {
+  const p = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "codex", "gate-agents.md");
+  const g = readFileSync(p, "utf8");
+  assert.ok(g.includes('sandbox_mode="read-only"'), "spawn read-only 선언 부재");
+  assert.ok(g.includes("인라인 모드(기본)") && g.includes("기계 강제가 없다"), "인라인 모드 정직 고지 부재");
 });

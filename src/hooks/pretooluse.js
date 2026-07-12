@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock } = require("./pretooluse-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -101,6 +101,16 @@ process.stdin.on("end", () => {
     const input = JSON.parse(raw);
     const name = input.tool_name;
     const ti = input.tool_input || {};
+
+    // 0-pre) 리뷰 에이전트 격리(Claude 서브에이전트 한정 — 순수 문자열·fail-closed).
+    //   transcript·fs 접근 없이 훅 초반에 판정. 판정 예외 시 안전측 차단(ra-error). agent_type은
+    //   서브에이전트에만 있음(메인 세션은 없음 → 무영향). deny는 항상 ra-* 문구라 UNATTENDED 무관 false.
+    //   파싱 실패 시엔 이 분기 전에 바깥 catch로 빠져 유인 fail-open(메인 배려 — 스펙 §최대위험).
+    if (isReviewAgent(input.agent_type)) {
+      let raHit;
+      try { raHit = reviewAgentBlock(input.agent_type, name, ti); } catch (_) { raHit = "ra-error"; }
+      if (raHit) return deny(raHit, false);
+    }
 
     // 0) 무인 게이트: 정지 요청 or preflight 통과표 없음 → 모든 도구 park(fail-closed).
     if (UNATTENDED) {
