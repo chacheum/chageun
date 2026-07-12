@@ -34,14 +34,16 @@ test("Bash: git 읽기만 허용, 나머지·리다이렉션·치환 차단", ()
   const B = (c) => reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: c });
   for (const ok of ["git diff", "git status", "git log --oneline", "git show HEAD",
                     "git ls-files --others --exclude-standard", "git diff --stat",
-                    "git diff HEAD | head -50", "git -C /r diff", "git --no-pager log"])
+                    "git diff HEAD | head -50", "git -C /r diff", "git --no-pager log",
+                    "git grep -n 'a|b'", "git log --grep='fix|feat'"])   // 따옴표 속 | 과차단 안 됨(pr-reviewer low)
     assert.equal(B(ok), null, "허용이어야: " + ok);
   for (const bad of ["git checkout main", "git reset --hard", "git stash", "git apply p.diff",
                      "git cherry-pick x", "git merge b", "git commit -m x", "git push",
                      "git -c core.pager=!sh log", "npm test", "node -e 'x'", "npx prettier --write .",
                      "echo x > f", "git diff > out.txt", "rm f", "mv a b", "sed -i s/a/b/ f",
                      "cat $(rm x)", "PAGER=cat git log",
-                     "git diff & npm test", "sort -o out.txt in", "uniq in out", "git worktree add w"])
+                     "git diff & npm test", "sort -o out.txt in", "uniq in out", "git worktree add w",
+                     "git diff --output=/tmp/x", "git grep -O pager", "git symbolic-ref HEAD x", "git reflog expire --all"]) // 쓰기/변경 옵션·서브명령(pr-reviewer low)
     assert.equal(B(bad), "ra-bash", "차단이어야: " + bad);
 });
 

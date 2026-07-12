@@ -11,6 +11,17 @@
             "statusMessage": "차근 워크플로우 로딩..."
           }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/reap-dev-servers.js\"",
+            "timeout": 10,
+            "statusMessage": "안 쓰는 개발 서버 정리..."
+          }
+        ]
       }
     ],
     "PreToolUse": [
