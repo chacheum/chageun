@@ -63,7 +63,8 @@ function listSessionFiles(dir, opts = {}) {
   files.sort((a, b) => b.mtime - a.mtime);
   const out = []; let bytes = 0;
   for (const f of files) {
-    if (out.length >= maxSessions || bytes + f.size > maxBytes) break;
+    if (out.length >= maxSessions) break;              // session-count cap: stop
+    if (bytes + f.size > maxBytes) continue;           // byte cap: skip THIS (maybe huge) file, keep scanning smaller ones
     out.push(f); bytes += f.size;
   }
   return out;
