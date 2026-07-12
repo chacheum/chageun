@@ -34,7 +34,10 @@ const CODEX_CORE_CEILING = 21500;
 // 2026-07-12 +348 (49700→50048): retrospect(회고) 완료-트리거 한 줄이 인라인 procSkill인 finish-check에
 // 들어가 총면이 커짐(retrospect 스킬 본문은 procSkill 아님=총면 무관). 트리거는 최소화(상세는 비인라인
 // retrospect 스킬로). 잔여는 근거 있는 소폭 상향 — v1.1에서 트리거를 Claude 전용 Stop-훅으로 옮기면 회수 가능.
-const CODEX_TOTAL_CEILING = 50048;
+// 2026-07-12 +2446 (50048→52494): "예시로 확인"(계산·규칙 오라클) 규칙이 인라인 procSkill 3종
+// (spec-gate·finish-check·formats)에 들어감 — Fable5 UX 리뷰 지적6(AI가 AI 검사 → 도메인 로직이
+// 그럴듯하게 틀려도 게이트 통과) 방어. 세 스킬 자체가 절차라 비인라인 분리 불가. v2 훅 기계강제 시 재검토.
+const CODEX_TOTAL_CEILING = 52494;
 
 test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
   const bytes = normBytes(CORE);
