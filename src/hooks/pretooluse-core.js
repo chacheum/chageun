@@ -52,6 +52,9 @@ const REASONS = {
   "deploy": "차단(배포는 되돌리기 어려움): 사용자 확인 후 진행하려면 세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하세요(그 세션 동안 배포 검사가 꺼집니다). 이 브레이크는 CLI 배포만 막고 git push→자동배포(Vercel/Netlify 깃연동)는 못 막습니다 — 그건 멈춤 규칙으로 확인하세요.",
   "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). 이미 검토했거나 예외면 CHAGEUN_SKIP_GATE_CHECK=1로 재실행하세요.",
   "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
+  "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
+  "ra-bash": "차단: 리뷰 에이전트의 Bash는 git 읽기 명령(diff·log·status·show·ls-files)만 허용됩니다 — 다른 명령·파일 쓰기·파괴적 git·테스트 실행 금지. 고치지 말고 발견으로 보고하고, 검토는 Read/Grep으로 계속하세요.",
+  "ra-error": "차단: 리뷰 에이전트 안전 판정 중 오류라 안전측 차단(fail-closed)합니다. 검토는 Read/Grep으로 계속하세요.",
 };
 
 // 어떤 도구·입력이 위험한지 판정. 위험하면 사유 키를, 아니면 null.
@@ -328,6 +331,66 @@ function pathGuard(toolName, toolInput, opts) {
   return null;
 }
 
+// ── 리뷰 에이전트 격리(Claude 서브에이전트 한정) ──────────────────────────────
+// plan-validator·pr-reviewer가 "리뷰만·자기 agent-memory에만 쓰기"라는 자기 계약(에이전트 문서
+// pr-reviewer의 "Bash는 git 전용·npm/node 금지"·"Write/Edit는 agent-memory만")을 어기고 프로젝트
+// 메모리 수정·git checkout을 한 실측 사고(2건) 봉합. 산문을 기계로 참되게 만든다. 순수함수(fs 없음) —
+// 훅 초반·fail-closed로 배선. 네임스페이스 무관 매칭(honclwd→chageun 리브랜드 전례: 접두사 하드코딩이면
+// 리네임에 무음 해제). code-implementer·메인 세션은 대상 아님(호출부가 isReviewAgent로 가드).
+const os = require("os");
+const REVIEW_AGENT_RE = /(?:^|:)(plan-validator|pr-reviewer)$/;
+function isReviewAgent(agentType) {
+  return typeof agentType === "string" && REVIEW_AGENT_RE.test(agentType);
+}
+const AGENT_MEM = path.join(os.homedir(), ".claude", "agent-memory");
+const GIT_READ_SUB = /^(?:diff|log|status|show|ls-files|ls-tree|blame|rev-parse|rev-list|shortlog|describe|cat-file|for-each-ref|symbolic-ref|name-rev|reflog|whatchanged|grep)$/;
+// 읽기 필터(파이프 우측): stdin→stdout만, 위치인자 파일쓰기 불가한 것만. sort(-o)·uniq(OUTPUT 위치인자)·
+// less/more(대화형 !cmd)는 쓰기·탈출 가능해 제외(plan-validator medium).
+const READ_FILTER = /^(?:head|tail|grep|egrep|fgrep|wc|cat|cut|nl|tr)$/;
+function stripQuotes(s) { return String(s).replace(/'[^']*'/g, " ").replace(/"[^"]*"/g, " "); }
+function bashSegmentAllowed(rawSeg) {
+  const seg = String(rawSeg).trim();
+  if (!seg) return true;
+  const stripped = stripQuotes(seg);
+  if (/[<>]|\$\(|`/.test(stripped)) return false;              // 리다이렉션·명령치환 금지
+  const toks = stripped.split(/\s+/).filter(Boolean);
+  if (toks.length === 0) return true;
+  if (/^[A-Za-z_]\w*=/.test(toks[0])) return false;            // 선두 env 프리픽스 금지(PAGER=… 등)
+  const head = toks[0];
+  if (READ_FILTER.test(head)) return true;
+  if (head !== "git") return false;
+  let i = 1;
+  while (i < toks.length && toks[i].startsWith("-")) {          // git 글로벌 옵션 처리
+    const t = toks[i];
+    if (t === "-c") return false;                              // 설정/파거 주입 차단
+    if (t === "-C") { i += 2; continue; }                      // dir 인자 소비
+    if (t.startsWith("--git-dir") || t.startsWith("--work-tree")) { i += 1; continue; }
+    if (t === "--no-pager") { i += 1; continue; }
+    return false;                                              // 알 수 없는 글로벌 옵션 → 안전측 거부
+  }
+  return GIT_READ_SUB.test(toks[i] || "");
+}
+// 리뷰 에이전트의 도구 호출 판정: 쓰기는 agent-memory 안만, Bash는 git 읽기 허용목록만. 사유 or null.
+function reviewAgentBlock(agentType, toolName, toolInput) {
+  const name = String(toolName || "");
+  if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(name)) {
+    let fp = String((toolInput && (toolInput.file_path || toolInput.notebook_path)) || "");
+    if (!fp) return "ra-write";
+    if (fp.startsWith("~")) fp = path.join(os.homedir(), fp.slice(1));   // ~ 확장(path.resolve는 ~ 미확장)
+    const abs = path.resolve(fp);
+    const rel = path.relative(AGENT_MEM, abs);
+    if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return "ra-write";  // 형제폴더·이탈·빈/상대 차단
+    return null;
+  }
+  if (name === "Bash") {
+    const cmd = String((toolInput && toolInput.command) || "");
+    // 분할에 단일 `&`(백그라운드) 포함 — `git diff & npm test` 우회 차단(`&&`가 먼저 매칭돼 안전).
+    for (const seg of cmd.split(/&&|\|\||[;|&\n]/)) if (!bashSegmentAllowed(seg)) return "ra-bash";
+    return null;
+  }
+  return null;  // 그 외 도구(Read/Grep/Glob 등 — 매처에도 없음)는 관여 안 함
+}
+
 function unattendedBlock(toolName, toolInput, opts) {
   const name = String(toolName || "");
   if (name === "Bash") {
@@ -372,4 +435,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET };
+module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock };
