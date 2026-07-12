@@ -21,6 +21,8 @@ test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
   assert.ok(existsSync(join(out, "rules/operating-rules.md")));
   for (const s of ["referencing", "product-map", "design-system", "monitoring", "security-scan"])
     assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), s);
+  assert.ok(existsSync(join(out, "skills/retrospect/SKILL.md")));
+  assert.ok(existsSync(join(out, "skills/retrospect/retrospect-scan.mjs")));
   // hooks.json은 Claude env var를 그대로 유지
   assert.match(readFileSync(join(out, "hooks/hooks.json"), "utf8"), /CLAUDE_PLUGIN_ROOT/);
 });

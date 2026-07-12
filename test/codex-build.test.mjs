@@ -22,7 +22,7 @@ test("buildCodex는 Codex 플러그인 트리를 만든다", () => {
     "rules/operating-rules.md", "codex/operating-rules-addendum.md", "codex/gate-agents.md", "codex/codex-tools.md",
     "README.md", "LICENSE",
   ]) assert.ok(existsSync(join(out, f)), f);
-  for (const s of ["referencing","product-map","design-system","monitoring","security-scan"])
+  for (const s of ["referencing","product-map","design-system","monitoring","security-scan","retrospect"])
     assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), s);
   // 공유 operating-rules는 원본과 동일(미수정)
   assert.equal(readFileSync(join(out,"rules/operating-rules.md"),"utf8"), readFileSync(join(SRC,"rules/operating-rules.md"),"utf8"));
