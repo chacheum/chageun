@@ -170,6 +170,12 @@ test("detectNearMisses: FP guard — ASSISTANT text mentioning the rule is NOT a
   const objs = [A('That "Stop hook feedback" wasn\'t from you'), A("차단: 이 규칙을 설명하면…")];
   assert.deepEqual(detectNearMisses(objs, "s3"), []);
 });
+test("detectNearMisses: FP guard — a FAILED EDIT echoing a rules file (contains 차단: but NO hook-error prefix) is NOT a near-miss (dry-run catch)", () => {
+  // A failed Edit on pretooluse-core.js: the is_error tool_result echoes the REASONS map text ("무인 모드 차단:")
+  // but has no "PreToolUse:…hook error" prefix → must not be mistaken for a real deny.
+  const failedEdit = { type: "user", message: { role: "user", content: [{ type: "tool_result", is_error: true, content: 'String to replace not found in file.\nString: "u-deploy": "무인 모드 차단: 배포는 금지."' }] } };
+  assert.deepEqual(detectNearMisses([A("고칠게요"), failedEdit], "s5"), []);
+});
 test("detectNearMisses: normal turn → none", () => {
   assert.deepEqual(detectNearMisses([A("완료했습니다")], "s4"), []);
 });

@@ -158,10 +158,12 @@ function detectUserCorrections(objs, sessionId) {
 }
 
 // Near-miss = a chageun safety net that actually reverted a model attempt. Task-0 spike: BOTH block kinds
-// land ONLY as type:"user" entries — a PreToolUse deny as a tool_result with is_error + hook-error marker,
-// or a Stop block as text starting "Stop hook feedback:". Anchor to user-role STRUCTURE — assistant text,
-// attachments, or bare rule phrases (which appear verbatim in this repo's own docs) would false-positive (C1).
-const DENY_MARKER_RE = /PreToolUse:[^\n]*hook error|무인 모드 차단:|(?:^|[\s:`])차단:/;
+// land ONLY as type:"user" entries — a PreToolUse deny as a tool_result with is_error + the CC hook-error
+// prefix (`<Event>:…hook error`), or a Stop block as text starting "Stop hook feedback:". Anchor to user-role
+// STRUCTURE + the hook-error PREFIX — NOT bare "차단:" phrases: a FAILED Edit on a rules file (its is_error
+// tool_result echoes the file content, e.g. the REASONS map's "무인 모드 차단:") would else false-positive
+// (dry-run caught exactly this). Real chageun denies all carry "PreToolUse:…hook error" via pretooluse.js. (C1)
+const DENY_MARKER_RE = /(?:Pre|Post)ToolUse:[^\n]*hook error/;
 function detectNearMisses(objs, sessionId) {
   const out = [];
   for (const o of objs) {
