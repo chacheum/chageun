@@ -1,7 +1,7 @@
 {
   "name": "chageun",
   "description": "Safe build workflow for non-developers — task cards, verification gates, real run-through, plain-language summaries (replies in your language; default Korean). 비개발자가 안전하게 만들도록 돕는 워크플로우.",
-  "version": "0.33.0",
+  "version": "0.33.1",
   "license": "MIT",
   "dependencies": [
     {

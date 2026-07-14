@@ -33,4 +33,4 @@ for n in "${SCALE[@]}"; do
   if [[ "$in_css" -eq 0 ]]; then echo "❌ CSS($CSS)에 --color-brand-${n} 없음"; FAIL=1; fi
 done
 if [[ "$FAIL" == "1" ]]; then echo "⛔ 토큰 이름 정합 실패"; exit 1; fi
-echo "[check-token-parity] 통과 — brand 스케일 10종 문서↔코드($CSS) 이름 정합"
+echo "[check-token-parity] 통과 — brand 스케일 10종 문서↔코드($CSS) 이름 정합 (이름만 대조 — 값 드리프트는 못 잡음)"
