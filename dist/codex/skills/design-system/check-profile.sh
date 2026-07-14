@@ -12,14 +12,14 @@ FM=$(awk 'NR==1&&/^---/{f=1;next} f&&/^---/{exit} f{print}' "$DOC")
 declare -A DEFAULT=( [dark-mode]=none [animation]=minimal [base-font]=14px [radius]=4px )
 
 for k in dark-mode animation base-font radius; do
-  if printf '%s\n' "$FM" | grep -qE "^[[:space:]]+${k}:"; then
+  if grep -qE "^[[:space:]]+${k}:" <<<"$FM"; then
     : # 선언됨 — OK
   else
     echo "ℹ️  profile.${k} 미선언 → 차근 기본값 '${DEFAULT[$k]}' 적용"
   fi
 done
 
-if printf '%s\n' "$FM" | grep -qE "^[[:space:]]+brand-hue:"; then
+if grep -qE "^[[:space:]]+brand-hue:" <<<"$FM"; then
   :
 else
   echo "⚠️  profile.brand-hue 미선언 — 브랜드 정체라 기본값이 없습니다. 되도록 직접 선언하세요."
