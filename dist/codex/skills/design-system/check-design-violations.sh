@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 차근 디자인 시스템 lint — 색을 코드에 직접 하드코딩하는 행위를 막아 디자인 토큰만 쓰게 강제한다.
-# 이 검사기는 프로젝트가 소유해 CI(push/PR)·pre-commit에서 돌린다(차근이 찍어줌). design-system.md가 단일 원본.
+# 이 검사기는 프로젝트가 소유해 CI(push/PR)·pre-commit에 물려야 작동한다(차근이 찍어줌) — 안 물리면 아무도 검사하지 않는다. design-system.md가 단일 원본.
 #
 # 검출:
 #   1) Tailwind 기본 팔레트의 숫자 스케일 색 클래스 (bg/text/border/ring/... -{palette}-{num})
