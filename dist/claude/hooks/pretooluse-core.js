@@ -188,6 +188,38 @@ function planReminderNeeded(objs, toolName, toolInput) {
   return planSeen && !validated && !codeEdited;
 }
 
+// ── 디자인 레지스트리 조회 리마인더(soft, Claude 전용) ───────────────────────
+// UI 파일(디자인이 걸리는 확장자)인가. 로직 .ts/.js는 소음 회피 위해 제외.
+// 한계(정직): plain .js/.ts 컴포넌트(CRA App.js·styled-components in .ts)는 미탐 — 소프트 넛지라
+// '침묵 쪽 실패'는 안전, 대표 스택(React+Tailwind=.tsx)엔 충분.
+const UI_TARGET_RE = /\.(tsx|jsx|vue|svelte|astro|css|scss)$/i;
+function isUiTarget(p) { return UI_TARGET_RE.test(String(p || "")); }
+// 이 tool_use가 레지스트리 조회 흔적인가: design-system*.md Read 또는 design-system 스킬 로드.
+function consultedRegistry(b) {
+  const nm = String((b && b.name) || ""); const inp = (b && b.input) || {};
+  if (nm === "Read" && /design-system[^/]*\.md/i.test(String(inp.file_path || ""))) return true;
+  if (nm === "Skill" && /design-system/.test(String(inp.skill || ""))) return true;
+  return false;
+}
+// "UI 파일 첫 수정인데 이번 세션에 레지스트리를 조회한 흔적이 없다"의 첫 1회만 참.
+// 조회함(위) → 침묵. 이미 UI 편집(1회 보장) → 침묵. 순수함수(fs 없음). planReminderNeeded 형제.
+function designRegistryReminderNeeded(objs, toolName, toolInput) {
+  if (!EDIT_TOOLS_RE.test(String(toolName || ""))) return false;
+  const ti = toolInput || {};
+  if (!isUiTarget(ti.file_path || ti.notebook_path)) return false;
+  if (!Array.isArray(objs)) return false;
+  for (const o of objs) {
+    const m = (o && o.message) || o; const c = m && m.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) {
+      if (!b || b.type !== "tool_use") continue;
+      if (consultedRegistry(b)) return false;
+      if (EDIT_TOOLS_RE.test(String(b.name || "")) && isUiTarget((b.input || {}).file_path || (b.input || {}).notebook_path)) return false;
+    }
+  }
+  return true;
+}
+
 // ── 무인 모드(CHAGEUN_UNATTENDED=1) 전용 추가 차단 ──────────────────────────
 // 유인 모드엔 영향 없음(래퍼가 무인일 때만 호출). base block보다 넓게 막고, 탈출구 env는 래퍼에서 무시.
 // git과 push 사이에 어떤 토큰이 와도(-c key=val, -C dir, --git-dir=… 등) 차단. 과차단(커밋메시지 속 " push" 등)은 park라 안전.
@@ -443,4 +475,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock };
+module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock };
