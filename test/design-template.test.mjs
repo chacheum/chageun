@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 // 공개 플러그인에 브랜드(relay/다우밸브) 흔적이 새지 않았는지 영구 검증한다.
 const SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "skills", "design-system");
 const TPL = readFileSync(join(SKILL_DIR, "design-system.template.md"), "utf8");
+const SKILL = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
 
 const REQUIRED_SECTIONS = [
   "## Project Profile", "## Overview", "## Colors", "## Typography",
@@ -44,4 +45,26 @@ test("공개 플러그인 — 브랜드/프로젝트 흔적 누수 없음", () =
   for (const leak of [/cobalt/i, /1474b8/i, /1456f0/i, /pretendard/i, /dow.?valve/i, /다우밸브/, /relay\s+scripts\//i]) {
     assert.doesNotMatch(TPL, leak, `브랜드/프로젝트 흔적 누수: ${leak}`);
   }
+});
+
+// ── P2 자라나는 레지스트리(부품+변형) ────────────────────────────────────────
+
+test("템플릿은 v1 부품+변형 슬롯(페이지 폭·모달)을 담는다", () => {
+  assert.match(TPL, /page-width:/, "page-width 슬롯 누락");
+  assert.match(TPL, /modal:/, "modal 슬롯 누락");
+  assert.match(TPL, /sizes:\s*\[/, "모달 크기 변형 목록 누락");
+});
+
+test("템플릿은 '부품과 변형' 레지스트리 개념을 담는다(원본=코드·조회후재사용)", () => {
+  assert.match(TPL, /부품과 변형|부품 ?\+ ?이름/, "부품+변형 개념 누락");
+  assert.match(TPL, /원본은[^\n]*코드|코드[^\n]*원본/, "'원본=코드' 원칙 누락");
+  assert.match(TPL, /조회[\s\S]{0,40}재사용/, "조회 후 재사용 규율 누락");
+});
+
+test("SKILL은 레지스트리 동작 루프와 v1 범위(페이지폭·모달)를 담는다", () => {
+  assert.match(SKILL, /레지스트리|부품 ?\+ ?변형/, "레지스트리 개념 누락");
+  assert.match(SKILL, /페이지 폭/, "v1 범위 '페이지 폭' 누락");
+  // '모달'은 기존 §0·§1 본문에도 있어 bare /모달/이면 무력(plan-validator medium) →
+  // 레지스트리 절 안(레지스트리 다음)의 모달만 인정.
+  assert.match(SKILL, /레지스트리[\s\S]*모달/, "v1 범위 '모달'이 레지스트리 절에 없음");
 });
