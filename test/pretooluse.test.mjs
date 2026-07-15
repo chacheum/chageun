@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, isPush } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 
 const bash = (command) => block("Bash", { command });
 const sql = (query) => block("mcp__plugin_supabase_supabase__execute_sql", { query });
@@ -450,6 +450,60 @@ test("리마인더 wiring: transcript에 plan만 있으면 Edit 시 additionalCo
   rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, "차단 아님");
   assert.match(r.stdout || "", /plan-validator/, "리마인더 주입");
+});
+
+// ── 디자인 레지스트리 조회 리마인더(순수함수) ──
+test("designRegistryReminder: UI 첫 수정 + 조회 흔적 없음 → true", () => {
+  assert.equal(designRegistryReminderNeeded([], "Write", { file_path: "web/App.tsx" }), true);
+});
+test("designRegistryReminder: design-system.md Read 했으면 → false(조회함)", () => {
+  assert.equal(designRegistryReminderNeeded([TU("Read", { file_path: "docs/design-system.md" })], "Write", { file_path: "web/App.tsx" }), false);
+});
+test("designRegistryReminder: design-system 스킬 로드했으면 → false", () => {
+  assert.equal(designRegistryReminderNeeded([TU("Skill", { skill: "chageun:design-system" })], "Edit", { file_path: "a.vue" }), false);
+});
+test("designRegistryReminder: 이미 UI 편집했으면 → false(1회 보장)", () => {
+  assert.equal(designRegistryReminderNeeded([TU("Write", { file_path: "web/Prev.tsx" })], "Write", { file_path: "web/App.tsx" }), false);
+});
+test("designRegistryReminder: 비UI 파일(.ts 로직)·비EDIT은 → false", () => {
+  assert.equal(designRegistryReminderNeeded([], "Write", { file_path: "lib/util.ts" }), false, "로직 .ts");
+  assert.equal(designRegistryReminderNeeded([], "Read", { file_path: "web/App.tsx" }), false, "비EDIT");
+});
+
+// wiring: UI 편집 + 조회 없음 → design 리마인더 주입(차단 아님)
+test("design 리마인더 wiring: UI 첫 수정 + 조회 없음 → additionalContext 주입", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = mkdtempSync(join(tmpdir(), "design-"));
+  const tpath = join(dir, "t.jsonl");
+  writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "작업 시작" }] } }) + "\n");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: "Write", tool_input: { file_path: "web/App.tsx" }, transcript_path: tpath }),
+    env, encoding: "utf8",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0, "차단 아님(soft)");
+  assert.match(r.stdout || "", /레지스트리/, "design 리마인더 주입");
+});
+
+// wiring: P1·P3 동시 성립 → JSON 정확히 1개(P1 우선, JSON 안 깨짐)
+test("리마인더 wiring: P1·P3 동시 성립 시 JSON 1개(P1 우선·상호배타)", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = mkdtempSync(join(tmpdir(), "both-"));
+  const tpath = join(dir, "t.jsonl");
+  // plan 문서 작성(P1 조건) + 조회 흔적 없음(P3 조건)
+  writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "tool_use", name: "Write", input: { file_path: "docs/x-plan.md" } }] } }) + "\n");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  // 현재 도구 = UI 파일 Edit (P1 code-target ✓ + P3 ui-target ✓)
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: "Edit", tool_input: { file_path: "web/App.tsx" }, transcript_path: tpath }),
+    env, encoding: "utf8",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0);
+  const parsed = JSON.parse(r.stdout);  // 두 JSON이 붙으면 parse 실패 → 단일 보장
+  assert.match(parsed.hookSpecificOutput.additionalContext, /plan-validator/, "P1 우선");
+  assert.doesNotMatch(r.stdout, /레지스트리/, "P3는 침묵");
 });
 
 // ── P3 신선도: 리뷰 흔적 이후 코드 수정이 있으면 stale(무효) ──

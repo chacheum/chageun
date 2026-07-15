@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock } = require("./pretooluse-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -155,6 +155,7 @@ process.stdin.on("end", () => {
     // 4) P1 리마인더(soft): plan 문서를 쓰고 plan-validator 없이 첫 코드 수정 시작 →
     //    차단 없이 리마인더 한 줄 주입(additionalContext). 자체 try/catch — 리마인더는 어떤
     //    경우에도 차단·park 사유가 되지 않는다(무인 fail-closed catch로 새지 않게).
+    let reminderEmitted = false;
     if (EDIT_RE.test(String(name || ""))) {
       try {
         const objs = readTranscriptIfMentions(input.transcript_path, "plan");
@@ -165,6 +166,26 @@ process.stdin.on("end", () => {
               additionalContext: "차근 리마인더: 이번 세션에 plan 문서를 작성했는데 plan-validator 게이트를 아직 거치지 않았습니다. 규칙상 구현 시작 직전 plan-validator 호출이 필수입니다(코어 '검증 게이트'). 지금 게이트를 먼저 실행하세요.",
             },
           }));
+          reminderEmitted = true;
+        }
+      } catch (_) { /* 리마인더 실패는 조용히 무시 */ }
+    }
+
+    // 4.7) 디자인 레지스트리 조회 리마인더(soft, Claude 전용): UI 파일 첫 수정인데 이번 세션에
+    //    design-system 레지스트리 조회 흔적이 없으면 1회 주입. P1이 이미 주입했으면 침묵(JSON 단일 write).
+    //    파싱 전 isUiTarget으로 걸러 비UI 편집은 전체 파싱 안 함(비용). Codex 미러 없음(PreToolUse
+    //    미지원, v1 Claude 전용). 자체 try/catch로 격리(무인 fail-closed로 안 샘).
+    if (!reminderEmitted && EDIT_RE.test(String(name || "")) && isUiTarget(ti.file_path || ti.notebook_path)) {
+      try {
+        const objs = readTranscriptIfMentions(input.transcript_path, "");
+        if (objs && designRegistryReminderNeeded(objs, name, ti)) {
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              additionalContext: "차근 리마인더: UI 파일을 만들기 전 design-system 레지스트리(디자인 규칙·부품+변형 슬롯)를 아직 확인하지 않았습니다. 규칙상 새 화면·컴포넌트는 기존 토큰·변형을 재사용해야 합니다(코어 '디자인 시스템'). design-system 스킬을 로드하거나 docs/design-system.md를 확인해, 페이지 폭·모달 등은 새로 만들지 말고 기존 것을 쓰세요(규칙 파일이 없으면 시드).",
+            },
+          }));
+          reminderEmitted = true;
         }
       } catch (_) { /* 리마인더 실패는 조용히 무시 */ }
     }
