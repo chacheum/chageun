@@ -8,6 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock } = require("./pretooluse-core.js");
+const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -28,8 +29,10 @@ function readTranscriptIfMentions(transcriptPath, needle) {
   } catch (_) { return null; }
 }
 
-function deny(reasonKey, unattended) {
-  process.stderr.write(unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey));
+function deny(reasonKey, unattended, detail) {
+  const base = unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey);
+  // detail(예: 실제 위반 색 토큰 목록)이 있으면 정적 사유 뒤에 덧붙인다.
+  process.stderr.write(detail ? base.replace(/\n?$/, "") + " (위반: " + detail + ")\n" : base);
   process.exit(2); // PreToolUse: exit 2 = 도구 호출 차단, stderr를 Claude에 전달
 }
 
@@ -150,6 +153,35 @@ process.stdin.on("end", () => {
         if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
       }
       // SKIP_GATE=1(유인)이면 게이트 검사 생략.
+    }
+
+    // 4.6) 색 하드코딩 백스톱(hard block, Claude 전용). docs/design-system.md 있는 프로젝트에서만.
+    //    P3(soft 리마인더)와 별개 채널 = 기계 강제층: raw 색이 새 코드에 박히는 순간 그 편집을 차단(exit 2).
+    //    검출은 tool_input의 content/new_string만(제약: 트리 스캔 없음). Edit/MultiEdit는 old엔 없고 new에
+    //    생긴 색 토큰만(브라운필드 오탐 방지). Write는 신규 파일일 때만 검사(기존 파일 통짜 덮어쓰기는 v1 미차단
+    //    = 정직한 열린 구멍 — old를 안 읽어 added 판정 불가). exit 2는 stderr 채널이라 §4 stdout 리마인더와
+    //    충돌 없음(블록 시 리마인더 도달 전 종료). 무인·유인 모두 발동(색은 안전-park 사유는 아니나 회복
+    //    가능+watchdog 바운드). Codex 미러 없음(PreToolUse 미지원, v1 Claude 전용). 자체 try/catch로 격리.
+    if (EDIT_RE.test(String(name || "")) && isDesignScanTarget(ti.file_path || ti.notebook_path)
+        && process.env.CHAGEUN_SKIP_DESIGN_LINT !== "1") {
+      try {
+        const cwd = input.cwd || process.cwd();
+        const docText = readDesignDoc(cwd);
+        if (docText != null) {
+          const allow = parseAllowColors(docText);
+          let viol = violationsForEdit(name, ti, allow);
+          if (viol === null && String(name || "") === "Write") {
+            // Write: old_string 없음 → 신규 파일(!existsSync)만 content 전체가 '새 색'으로 확실. 기존 파일은 skip.
+            //   경로는 readDesignDoc과 같은 cwd 기준으로 resolve(상대경로 오판 방지 — 둘의 기준 통일).
+            const abs = ti.file_path ? path.resolve(cwd, ti.file_path) : null;
+            viol = (abs && !fs.existsSync(abs)) ? scanColors(ti.content, allow) : [];
+          }
+          if (viol && viol.length) {
+            const tokens = [...new Set(viol.map((v) => v.token))].slice(0, 8).join(", ");
+            return deny("design-color", false, tokens);
+          }
+        }
+      } catch (_) { /* fail-open — 백스톱 오류가 정상 작업을 막지 않는다 */ }
     }
 
     // 4) P1 리마인더(soft): plan 문서를 쓰고 plan-validator 없이 첫 코드 수정 시작 →

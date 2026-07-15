@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
@@ -642,4 +642,98 @@ test("무인 tamper 가드(L1): 새 G7 훅 파일 변조 차단 · 읽기 허용
   assert.equal(ub("git commit -m 'add posttooluse note'"), null, "커밋 메시지 언급은 오탐 아님");
   // Write 도구 pathGuard도 새 파일 보호
   assert.equal(unattendedBlock("Write", { file_path: "/w/hooks/posttooluse.js" }, { worktreeRoot: "/w" }), "u-protected-path");
+});
+
+// ── P4 색 하드코딩 백스톱 wiring: 실제 프로세스로 gate·block·brownfield·탈출구 실증 ──
+const HOOK_P4 = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+// docs/design-system.md를 가진 임시 프로젝트를 만들고 훅을 spawn한다. front은 lint-allow-colors 선언.
+function withDesignProject(front, fn) {
+  const dir = mkdtempSync(join(tmpdir(), "p4-"));
+  mkdirSync(join(dir, "docs"), { recursive: true });
+  writeFileSync(join(dir, "docs", "design-system.md"), (front || "---\nname: x\n---\n") + "\n본문");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  try { return fn(dir, env); } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+const runP4 = (dir, env, tool_input, tool_name = "Edit", transcript_path) =>
+  spawnSync(process.execPath, [HOOK_P4], {
+    input: JSON.stringify({ tool_name, tool_input, cwd: dir, transcript_path }), env, encoding: "utf8",
+  });
+
+test("P4 게이트: docs/design-system.md 없으면 색 있어도 통과(미채택 프로젝트 침묵)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "p4-nodoc-"));
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  const r = runP4(dir, env, { file_path: "web/App.tsx", old_string: "", new_string: 'className="bg-blue-500"' });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0, "문서 없으면 게이트 off");
+});
+
+test("P4 블록: doc 있고 Edit new에 raw 색 → exit 2 + stderr에 토큰", () => {
+  withDesignProject(null, (dir, env) => {
+    const r = runP4(dir, env, { file_path: "web/App.tsx", old_string: "", new_string: '<div className="bg-blue-500">' });
+    assert.equal(r.status, 2, "새 raw 색 차단");
+    assert.match(r.stderr, /색 백스톱/);
+    assert.match(r.stderr, /bg-blue-500/, "실제 위반 토큰 표시");
+  });
+});
+
+test("P4 브라운필드-터치: old에 이미 있던 색 줄을 고쳐도 통과(오탐 방지)", () => {
+  withDesignProject(null, (dir, env) => {
+    const r = runP4(dir, env, { file_path: "web/App.tsx",
+      old_string: '<div className="bg-gray-100">', new_string: '<div className="bg-gray-100 p-4">' });
+    assert.equal(r.status, 0, "기존 색은 old에도 있으니 안 막음");
+  });
+});
+
+test("P4 Write: 신규 파일+색 → 차단 / 기존 파일 통짜 덮어쓰기 → 통과(v1 정직 갭)", () => {
+  withDesignProject(null, (dir, env) => {
+    const rNew = runP4(dir, env, { file_path: join(dir, "web/New.tsx"), content: 'className="text-[#ff0000]"' }, "Write");
+    assert.equal(rNew.status, 2, "신규 파일의 새 색 차단");
+    assert.match(rNew.stderr, /text-\[#ff0000/);
+    // 기존 파일을 만들어 두고 Write로 덮어쓰기
+    mkdirSync(join(dir, "web"), { recursive: true });
+    writeFileSync(join(dir, "web", "Old.tsx"), "old");
+    const rExist = runP4(dir, env, { file_path: join(dir, "web/Old.tsx"), content: 'className="bg-blue-500"' }, "Write");
+    assert.equal(rExist.status, 0, "기존 파일 통짜 덮어쓰기는 v1 미차단(브라운필드 오탐 방지)");
+    // 상대경로 신규 파일: existsSync가 cwd 기준으로 resolve돼 '신규'로 판정 → 차단(경로 기준 통일 확인).
+    const rRel = runP4(dir, env, { file_path: "web/RelNew.tsx", content: 'className="bg-blue-500"' }, "Write");
+    assert.equal(rRel.status, 2, "상대경로 신규 파일도 cwd 기준 resolve로 차단");
+  });
+});
+
+test("P4 탈출구: design-lint-ignore 줄·CHAGEUN_SKIP_DESIGN_LINT=1은 통과", () => {
+  withDesignProject(null, (dir, env) => {
+    const ignore = runP4(dir, env, { file_path: "web/App.tsx", old_string: "",
+      new_string: 'className="bg-blue-500" // design-lint-ignore 의도된 예외' });
+    assert.equal(ignore.status, 0, "그 줄 예외 주석은 통과");
+    const skip = runP4(dir, { ...env, CHAGEUN_SKIP_DESIGN_LINT: "1" },
+      { file_path: "web/App.tsx", old_string: "", new_string: 'className="bg-blue-500"' });
+    assert.equal(skip.status, 0, "전체 우회 env는 통과");
+  });
+});
+
+test("P4 허용목록: lint-allow-colors에 선언한 팔레트는 통과, 밖은 차단", () => {
+  withDesignProject("---\nname: x\nlint-allow-colors: rose, amber\n---\n", (dir, env) => {
+    const ok = runP4(dir, env, { file_path: "web/App.tsx", old_string: "", new_string: 'className="bg-rose-500"' });
+    assert.equal(ok.status, 0, "허용 팔레트 통과");
+    const no = runP4(dir, env, { file_path: "web/App.tsx", old_string: "", new_string: 'className="bg-blue-500"' });
+    assert.equal(no.status, 2, "허용 밖은 여전히 차단");
+  });
+});
+
+test("P4 비대상: .css 파일의 hex·비UI .ts는 스캔 안 함(통과)", () => {
+  withDesignProject(null, (dir, env) => {
+    const css = runP4(dir, env, { file_path: "web/theme.css", old_string: "", new_string: "color: #ff0000;" });
+    assert.equal(css.status, 0, "CSS hex는 토큰 정의라 비대상");
+  });
+});
+
+test("P4 안전점: 색 블록이 P1·P3 리마인더보다 먼저 → stdout 이중 write 없이 exit 2", () => {
+  withDesignProject(null, (dir, env) => {
+    // plan 작성(P1 조건) + 조회 흔적 없음(P3 조건) transcript
+    const tpath = join(dir, "t.jsonl");
+    writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "tool_use", name: "Write", input: { file_path: "docs/x-plan.md" } }] } }) + "\n");
+    const r = runP4(dir, env, { file_path: "web/App.tsx", old_string: "", new_string: 'className="bg-blue-500"' }, "Edit", tpath);
+    assert.equal(r.status, 2, "블록이 리마인더보다 우선");
+    assert.equal(r.stdout, "", "블록 시 stdout 리마인더 없음(이중 write 불가)");
+  });
 });

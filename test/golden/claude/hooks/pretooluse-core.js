@@ -55,6 +55,7 @@ const REASONS = {
   "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
   "ra-bash": "차단: 리뷰 에이전트의 Bash는 git 읽기 명령(diff·log·status·show·ls-files)만 허용됩니다 — 다른 명령·파일 쓰기·파괴적 git·테스트 실행 금지. 고치지 말고 발견으로 보고하고, 검토는 Read/Grep으로 계속하세요.",
   "ra-error": "차단: 리뷰 에이전트 안전 판정 중 오류라 안전측 차단(fail-closed)합니다. 검토는 Read/Grep으로 계속하세요.",
+  "design-color": "차단(차근 색 백스톱): 새로 넣는 코드에 디자인 토큰 대신 직접 색이 있습니다. 팔레트 색 클래스(`bg-blue-500` 등)·임의값(`-[#hex]`) 대신 docs/design-system.md의 토큰을 쓰세요. 색 견본판·Tailwind safelist처럼 색 이름이 원래 나열되는 파일이면, design-system.md front-matter의 `lint-allow-colors`에 그 팔레트명을 선언하거나 그 줄에 `design-lint-ignore` 주석을 붙이세요(그 줄만 통과). 전체 우회는 실행 전 사용자가 CHAGEUN_SKIP_DESIGN_LINT=1로만 켤 수 있습니다.",
 };
 
 // 어떤 도구·입력이 위험한지 판정. 위험하면 사유 키를, 아니면 null.
