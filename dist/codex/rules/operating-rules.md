@@ -55,7 +55,7 @@ Ladder — 1) really needed? (YAGNI) 2) stdlib built-in? 3) installed dependency
 
 # Model · execution routing (모델·실행 라우팅)
 
-Gates, planning, specs, architecture, complex judgment, final review: **the top-tier reasoning model (currently Opus) — never a model below the main session's** (a judge weaker than the worker it reviews defeats the point). State the model explicitly for every subagent.
+Gates, planning, specs, architecture, complex judgment, final review: **the top-tier reasoning model — never a model below the main session's** (a judge weaker than the worker it reviews defeats the point). State the model explicitly for every subagent.
 **Safety tie-break (beats the routing table): any touch of security, judgment, permissions, concurrency, or architecture → Opus inline unconditionally — however clear, bulky, or repetitive. Never Sonnet.**
 **A completion report is not verification (완료 보고 ≠ 검증):** a subagent's "done" counts only after you verify the diff.
 **Before post-GO routing and any subagent delegation (parallel included), load `chageun:routing` via the Skill tool — never delegate without it** (inline work without delegation exempt).

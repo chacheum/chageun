@@ -8,16 +8,18 @@ import { fileURLToPath } from "node:url";
 // 설계 의도 = "검토 대상보다 최소 같거나 강한 독립 심판". 이 테스트가 기계로 강제할 수 있는 두 가지:
 //   1. 게이트(plan-validator·pr-reviewer)는 지정된 최상위 모델을 쓴다.
 //   2. 일꾼(code-implementer)은 게이트보다 강한 티어가 아니다(심판≥일꾼).
-// 테스트가 볼 수 없는 것: 살아있는 메인 세션 모델. 사용자가 Opus 위 티어를 메인으로 상시 돌리면
-// Opus 게이트가 메인보다 약해지는데 — 규칙 본문의 "메인 세션보다 약한 모델 금지"가 그 경우를 산문으로
+// 테스트가 볼 수 없는 것: 살아있는 메인 세션 모델. 사용자가 게이트 티어 위 모델을 메인으로 상시 돌리면
+// 게이트가 메인보다 약해지는데, 규칙 본문의 "메인 세션보다 약한 모델 금지"가 그 경우를 산문으로
 // 덮는다(어떤 테스트도 세션 모델을 못 읽는다). 그래서 이 테스트는 **마이그레이션 체크포인트**다:
-// Opus 위 티어가 표준이 되면 TOP_TIER와 게이트 `model:`을 같은 커밋에서 함께 올려야 하고, 이 테스트가
-// 둘을 lockstep으로 묶어 조용한 노화를 시끄러운 한 줄 diff로 바꾼다.
+// 새 최상위 티어가 표준이 되면 TOP_TIER와 게이트 `model:`을 같은 커밋에서 함께 올려야 하고, 이 테스트가
+// 둘을 lockstep으로 묶어 조용한 노화를 시끄러운 한 줄 diff로 바꾼다. (2026-07-18: Opus→Fable 마이그레이션.)
 // (계측 아님 — 정적 프론트매터 검사, 로컬 로깅·카운터 없음.)
 const AGENTS = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "agents");
 // 오름차순 강도. Anthropic이 새 티어를 내면 여기에 추가한다.
-const TIER = { haiku: 1, sonnet: 2, opus: 3 };
-const TOP_TIER = "opus";
+const TIER = { haiku: 1, sonnet: 2, opus: 3, fable: 4 };
+// 리뷰 게이트는 Fable(다른 집안 최상위 추론모델)로 독립 심판 — 통제 비교 3판(점검2·계획1) + 사용자 실사용
+// 근거(2026-07-18). 같은 집안 심판(Opus가 Opus)은 맹점 공유 → 다른 집안이 더 잡음. Claude 전용(Codex는 Fable 없음 → 아래 test 3은 '강한 모델' 산문 유지).
+const TOP_TIER = "fable";
 
 function modelOf(file) {
   const fm = readFileSync(join(AGENTS, file), "utf8");
