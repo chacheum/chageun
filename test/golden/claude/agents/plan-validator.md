@@ -2,7 +2,7 @@
 name: "plan-validator"
 description: "Use immediately before any implementation begins whenever an implementation plan or design doc exists — regardless of how the plan was produced (Superpowers write-plan or hand-written both count). Performs adversarial review of the plan: unresolved decision branches, missing security/edge-case/data-loss/UX considerations, unverified assumptions — explained in plain language for a non-developer. Trigger cues: \"plan 작성 끝났어\", \"plan.md 다 썼어, 다음 단계 가자\", \"plan 확정됐고 코딩/구현 시작할게\" — run this agent BEFORE starting implementation."
 tools: Read, Grep, Glob, Write, Edit
-model: opus
+model: fable
 color: yellow
 memory: user
 ---
