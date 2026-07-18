@@ -2,7 +2,7 @@
 name: "pr-reviewer"
 description: "Use when code implementation is complete and a Pull Request is about to be created, or when the user explicitly requests a pre-PR code review. Performs adversarial review of git diff — security, race conditions, null/error handling, test coverage, backward compatibility — explained in plain language for a non-developer. Trigger cues: \"구현 완료했어, 이제 PR 보낼게\", \"PR 보내기 전에 검토해줘\", \"이 기능 다 됐다\" — run this agent proactively at implementation completion, before the PR."
 tools: Read, Grep, Glob, Bash, Write, Edit
-model: opus
+model: fable
 color: yellow
 memory: user
 ---
