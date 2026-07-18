@@ -93,7 +93,7 @@ function isPrCreate(toolName, toolInput) {
 // "code-implementer 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
 // 첫 1회만 참(이미 code-implementer 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
 // 차단이 아니라 리마인더 주입 판정. 게이트(plan-validator/pr-reviewer) 스폰은 대상 아님
-// (게이트=Opus 규칙은 코어 안전 바닥에 잔류). 순수함수(fs 없음).
+// (게이트 모델은 각 agent frontmatter·라우팅 규칙이 관장). 순수함수(fs 없음).
 const AGENT_TOOLS_RE = /^(Task|Agent)$/;
 function subagentOf(inp) { return String((inp && (inp.subagent_type || inp.agentType || inp.agent_type)) || ""); }
 function routingReminderNeeded(objs, toolName, toolInput) {
