@@ -80,11 +80,60 @@ test("listSessionFiles: maxBytes cap stops adding files once the budget is excee
   mk("a.jsonl", 100, 1000); // newest
   mk("b.jsonl", 100, 900);
   mk("c.jsonl", 100, 800); // oldest — excluded: cumulative 200+100=300 > 250
-  const out = listSessionFiles(dir, { sinceMtime: 0, maxSessions: 10, maxBytes: 250 });
+  const skipped = [];
+  const out = listSessionFiles(dir, { sinceMtime: 0, maxSessions: 10, maxBytes: 250, skipped });
   assert.equal(out.length, 2, "third file excluded once cumulative bytes would exceed maxBytes");
+  assert.deepEqual(skipped.map(s => [s.path.split("/").pop(), s.reason]), [["c.jsonl", "budget"]],
+    "budget drops carry the 'budget' reason — the label the report groups by");
   const totalBytes = out.reduce((s, f) => s + f.size, 0);
   assert.ok(totalBytes <= 250, "total bytes respects the cap");
   assert.deepEqual(out.map(f => f.path.split("/").pop()), ["a.jsonl", "b.jsonl"], "newest-first order preserved under cap");
+});
+test("listSessionFiles: one huge file no longer starves the rest (per-file cap)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-filecap-"));
+  const mk = (name, bytes, t) => {
+    const p = join(dir, name); writeFileSync(p, "x".repeat(bytes)); utimesSync(p, t, t);
+  };
+  // Shape of the real failure: the newest transcript is huge and would eat almost the whole budget,
+  // leaving nothing for the many small ones behind it.
+  mk("huge.jsonl", 900, 3000);  // newest, oversized
+  mk("a.jsonl", 100, 2000);
+  mk("b.jsonl", 100, 1000);
+  const skipped = [];
+  const out = listSessionFiles(dir, { sinceMtime: 0, maxSessions: 10, maxBytes: 1000, maxFileBytes: 200, skipped });
+  assert.deepEqual(out.map(f => f.path.split("/").pop()), ["a.jsonl", "b.jsonl"],
+    "small sessions still get read when a huge one is present");
+  assert.deepEqual(skipped.map(s => [s.path.split("/").pop(), s.reason]), [["huge.jsonl", "file-cap"]]);
+  // Without the per-file cap the same input starves the small files — this is what regressed before.
+  const before = listSessionFiles(dir, { sinceMtime: 0, maxSessions: 10, maxBytes: 1000, maxFileBytes: 1e9 });
+  assert.deepEqual(before.map(f => f.path.split("/").pop()), ["huge.jsonl", "a.jsonl"]);
+});
+test("listSessionFiles: every drop is recorded with a reason (no silent truncation)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-skipreport-"));
+  const mk = (name, bytes, t) => {
+    const p = join(dir, name); writeFileSync(p, "x".repeat(bytes)); utimesSync(p, t, t);
+  };
+  mk("a.jsonl", 100, 4000); mk("big.jsonl", 900, 3000); mk("b.jsonl", 100, 2000); mk("c.jsonl", 100, 1000);
+  const skipped = [];
+  const out = listSessionFiles(dir, { sinceMtime: 0, maxSessions: 2, maxBytes: 1000, maxFileBytes: 200, skipped });
+  assert.equal(out.length, 2);
+  assert.equal(out.length + skipped.length, 4, "read + skipped accounts for every candidate file");
+  const reasons = Object.fromEntries(skipped.map(s => [s.path.split("/").pop(), s.reason]));
+  assert.equal(reasons["big.jsonl"], "file-cap");
+  assert.equal(reasons["c.jsonl"], "session-cap", "session cap keeps recording instead of breaking out");
+});
+test("scan: meta reports coverage and skipped sessions", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-meta-"));
+  const cwd = mkdtempSync(join(tmpdir(), "rs-meta-cwd-"));
+  const line = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } }) + "\n";
+  const p1 = join(dir, "small.jsonl"); writeFileSync(p1, line); utimesSync(p1, 1000, 1000);
+  const p2 = join(dir, "huge.jsonl"); writeFileSync(p2, line + "x".repeat(6 * 1024 * 1024)); utimesSync(p2, 2000, 2000);
+  const res = scan(cwd, { transcriptDirOverride: dir });
+  assert.equal(res.meta.coverage, "1/2", "coverage names how much of the candidate set was actually read");
+  assert.equal(res.meta.sessionsSkipped.length, 1);
+  assert.equal(res.meta.sessionsSkipped[0].session, "huge", "skipped entry carries the session id, not the path");
+  assert.equal(res.meta.sessionsSkipped[0].reason, "file-cap");
+  assert.ok(res.meta.sessionsSkipped[0].sizeMB >= 6, "size is reported so the caller knows what it is opening");
 });
 test("parseSession: parses jsonl, skips malformed lines", () => {
   const dir = mkdtempSync(join(tmpdir(), "rs-"));
@@ -225,6 +274,19 @@ test("scan: also masks a high-entropy PASTED token not present in .env (C2)", ()
   const asJson = JSON.stringify(findings);
   assert.ok(!asJson.includes("ghp_AbCdEfGh12345678"), "pasted token-shaped secret masked even though absent from .env");
   assert.ok(findings.some(f => f.type === "user-correction"), "correction candidate still surfaced (masked, not dropped)");
+});
+test("isDue: a session too big to scan still counts as work done (cap must not mute the trigger)", () => {
+  // Regression for the pr-reviewer medium on v0.39.0: isDue calls listSessionFiles with defaults, so the
+  // new per-file cap silently applied there too. A project made of long sessions would then sit at
+  // NOT_DUE forever and never surface the coverage report — the same silent gap, moved to the trigger.
+  const dir = mkdtempSync(join(tmpdir(), "rs-due-big-"));
+  const cwd = mkdtempSync(join(tmpdir(), "rs-due-big-cwd-"));
+  const line = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } }) + "\n";
+  const p = join(dir, "big.jsonl");
+  writeFileSync(p, line + "x".repeat(5 * 1024 * 1024)); // over the 4MB per-file cap
+  utimesSync(p, 1000, 1000);
+  assert.equal(isDue(cwd, { transcriptDirOverride: dir, minSessions: 1 }), true,
+    "oversized-but-real session counts toward due without being parsed");
 });
 test("marker + isDue: below threshold → not due; above → due", () => {
   const cwd = mkdtempSync(join(tmpdir(), "rsmark-"));
