@@ -84,10 +84,13 @@ function listSessionFiles(dir, opts = {}) {
   const out = []; let bytes = 0;
   const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, reason }); };
   for (const f of files) {
+    // File cap is checked first so an oversized file is always labelled "file-cap", never "session-cap"
+    // just because it happened to arrive past the count limit. isDue counts file-cap drops as real work,
+    // so the label has to describe the file, not its position in the list.
+    if (f.size > maxFileBytes) { drop(f, "file-cap"); continue; }   // one huge file must not starve the rest
     // session-count cap: keep iterating (not `break`) so the rest is recorded as skipped rather than
     // vanishing — the caller must be able to say what it did not read.
     if (out.length >= maxSessions) { drop(f, "session-cap"); continue; }
-    if (f.size > maxFileBytes) { drop(f, "file-cap"); continue; }   // one huge file must not starve the rest
     if (bytes + f.size > maxBytes) { drop(f, "budget"); continue; } // byte cap: skip this one, keep scanning smaller ones
     out.push(f); bytes += f.size;
   }
@@ -340,8 +343,9 @@ function isDue(cwd, opts = {}) {
   // retrospect is overdue". Without this, a project made of long sessions would sit at NOT_DUE forever and
   // never surface the coverage report this scanner now emits — the same silent gap, moved to the trigger.
   // Counted without parsing: a multi-MB transcript cannot be hollow, and parsing it is the exact cost the
-  // per-file cap exists to avoid. budget/session-cap drops are NOT counted — those are small files that may
-  // be hollow, and they reappear on the next run anyway.
+  // per-file cap exists to avoid. budget/session-cap drops are NOT counted — with the file cap checked
+  // first those are always files small enough to parse (so possibly hollow), and they reappear next run.
+  // ("budget" is unreachable at the default constants, where MAX_BYTES is derived from the other two.)
   const freshCount = fresh.length + skipped.filter(s => s.reason === "file-cap").length;
   if (freshCount >= minSessions) return true;
   if (marker && marker.lastRunAt && freshCount >= 1) {
