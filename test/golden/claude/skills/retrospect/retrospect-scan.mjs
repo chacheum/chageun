@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 // shared masking core (src & dist layouts both resolve this relative path)
 const { collectSecrets, redact, isSecret } = require("../../hooks/secret-scan-core.js");
 
-const MAX_SESSIONS = 30, MAX_BYTES = 20 * 1024 * 1024;
+const MAX_SESSIONS = 30;
 // Per-file cap (2026-07-27). Without it a single huge transcript eats the shared budget and starves the
 // rest — silently. Measured on this project: 48 sessions, 134MB total, median 1MB, fat tail (23·17·16·14·9MB).
 // The 23MB file was already excluded by the byte budget, then the 17MB file consumed 85% of it, so only
@@ -19,6 +19,15 @@ const MAX_SESSIONS = 30, MAX_BYTES = 20 * 1024 * 1024;
 // would manufacture false gate-gap findings. Skips are reported in meta.sessionsSkipped so the caller can
 // read those sessions directly — bounding coverage is fine, hiding that it was bounded is not.
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
+// Total-bytes budget, derived (2026-07-27, independent audit). It used to be a flat 20MB, which quietly
+// did the deciding: on this project it admitted 19 of 48 sessions and dropped the other 29. Measured what
+// that bought — parsing the whole 133.8MB corpus (27,263 records) with every detector takes 1.5s, and the
+// worst case this scanner can even reach is MAX_FILE_BYTES × MAX_SESSIONS. So the flat cap was trading
+// ~29 sessions of coverage for ~1.2 seconds. Deriving it from the other two caps keeps a hard ceiling on
+// work (a project with thousands of transcripts still stops at 30 files × 4MB) while making sure the total
+// never binds first — the real limits are "how big is one file" and "how many files", both of which are
+// reported when they bite. Bounding coverage is fine; bounding it for nothing is not.
+const MAX_BYTES = MAX_FILE_BYTES * MAX_SESSIONS;
 const sessionIdOf = (p) => String(p).split("/").pop().replace(/\.jsonl$/, "");
 
 // Claude Code stores per-project transcripts under ~/.claude/projects/<encoded cwd>/, where the
@@ -346,6 +355,7 @@ export {
   transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession,
   detectGateGaps, detectUserCorrections, detectNearMisses, driftSignal,
   scan, readMarker, writeMarker, isDue,
+  MAX_SESSIONS, MAX_FILE_BYTES, MAX_BYTES, // exported so the cap-ordering invariant is testable
 };
 
 // Note (marker docs/ dir): writeMarker creates <cwd>/docs/ if missing (recursive mkdir) then writes the
