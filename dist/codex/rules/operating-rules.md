@@ -24,7 +24,7 @@ LIGHT renderings — card = one line (goal + success criteria · notify, proceed
 # Work-start card · plain-language summary (작업 시작 카드 · 비전문가 요약 — 핵심5 forms)
 
 - Before technical work: **작업 시작 카드** (alignment · future tense) — goal · scope/constraints · **success criteria (checkable items + what evidence measures each — never omitted, even LIGHT; the finish check scores against these)** · path type · stop rules. Skip for short questions, conversation, single-file ≤15-min edits (present retroactively if scope grows).
-- Any response with technical output carries a **비전문가 요약** (report · past tense) — 무엇을 했는가 · 왜 이렇게 결정했는가 · 잘되면 · **잘못되면 (risks): all of them, descending severity, gate labels verbatim — never omitted** · 다음에 확인할 것 (1–2). A spec's **한눈에** = same 핵심5, present tense (⚠ risk: biggest one only).
+- Any response with technical output carries a **비전문가 요약** (report · past tense) — 무엇을 했는가 · 왜 이렇게 결정했는가 · 잘되면 · **잘못되면 (risks): all of them, descending severity, gate labels verbatim — never omitted** (`[정리]`-tagged low may fold into one counted line — see Finding-intake discipline) · 다음에 확인할 것 (1–2). A spec's **한눈에** = same 핵심5, present tense (⚠ risk: biggest one only).
 - Card aligns before; summary reports after — never both in one response.
 - **Not a git repo → propose `git init` on the first work card**; commit at every stop point and completion unit (details: `chageun:finish-check`).
 
@@ -42,6 +42,7 @@ Report gate results in 비전문가 요약 format.
 - plan-validator **NO-GO/CONDITIONAL**, pr-reviewer **BLOCK/REQUEST CHANGES** → treat as high/blocker, **stop**. CONDITIONAL never means "fix while implementing" — report conditions to the user, get approval, register as finish-check scoring items.
 - **blocker/BLOCK cannot be waived by simple consent** — proceed only after fixing/mitigating, or the user restates the risk in their own words. **high/REQUEST CHANGES may proceed on one explicit "go ahead".** Never mix the two.
 - **Finding-intake discipline (발견 수신 규율):** verify each finding against code before fixing; dismiss wrong ones with evidence, carrying that verdict in the summary (never offload FP triage to the user). No blind acceptance; fix one at a time. Record FP patterns in gate memory. **Dismissal covers high/medium/low only — blocker/BLOCK is never dismissed unilaterally, even if it looks like an FP; only the blocker procedure resolves it, and never downgrade a gate-assigned severity to switch paths (a downgrade claim itself needs the blocker procedure).**
+**Folding trivial low (접기):** low findings the gate tagged `[정리]` (no runtime impact) report as one line — count + kinds + "고칠까요?" — not itemised. Folding is not dismissal: still verify against code, always state count and kinds, full list on request. No tag, or any doubt → itemise. **medium and above are never folded.**
 
 # Spec confirmation gate (스펙 확인 게이트 — 한눈에 + 🙋)
 
