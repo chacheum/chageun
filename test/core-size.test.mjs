@@ -24,10 +24,16 @@ function procSkillBytes() {
 }
 
 // Claude 상시 주입 = operating-rules.md 단독. batch6 다이어트 + batch7 영어화 기준으로 하향.
-const CEILING_BYTES = 17500;
+// 2026-07-27 +140 (17500→17640): "접기"(맞지만 사소한 low를 한 줄로 묶어 보고) 규칙. v0.38.0이 게이트의
+// 억제 지시를 없애 "전부 올려라"로 바꿨는데, 그 정당화였던 "메인이 걸러준다"의 필터가 실제로는 없었다
+// (수신 규율은 틀린 발견의 기각만 정의). Fable 독립 감사 medium. 분량 압박에 안전 단서를 깎지 않기로 해
+// 상향(plan-validator CONDITIONAL 조건 4): 반드시 남길 5개 = medium 이상 금지 · 개수+종류 표기 ·
+// 애매하면 접지 않기 · 접기는 기각 아님(요청 시 전체) · 대조 확인 면제 아님.
+const CEILING_BYTES = 17640;
 // Codex 상시 주입의 '규칙' 면 = operating-rules.md + addendum. 코어 규칙을 addendum으로 옮겨
 // Claude 상한을 우회하는 걸 막는다(pr-reviewer medium 반영).
-const CODEX_CORE_CEILING = 21500;
+// 2026-07-27 +34 (21500→21534): 위 "접기" 규칙이 공유 코어에 들어가 규칙면도 같이 커짐(addendum 무변경).
+const CODEX_CORE_CEILING = 21534;
 // Codex 상시 주입 '총면' = 규칙면 + 인라인 절차 스킬 본문. batch6가 규칙→스킬 이동을 시작하면서
 // "스킬로 옮기면 두 상한 다 빠져나간다"는 새 우회로가 생겼다 — 이 합산 상한이 그 우회를 막는다
 // (Claude는 스킬이 지연로드라 이 면이 없고, Codex만 인라인이라 총면이 실체다).
@@ -38,7 +44,11 @@ const CODEX_CORE_CEILING = 21500;
 // (spec-gate·finish-check·formats)에 들어감 — Fable5 UX 리뷰 지적6(AI가 AI 검사 → 도메인 로직이
 // 그럴듯하게 틀려도 게이트 통과) 방어. formats 커버리지 칸은 3상태(통과·미확인·직접확인) 정직 표기.
 // 세 스킬 자체가 절차라 비인라인 분리 불가. v2 훅 기계강제 시 재검토.
-const CODEX_TOTAL_CEILING = 52641;
+// 2026-07-27 +801 (52641→53442): "접기" 규칙이 코어(+434)와 인라인 procSkill인 formats(+400)에 함께 들어감.
+// formats에도 넣는 이유 = 양식이 "위험은 빠짐없이 전부"를 요구하므로, 거기 예외를 안 적으면 규칙이 매 보고
+// 마다 무효화된다(plan-validator 지적: formats를 빼면 규칙이 매번 무효화). 접기 예시 줄에 "목록 원하시면
+// 말씀 주세요" 안내를 둔 것도 여기 — 비개발자가 요청 경로를 알 유일한 자리라 코어 대신 양식에 넣었다.
+const CODEX_TOTAL_CEILING = 53442;
 
 test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
   const bytes = normBytes(CORE);
