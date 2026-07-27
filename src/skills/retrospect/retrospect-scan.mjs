@@ -10,6 +10,16 @@ const require = createRequire(import.meta.url);
 const { collectSecrets, redact, isSecret } = require("../../hooks/secret-scan-core.js");
 
 const MAX_SESSIONS = 30, MAX_BYTES = 20 * 1024 * 1024;
+// Per-file cap (2026-07-27). Without it a single huge transcript eats the shared budget and starves the
+// rest — silently. Measured on this project: 48 sessions, 134MB total, median 1MB, fat tail (23·17·16·14·9MB).
+// The 23MB file was already excluded by the byte budget, then the 17MB file consumed 85% of it, so only
+// 10 of 48 sessions were read and nothing in the output said so. 4MB keeps ordinary sessions (39 of 48 are
+// ≤3MB) and excludes outliers. Oversized sessions are skipped WHOLE, never partially read: the detectors
+// rely on session-wide state (e.g. "was this skill loaded earlier in this session"), so a truncated read
+// would manufacture false gate-gap findings. Skips are reported in meta.sessionsSkipped so the caller can
+// read those sessions directly — bounding coverage is fine, hiding that it was bounded is not.
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const sessionIdOf = (p) => String(p).split("/").pop().replace(/\.jsonl$/, "");
 
 // Claude Code stores per-project transcripts under ~/.claude/projects/<encoded cwd>/, where the
 // encoding replaces every non-alphanumeric char with '-' (C4). Verified: /home/mokgam/projects/honclwd
@@ -46,7 +56,8 @@ function resolveTranscriptDir(cwd) {
 }
 
 function listSessionFiles(dir, opts = {}) {
-  const { sinceMtime = 0, maxSessions = MAX_SESSIONS, maxBytes = MAX_BYTES } = opts;
+  const { sinceMtime = 0, maxSessions = MAX_SESSIONS, maxBytes = MAX_BYTES,
+          maxFileBytes = MAX_FILE_BYTES, skipped = null } = opts;
   let names;
   try { names = readdirSync(dir); } catch (_) { return []; }
   const files = [];
@@ -62,9 +73,13 @@ function listSessionFiles(dir, opts = {}) {
   }
   files.sort((a, b) => b.mtime - a.mtime);
   const out = []; let bytes = 0;
+  const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, reason }); };
   for (const f of files) {
-    if (out.length >= maxSessions) break;              // session-count cap: stop
-    if (bytes + f.size > maxBytes) continue;           // byte cap: skip THIS (maybe huge) file, keep scanning smaller ones
+    // session-count cap: keep iterating (not `break`) so the rest is recorded as skipped rather than
+    // vanishing — the caller must be able to say what it did not read.
+    if (out.length >= maxSessions) { drop(f, "session-cap"); continue; }
+    if (f.size > maxFileBytes) { drop(f, "file-cap"); continue; }   // one huge file must not starve the rest
+    if (bytes + f.size > maxBytes) { drop(f, "budget"); continue; } // byte cap: skip this one, keep scanning smaller ones
     out.push(f); bytes += f.size;
   }
   return out;
@@ -260,7 +275,8 @@ function aggregate(raw) {
 function scan(cwd, opts = {}) {
   const dir = opts.transcriptDirOverride || resolveTranscriptDir(cwd); // FIX 2: glob fallback (C4)
   const marker = readMarker(cwd);
-  const files = listSessionFiles(dir, { sinceMtime: (marker && marker.lastRunNewestMtime) || 0 });
+  const skipped = [];
+  const files = listSessionFiles(dir, { sinceMtime: (marker && marker.lastRunNewestMtime) || 0, skipped });
   const raw = [];
   let newestMtime = (marker && marker.lastRunNewestMtime) || 0;
   let realSessions = 0;
@@ -269,13 +285,27 @@ function scan(cwd, opts = {}) {
     const objs = parseSession(f.path);
     if (!hasRealContent(objs)) continue; // C6: skip metadata-only hollow sessions
     realSessions++;
-    const sid = f.path.split("/").pop().replace(/\.jsonl$/, "");
+    const sid = sessionIdOf(f.path);
     raw.push(...detectGateGaps(objs, sid), ...detectUserCorrections(objs, sid), ...detectNearMisses(objs, sid));
   }
   const drift = driftSignal(cwd); if (drift) raw.push({ ...drift, sessionId: null });
   let secrets = []; try { secrets = collectSecrets(cwd); } catch (_) {}
   const findings = maskFindings(aggregate(raw), secrets);
-  return { findings, meta: { sessionsScanned: realSessions, newestMtime, cwd } };
+  // Coverage is reported unconditionally. A scan that silently read 10 of 48 sessions reads as
+  // "nothing else was there", which is the failure this field exists to prevent. sessionsSkipped is
+  // sorted biggest-first because that is the order a caller should read them directly in.
+  const sessionsSkipped = skipped
+    .map((s) => ({ session: sessionIdOf(s.path), sizeMB: Math.round((s.size / 1048576) * 10) / 10, reason: s.reason }))
+    .sort((a, b) => b.sizeMB - a.sizeMB);
+  return {
+    findings,
+    meta: {
+      sessionsScanned: realSessions,
+      sessionsSkipped,
+      coverage: `${files.length}/${files.length + skipped.length}`,
+      newestMtime, cwd,
+    },
+  };
 }
 
 const MARKER = (cwd) => join(cwd, "docs", "retrospect-state.json");
@@ -294,10 +324,18 @@ function isDue(cwd, opts = {}) {
   const dir = transcriptDirOverride || resolveTranscriptDir(cwd); // FIX 2: glob fallback (C4)
   const marker = readMarker(cwd);
   const since = (marker && marker.lastRunNewestMtime) || 0;
-  const freshFiles = listSessionFiles(dir, { sinceMtime: since });
+  const skipped = [];
+  const freshFiles = listSessionFiles(dir, { sinceMtime: since, skipped });
   const fresh = freshFiles.filter(f => hasRealContent(parseSession(f.path))); // C6: hollow sessions don't count
-  if (fresh.length >= minSessions) return true;
-  if (marker && marker.lastRunAt && fresh.length >= 1) {
+  // A session too big to scan is still a session that happened, so it must keep counting toward "a
+  // retrospect is overdue". Without this, a project made of long sessions would sit at NOT_DUE forever and
+  // never surface the coverage report this scanner now emits — the same silent gap, moved to the trigger.
+  // Counted without parsing: a multi-MB transcript cannot be hollow, and parsing it is the exact cost the
+  // per-file cap exists to avoid. budget/session-cap drops are NOT counted — those are small files that may
+  // be hollow, and they reappear on the next run anyway.
+  const freshCount = fresh.length + skipped.filter(s => s.reason === "file-cap").length;
+  if (freshCount >= minSessions) return true;
+  if (marker && marker.lastRunAt && freshCount >= 1) {
     const ageDays = (Date.parse(new Date().toISOString()) - Date.parse(marker.lastRunAt)) / 86400000;
     if (ageDays >= minDays) return true;
   }
