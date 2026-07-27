@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession } from "../src/skills/retrospect/retrospect-scan.mjs";
+import { transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession,
+         MAX_SESSIONS, MAX_FILE_BYTES, MAX_BYTES } from "../src/skills/retrospect/retrospect-scan.mjs";
 
 test("transcriptDir: encodes cwd like Claude Code (slashes → dashes)", () => {
   const d = transcriptDir("/home/mokgam/projects/honclwd");
@@ -88,6 +89,28 @@ test("listSessionFiles: maxBytes cap stops adding files once the budget is excee
   const totalBytes = out.reduce((s, f) => s + f.size, 0);
   assert.ok(totalBytes <= 250, "total bytes respects the cap");
   assert.deepEqual(out.map(f => f.path.split("/").pop()), ["a.jsonl", "b.jsonl"], "newest-first order preserved under cap");
+});
+test("caps: the total-bytes budget never binds before the per-file and session caps", () => {
+  // The flat 20MB total used to do the deciding: 19 of 48 sessions read, 29 dropped, to save ~1.2s of
+  // parsing (measured: 133.8MB / 27,263 records = 1.5s). The total is now derived so the two caps that
+  // are actually reported when they bite ("file too big", "too many files") are the ones that decide.
+  assert.ok(MAX_BYTES >= MAX_FILE_BYTES * MAX_SESSIONS,
+    "a flat total-bytes cap below file-cap × session-cap silently truncates before either reported cap fires");
+});
+test("caps: at the exact boundary the total budget still does not fire (order + strict >)", () => {
+  // The constant-level assert above is an identity once MAX_BYTES is derived, so it only catches someone
+  // pinning the total back to a flat number. The property that actually matters lives in the check order
+  // and the strict `>` in listSessionFiles: flipping either would push a boundary session into "budget",
+  // a reason that should be unreachable at the default constants. This pins that behaviour cheaply.
+  const dir = mkdtempSync(join(tmpdir(), "rs-boundary-"));
+  for (let i = 0; i < 4; i++) {
+    const p = join(dir, `f${i}.jsonl`); writeFileSync(p, "x".repeat(100)); utimesSync(p, 1000 + i, 1000 + i);
+  }
+  const skipped = [];
+  const out = listSessionFiles(dir, { sinceMtime: 0, maxSessions: 3, maxFileBytes: 100, maxBytes: 300, skipped });
+  assert.equal(out.length, 3, "exactly-at-budget files are taken, not dropped");
+  assert.deepEqual(skipped.map(s => s.reason), ["session-cap"],
+    "the leftover is refused by the session cap — 'budget' must not fire at the boundary");
 });
 test("listSessionFiles: one huge file no longer starves the rest (per-file cap)", () => {
   const dir = mkdtempSync(join(tmpdir(), "rs-filecap-"));
