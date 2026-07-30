@@ -55,3 +55,19 @@ test("spec-gate에 '예시로 확인'(계산·규칙 오라클) 앵커 존재", 
 test("Codex 산출물에도 '예시로 확인' 앵커 인라인(듀얼 플랫폼)", () => {
   for (const a of EXAMPLE_ANCHORS) assert.ok(codexSkill.includes(a), `dist/codex spec-gate SKILL.md 누락: ${a}`);
 });
+
+// 회고 4번(2026-07-30) 앵커 — 제품 판단 🙋에 타사 근거를 붙이는 규칙. 다음 다이어트에서 조용히
+// 사라지는 것을 막는 회귀 바닥이다(발동 증거는 아님). 실측 사고의 실제 원인이 "조사 부재"가 아니라
+// "가진 근거를 삭제 쪽 항목에 안 대봄"이었으므로 그 단서까지 함께 못박는다.
+const VENDOR_ANCHORS = [
+  "여쭙기 전에",                        // 조사 시점(결정 후가 아니라 전)
+  "없애자\"는 쪽 항목에도 대본다",      // 사고의 실제 원인 — 선택적 적용 금지
+];
+
+test("spec-gate에 '제품 판단은 타사 근거' 앵커 존재(회고 4번)", () => {
+  for (const a of VENDOR_ANCHORS) assert.ok(skill.includes(a), `src spec-gate SKILL.md 누락: ${a}`);
+});
+
+test("Codex 산출물에도 '제품 판단은 타사 근거' 앵커 인라인(듀얼 플랫폼)", () => {
+  for (const a of VENDOR_ANCHORS) assert.ok(codexSkill.includes(a), `dist/codex spec-gate SKILL.md 누락: ${a}`);
+});
