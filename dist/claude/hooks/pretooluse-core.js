@@ -53,7 +53,7 @@ const REASONS = {
   "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). 이미 검토했거나 예외면 CHAGEUN_SKIP_GATE_CHECK=1로 재실행하세요.",
   "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
   "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
-  "ra-bash": "차단: 리뷰 에이전트의 Bash는 git 읽기 명령(diff·log·status·show·ls-files)만 허용됩니다 — 다른 명령·파일 쓰기·파괴적 git·테스트 실행 금지. 고치지 말고 발견으로 보고하고, 검토는 Read/Grep으로 계속하세요.",
+  "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
   "ra-error": "차단: 리뷰 에이전트 안전 판정 중 오류라 안전측 차단(fail-closed)합니다. 검토는 Read/Grep으로 계속하세요.",
   "design-color": "차단(차근 색 백스톱): 새로 넣는 코드에 디자인 토큰 대신 직접 색이 있습니다. 팔레트 색 클래스(`bg-blue-500` 등)·임의값(`-[#hex]`) 대신 docs/design-system.md의 토큰을 쓰세요. 색 견본판·Tailwind safelist처럼 색 이름이 원래 나열되는 파일이면, design-system.md front-matter의 `lint-allow-colors`에 그 팔레트명을 선언하거나 그 줄에 `design-lint-ignore` 주석을 붙이세요(그 줄만 통과). 전체 우회는 실행 전 사용자가 CHAGEUN_SKIP_DESIGN_LINT=1로만 켤 수 있습니다.",
 };
@@ -381,13 +381,102 @@ const GIT_READ_SUB = /^(?:diff|log|status|show|ls-files|ls-tree|blame|rev-parse|
 // 읽기 필터(파이프 우측): stdin→stdout만, 위치인자 파일쓰기 불가한 것만. sort(-o)·uniq(OUTPUT 위치인자)·
 // less/more(대화형 !cmd)는 쓰기·탈출 가능해 제외(plan-validator medium).
 const READ_FILTER = /^(?:head|tail|grep|egrep|fgrep|wc|cat|cut|nl|tr)$/;
-function stripQuotes(s) { return String(s).replace(/'[^']*'/g, " ").replace(/"[^"]*"/g, " "); }
+// 따옴표를 셸 규칙대로 훑어 지운다(왼→오 한 번, 먼저 열린 쪽이 이긴다). 반환 null = 안전측 거부.
+// 옛 구현(정규식 짝짓기)에 실측 재현된 침투 경로 3개가 있었다:
+//  (1) `git log --grep="$(id > /tmp/x)"` — 큰따옴표 내용을 먼저 지워 `$(` 검사를 통과했다(셸은 그 안을 실제 실행).
+//  (2) `git log --grep="don't" && rm -rf /tmp/x && git log --grep="won't"` — 큰따옴표 속 아포스트로피 2개가
+//      짝지어져 가운데(`rm -rf`)가 통째로 사라졌다.
+//  (3) 닫히지 않은 따옴표를 그냥 통과시켰다.
+// 작은따옴표 안은 셸이 아무것도 확장하지 않으므로 버린다. **여기에 백슬래시 이스케이프 처리를 넣으면 즉시
+// 뚫린다**(`git log --grep='\' ; id #'` — bash에선 `id`가 실행된다. plan-validator medium, 테스트로 못 박음).
+// 큰따옴표 안은 치환·확장이 일어나므로 `$(`·백틱·`${`만 거부한다 — `git grep -n "TODO$"` 같은 정규식 끝
+// 앵커의 `$`는 셸이 리터럴로 두므로 통과시킨다(무조건 거부하면 흔한 코드 검색이 새로 막힌다. plan-validator high).
+// 따옴표 구간·이스케이프는 공백이 아니라 **자리표시 한 글자**로 바꾼다 — 공백으로 지우면 토큰이 사라져
+// `git -C "/mnt/g/내 드라이브/proj" diff`가 `git -C diff`가 되고, `-C`가 뒤 두 토큰을 먹는 규칙 때문에
+// 서브명령이 없어져 정상 명령이 막혔다(pr-reviewer medium — 새 안내문이 권한 관용구가 공백 경로에서 못 쓰임).
+// 인용 구간을 **통째로 지우지 않는다.** 셸은 따옴표를 벗겨 원문 그대로를 git argv로 넘기므로, 인용됐다는
+// 이유로 내용을 감추면 위험 옵션 denylist가 통째로 비켜간다(실측 4형 — 전부 셸에서 실행됐고 훅은 통과했다):
+//   `git grep '--open-files-in-pager=touch X' TODO` · `git grep "-Otouch X" TODO` ·
+//   `git log \\--output=X`(백슬래시로 첫 대시 가리기) · `git grep '--open'-files-in-pager='touch X' TODO`
+// 그래서 **토큰 모양을 드러내는 안전 글자는 그대로 내보내고**, 구분자·확장·공백처럼 위험한 글자만 자리표시로
+// 바꾼다. head·서브명령은 allowlist(가려지면 오히려 막힘)라 안전 방향이었지만 옵션 검사만 denylist라 반대였다.
+// (pr-reviewer high 2차. 이 구멍은 이번 델타가 만든 게 아니라 1차 봉합본에도 있었다.)
+const QTOK = "\u0001";
+const SAFE_IN_QUOTE = /[A-Za-z0-9\-._/=+:@,%~^]/;
+function stripQuotes(s) {
+  const src = String(s);
+  let out = "", q = null, ansiC = false;
+  const emit = (ch) => { out += SAFE_IN_QUOTE.test(ch) ? ch : QTOK; };
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q === null) {
+      if (c === "\\") { emit(src[++i] || ""); continue; }             // 따옴표 밖 이스케이프 → 다음 글자는 리터럴(구분자 아님)
+      // `$'...'`(ANSI-C 인용)·`$"..."`는 확장이 아니라 **인용의 한 형태**다 — 리뷰 실무에서 CR·이모지 검색에
+      // 실제로 쓰인다(`git grep -c $'\\r$' HEAD -- f`). 인용으로 인식해야 (a) 정상 사용이 안 막히고
+      // (b) `$'-Oid'`처럼 인용으로 대시를 감추는 것도 안전 글자 보존 덕에 옵션 검사에 그대로 드러난다.
+      if (c === "$" && (src[i + 1] === "'" || src[i + 1] === '"')) { q = src[++i]; ansiC = q === "'"; continue; }
+      if (c === "'" || c === '"') { q = c; ansiC = false; continue; }  // 따옴표 문자 자체는 버린다(토큰 접합 보존)
+      out += c; continue;
+    }
+    // `$'...'` 안에서만 백슬래시가 이스케이프다. **수치 이스케이프는 디코드한다** — bash가 `\x2d`·`\055`·`\u002d`를
+    // 디코드해 대시를 만들어내므로, 글자만 보는 스캐너와 argv가 갈라진다(실측: `git grep $'\x2dOtouch X' TODO`가
+    // 실제로 파일을 만들었다). 이름 이스케이프(`\r \n \t \a \b \e \f \v \\ \' \"`)는 값이 제어문자·구두점이라
+    // 대시를 못 만들어 그대로 통과 — 실무 관용구 `$'\r$'`(CR 검색)가 살아 있는 이유다. (pr-reviewer high 4차)
+    if (ansiC && c === "\\") {
+      const e = src[++i] || "";
+      let code = null, m = null, rest = src.slice(i + 1);
+      if (e === "x" && (m = /^[0-9a-fA-F]{1,2}/.exec(rest))) { code = parseInt(m[0], 16); i += m[0].length; }
+      else if (e === "u" && (m = /^[0-9a-fA-F]{1,4}/.exec(rest))) { code = parseInt(m[0], 16); i += m[0].length; }
+      else if (e === "U" && (m = /^[0-9a-fA-F]{1,8}/.exec(rest))) { code = parseInt(m[0], 16); i += m[0].length; }
+      else if (/[0-7]/.test(e) && (m = /^[0-7]{0,2}/.exec(rest))) { code = parseInt(e + m[0], 8); i += m[0].length; }
+      // 수치 이스케이프는 **디코드해서** 내보낸다 — 거부해버리면 이모지·바이트 검색(`$'\xe2\x9c\x89'`) 같은
+      // 실무 명령이 막히고, 그대로 글자로 두면 bash가 만드는 값과 갈라진다(`$'\x2dOid'` → argv `-Oid`, 실측 실행됨).
+      // 디코드하면 `\x2d`는 `-`로 드러나 옵션 검사에 걸리고, 이모지 바이트는 안전 글자가 아니라 자리표시로 남는다.
+      // `\U`는 8자리라 0x10FFFF를 넘을 수 있고 그러면 fromCodePoint가 던진다(훅 try/catch가 fail-closed로
+      // 받지만 판정이 아니라 예외 경로에 기대게 된다) → 범위 밖은 글자 방출로 폴백(그 값으론 대시를 못 만든다).
+      if (!(code >= 0 && code <= 0x10ffff)) code = null;
+      emit(code === null ? e : String.fromCodePoint(code));
+      continue;
+    }
+    if (q === '"') {
+      if (c === "\\") { emit(src[++i] || ""); continue; }             // `"\$"` 등 — 다음 글자는 리터럴
+      if (c === "$" && /[({]/.test(src[i + 1] || "")) return null;    // 명령치환 `$(` · 중괄호확장/함수치환 `${`
+      if (c === "`") return null;                                    // 백틱 치환
+    }
+    if (c === q) { q = null; continue; }
+    emit(c);                                                         // 인용 안: 안전 글자만 드러내고 나머지는 자리표시
+  }
+  return q === null ? out : null;                                    // 닫히지 않은 따옴표 → 거부(fail-closed)
+}
 function bashSegmentAllowed(rawSeg) {
   const seg = String(rawSeg).trim();
   if (!seg) return true;
   const stripped = stripQuotes(seg);
+  if (stripped === null) return false;                         // 따옴표 미닫힘·큰따옴표 속 치환 → 거부
   if (/[<>]|\$\(|`/.test(stripped)) return false;              // 리다이렉션·명령치환 금지
   const toks = stripped.split(/\s+/).filter(Boolean);
+  // **불변식: 스캐너가 본 토큰 == 셸이 git에 넘기는 argv.** 이게 성립해야 아래 옵션 denylist가 의미를 갖는다.
+  // 이 판정기는 머리·서브명령이 앵커된 allowlist(가려지면 오히려 막힘)인데 **옵션 검사만 denylist**라,
+  // 셸이 토큰을 나중에 다시 쓰는 수법마다 구멍이 났다 — 실측 3회차: (1) 옵션 축약·묶음 (2) 인용·이스케이프로
+  // 첫 글자 가리기 (3) 확장으로 가리기. 그래서 수법이 아니라 **다시 쓰기 자체**를 막는다.
+  // 인용 안은 이미 자리표시로 중화됐으므로 여기 남은 것은 전부 "따옴표 밖"이다:
+  //   · `$` — 변수·명령·산술 확장. `git grep -${x}Oid TODO`는 미설정 변수가 지워져 argv가 `-Oid`가 되고 실제 실행됐다.
+  //   · `{a,b}`·`{1..9}` — 중괄호 확장. `{-Oid,x}`는 `-Oid x`로 펼쳐진다(`HEAD@{1}`·`HEAD^{tree}`는 콤마·범위가
+  //     없어 셸이 리터럴로 두므로 통과 — 이 둘은 git 리비전 관용구다).
+  //   · 글롭(`*`·`?`·`[`) — 그 이름의 파일이 있으면 토큰이 통째로 바뀐다(`*Oid` → `-Oid`). 선두 글롭과 **옵션 이름부**
+  //     (첫 `=` 앞) 글롭을 거부한다. 값부 글롭(`--include=*.ts`)은 **옵션 이름이 온전해** 검사가 그대로 본다 —
+  //     "선두 `-`가 유지된다"가 아니라 이름의 온전함이 진짜 근거다(pr-reviewer 4차).
+  // 글로빙이 필요하면 따옴표를 씌운다(`git log -- '*.ts'`) — git이 직접 글롭하는 권장형이라 실무 손실이 없다.
+  // (pr-reviewer high 3차 — 뿌리 처방. 남은 이론적 잔여는 F-24 정직 고지에 적었다.)
+  for (const t of toks) {
+    if (t.includes("$")) return false;                          // 확장 일체
+    if (/\{[^}]*,|\{[^}]*\.\./.test(t)) return false;             // 중괄호 확장(콤마·범위만 — `@{1}`·`^{tree}`는 리터럴)
+    if (/^[*?[]/.test(t)) return false;                         // 선두 글롭 → 토큰이 통째로 바뀔 수 있다
+    // 옵션 **이름부**(첫 `=` 앞)의 글롭도 거부 — `git grep -n* TODO`는 트리에 `-nO…` 파일이 있으면 그 이름으로
+    // 대체돼 실행된다(실측 재현). 값부 글롭(`--include=*.ts`)은 이름이 온전해 옵션 검사가 그대로 본다.
+    // "선두 `-`가 유지된다"가 아니라 **옵션 이름이 온전한가**가 진짜 근거였다(pr-reviewer medium 4차).
+    if (/^-/.test(t) && /[*?[]/.test(t.split("=")[0])) return false;
+  }
   if (toks.length === 0) return true;
   if (/^[A-Za-z_]\w*=/.test(toks[0])) return false;            // 선두 env 프리픽스 금지(PAGER=… 등)
   const head = toks[0];
@@ -405,8 +494,16 @@ function bashSegmentAllowed(rawSeg) {
   if (!GIT_READ_SUB.test(toks[i] || "")) return false;
   // (pr-reviewer low) 읽기 서브명령이어도 파일쓰기·명령실행 옵션은 차단:
   // git diff --output=경로(파일 씀), git grep -O<cmd>/--open-files-in-pager(명령 실행).
+  // 끝앵커 `--open-files-in-pager$`가 **등호형을 빠뜨려** 임의 명령이 실행됐다(실측 재현).
+  // 이름 문자열 대조는 git의 **축약·묶음 표기**에 뚫린다 — 실측(2026-07-30, 빈 저장소):
+  //   `git grep --op=touch M TODO` 실행됨 · `--ope`·`--open`·`--open-f` 전부 실행됨(`--o`만 모호로 거부),
+  //   `git grep -nO'touch M' TODO`(묶음형) 실행됨. pager는 `use_shell=1`이라 `sh -c`로 넘어간다.
+  // → `^--op`(축약 최소단위부터) + `^-[A-Za-z]*O`(묶음)로 넓힌다. 허용 서브명령 중 `--op*`로 시작하는
+  // 다른 옵션은 없어 과차단 위험 없음(`--oneline`은 `--on`, git grep `--or`는 `--or`).
+  // `--output`은 등호형·단독형만 — 축약(`--out`·`--outp`)은 `--output-indicator-*`와 모호해 git이 거부하고,
+  // `--output-indicator-new=X`는 파일을 안 쓰는데 프리픽스 매칭에 걸렸다(low, 실측 확인).
   for (let j = i + 1; j < toks.length; j++) {
-    if (/^--output|^--open-files-in-pager$|^-O/.test(toks[j])) return false;
+    if (/^--output(?:=|$)|^--op|^-[A-Za-z]*O/.test(toks[j])) return false;
   }
   return true;
 }
@@ -426,6 +523,7 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
     // 따옴표를 먼저 떼고 조각낸다 — 따옴표 속 `|`(`git grep 'a|b'`의 정규식 교대 등)를 셸 파이프로
     // 오인해 정상 명령을 과차단하던 것 방지(pr-reviewer low). 단일 `&`(백그라운드)도 분할에 포함.
     const cmd = stripQuotes(String((toolInput && toolInput.command) || ""));
+    if (cmd === null) return "ra-bash";                          // 따옴표 미닫힘·큰따옴표 속 치환 → 거부
     for (const seg of cmd.split(/&&|\|\||[;|&\n]/)) if (!bashSegmentAllowed(seg)) return "ra-bash";
     return null;
   }
