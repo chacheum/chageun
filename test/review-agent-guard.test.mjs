@@ -47,6 +47,74 @@ test("Bash: git 읽기만 허용, 나머지·리다이렉션·치환 차단", ()
     assert.equal(B(bad), "ra-bash", "차단이어야: " + bad);
 });
 
+// 실측 재현된 침투 경로 3개(2026-07-30). 옛 stripQuotes(정규식 짝짓기)가 따옴표 안을 먼저 지운 뒤
+// 위험 검사를 해서, 큰따옴표 안 치환·아포스트로피 어긋남·pager 등호형이 전부 빠져나갔다. H1·H3은
+// 실제 셸에서 명령 실행까지 확인했다(파일 생성). 이 테스트가 세 경로와 구현 함정 하나를 못박는다.
+test("Bash: 따옴표 우회 침투 경로 차단(명령치환·따옴표 어긋남·pager 등호형)", () => {
+  const B = (c) => reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: c });
+  const bt = String.fromCharCode(96);
+  for (const bad of [
+    `git log --grep="$(id > /tmp/x)"`,                        // H1 큰따옴표 안 명령치환(셸은 실행한다)
+    `git log --grep="${bt}id${bt}"`,                          // H1 백틱 치환
+    `git log --grep="\${ id; }"`,                             // H1 bash 5.3 함수치환(분할 부작용에 의존하지 않게 명시 거부)
+    `git log --grep="don't" && rm -rf /tmp/x && git log --grep="won't"`, // H2 아포스트로피 짝짓기로 가운데가 사라졌다
+    `git grep --open-files-in-pager='touch /tmp/x ;true' TODO`, // H3 등호형(끝앵커 $가 빠뜨렸다)
+    `git grep --open-files-in-pager 'touch /tmp/x' TODO`,       // H3 두 토큰형
+    `git log --grep='\\' ; id #'`,                             // 구현 함정: 작은따옴표 안엔 이스케이프가 없다 —
+                                                               // 여기에 백슬래시 처리를 넣으면 bash에선 id가 실행되는데 통과한다
+    `git log --grep="unclosed`,                                // 미닫힘 따옴표 → fail-closed
+    // git은 모호하지 않은 **긴 옵션 축약**과 **짧은 옵션 묶음**을 받아준다 — 이름 문자열 대조만 하면 뚫린다.
+    // 실측(2026-07-30 빈 저장소): `--op`부터 실행됨(`--o`만 모호로 거부) · `-nO<cmd>` 묶음형도 실행됨.
+    `git grep --op=touch M TODO`,                              // 축약 최소단위
+    `git grep --ope=touch M TODO`,
+    `git grep --open='touch M' TODO`,
+    `git grep --open-f='touch M' TODO`,
+    `git grep -nO'touch M' TODO`,                              // 묶음형(두 번째 글자부터 O)
+    // 인용으로 옵션을 가리는 4형(pr-reviewer high 2차). 셸은 따옴표를 벗겨 원문 그대로를 git argv로
+    // 넘기므로 인용 여부는 git에게 보이지 않는다 — 실측: 4형 전부 실제로 실행됐다(파일 생성/쓰기 확인).
+    `git grep '--open-files-in-pager=touch M' TODO`,           // 통짜 작은따옴표
+    `git grep "-Otouch M" TODO`,                               // 큰따옴표 묶음형
+    `git log \\--output=M`,                                    // 백슬래시로 첫 대시 가리기
+    `git grep '--open'-files-in-pager='touch M' TODO`,         // 부분 인용 접합
+    // 셸 **확장**으로 첫 글자를 가리는 3형(pr-reviewer high 3차). 스캐너가 본 토큰과 git이 받는 argv가
+    // 갈라지는 마지막 통로 — 수법이 아니라 "다시 쓰기 자체"를 막는 불변식으로 닫았다.
+    `git grep -\${x}Oid TODO`,                                 // 미설정 변수는 지워져 argv가 `-Oid`(실측 실행됨)
+    `git grep -\${x}O"touch M" TODO`,
+    `git grep {-Oid,x} TODO`,                                  // 중괄호 확장 → `-Oid x`(실측 확인)
+    `git grep *Oid TODO`,                                      // 선두 글롭 — 그 이름의 파일이 있으면 토큰이 통째로 바뀐다
+    `git grep $'-Oid' TODO`,                                   // ANSI-C 인용으로 대시 가리기(인용으로 인식하되 안전 글자는 드러난다)
+    // ANSI-C **수치 이스케이프**는 bash가 디코드해 대시를 만든다 — 스캐너도 디코드해야 argv와 안 갈라진다.
+    // 실측: `git grep $'\\x2dOtouch X' TODO`가 실제로 파일을 만들었다(8진형도 동일).
+    `git grep $'\\x2dOid' TODO`,
+    `git grep $'\\055Oid' TODO`,
+    `git grep $'\\u002dOid' TODO`,
+    // 옵션 **이름부** 글롭 — 트리에 `-nO…` 파일이 있으면 그 이름으로 대체돼 실행된다(미끼 파일로 실측 재현).
+    `git grep -n* TODO`,
+    `git grep --op* TODO`,
+  ]) assert.equal(B(bad), "ra-bash", "차단이어야: " + bad);
+
+  // 과차단 방지(plan-validator high): 셸이 리터럴로 두는 것은 계속 통과해야 한다.
+  for (const ok of [
+    `git grep -n "TODO$"`,                                    // 정규식 끝 앵커 — 코드 검색의 관용구
+    `git log --grep="^fix.*$"`,
+    `git log --grep="$HOME"`,                                 // 변수 확장은 인자일 뿐(구분자 주입 불가)
+    `git log --grep="a && b"`,                                // 큰따옴표 안 &&는 리터럴 — 세그먼트가 아니다
+    `git diff --output-indicator-new=X main...HEAD`,           // 파일을 쓰지 않는데 프리픽스 매칭에 걸렸던 것(low)
+    `git log --oneline -5`,                                    // `^--op` 확대가 `--oneline`을 안 건드리는지
+    `git grep -e a --or -e b`,                                 // git grep `--or`도 무관
+    `git -C "/mnt/g/내 드라이브/proj" diff main...HEAD`,        // 공백 있는 경로 — 따옴표 구간을 공백으로 지우면
+                                                               // `-C`가 서브명령을 먹어 정상 명령이 막혔다(자리표시 토큰으로 해결)
+    `git diff "my file.txt"`,                                  // 인용된 경로 — 안전 글자 보존이 이걸 깨지 않아야 한다
+    `git grep -c $'\\r$' HEAD -- docs/design-system.md`,        // ANSI-C 인용(CR 검색) — 실무에서 실제로 쓰인다
+    `git grep -c $'\\xe2\\x9c\\x89' HEAD -- web/x.tsx`,          // 이모지를 바이트로 검색(실측 코퍼스에 있던 실제 명령) —
+                                                               // 수치 이스케이프를 거부하면 이게 막힌다. 디코드해서 안전 글자만 드러내면 둘 다 만족
+    `git grep -n x -- --include=*.ts`,                         // 글롭이 선두가 아니면 확장돼도 `-`가 유지된다
+    `git diff HEAD@{1} HEAD --stat`,                           // reflog 표기 — 콤마·범위가 없어 셸이 리터럴로 둔다
+    `git rev-parse HEAD HEAD^{tree}`,                          // tree 표기도 마찬가지
+    `git log -- '*.ts'`,                                       // 글로빙이 필요하면 인용 — git이 직접 글롭하는 권장형
+  ]) assert.equal(B(ok), null, "허용이어야: " + ok);
+});
+
 test("비리뷰 에이전트는 판정 안 함(호출부 가드) — reviewAgentBlock은 리뷰 전제", () => {
   // 함수 자체는 agentType을 안 보지만, 배선이 isReviewAgent로 가드하므로 여기선 매칭만 확인.
   assert.equal(isReviewAgent("chageun:code-implementer"), false);

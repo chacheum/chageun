@@ -27,7 +27,7 @@ description: 회고 — 작업이 끝날 때 이 프로젝트의 지난 세션 �
    - **적용?** ("원하시면 '이거 적용해줘' 하세요")
    심각도·빈도순. 발견이 없으면 "이번엔 제안할 패턴 없음"이라고 한 줄.
 
-4. **마커 갱신:** `docs/`가 없으면 만들고(단, WSL 구글드라이브 폴더엔 새 폴더 금지 규칙과 무관 — 프로젝트 로컬 docs), `docs/retrospect-state.json`에 `{lastRunAt, lastRunNewestMtime}`(findings.meta.newestMtime) 기록해 다음 회고가 중복 분석 안 하게.
+4. **마커 갱신:** `docs/`가 없으면 만들고(단, WSL 구글드라이브 폴더엔 새 폴더 금지 규칙과 무관 — 프로젝트 로컬 docs), `docs/retrospect-state.json`에 `{lastRunAt, lastRunNewestMtime}`(findings.meta.newestMtime) 기록해 다음 회고가 중복 분석 안 하게. **쓴 뒤 그 파일을 다시 읽어 값이 실제로 갱신됐는지 눈으로 확인한다** — 2026-07-20 회고는 보고서를 냈는데 마커가 07-18에 멈춰 있어 다음 회고가 같은 세션 2개를 또 훑었다.
 
 5. **통보:** 사용자에게 한 줄 — "지난 N세션 회고: 제안 M건(보고서: docs/retrospect-YYYY-MM-DD.md)". 제안이 0이면 그렇게.
 
