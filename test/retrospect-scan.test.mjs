@@ -415,3 +415,16 @@ test("--due CLI (C5): NOT_DUE — marker already covers all fresh sessions", () 
   assert.equal(res.status, 0, res.stderr);
   assert.equal(res.stdout, "NOT_DUE");
 });
+
+// 회고 9번(2026-07-30) 앵커 — 마커 파일 갱신을 "눈으로 확인"하는 절차. SKILL.md 본문을 보는
+// 테스트가 없어 이 문장이 조용히 사라질 수 있었다(2026-07-20 회고가 실제로 마커를 빠뜨려 같은
+// 세션 2개를 재분석했다). 회귀 바닥이지 발동 증거 아님.
+test("retrospect SKILL.md에 마커 갱신 눈확인 절차 존재(회고 9번)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname } = await import("node:path");
+  const p = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "skills", "retrospect", "SKILL.md");
+  const s = readFileSync(p, "utf8");
+  assert.ok(s.includes("retrospect-state.json"), "마커 파일 경로 부재");
+  assert.ok(s.includes("눈으로 확인"), "마커 갱신 눈확인 절차 부재");
+});
