@@ -28,6 +28,12 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 // never binds first — the real limits are "how big is one file" and "how many files", both of which are
 // reported when they bite. Bounding coverage is fine; bounding it for nothing is not.
 const MAX_BYTES = MAX_FILE_BYTES * MAX_SESSIONS;
+// 게이트 층 전용 예산(부모 층과 분리 — 서로 굶기지 않게). 실측(2026-07-30 honclwd): 456파일 87.5MB,
+// 중앙값 141KB · 최대 1.2MB. 파일이 작아 **개수 상한이 실질 바운드**이고, 바이트 상한은 한 파일이
+// 비정상적으로 큰 경우를 위한 백스톱이다. 아래 '선별' 덕에 바이트는 읽기 비용만 들고 파싱 비용이 안 들어
+// (실측 103MB 읽기+선별 3.9초) 상한을 넉넉히 잡는다 — 좁게 잡았더니 발견이 1/3로 줄었다(46 vs 149건).
+const MAX_AGENT_FILES = 600;
+const MAX_AGENT_BYTES = 128 * 1024 * 1024;
 const sessionIdOf = (p) => String(p).split("/").pop().replace(/\.jsonl$/, "");
 
 // Claude Code stores per-project transcripts under ~/.claude/projects/<encoded cwd>/, where the
@@ -64,6 +70,26 @@ function resolveTranscriptDir(cwd) {
   return encoded;
 }
 
+// 상한 적용은 두 층(부모 세션·게이트)이 공유한다 — 층마다 예산은 다르지만 규칙(파일캡 우선 → 개수캡 →
+// 바이트캡)은 같아야 건너뜀 사유 라벨이 층 사이에서 같은 뜻을 갖는다.
+function applyCaps(files, { maxSessions, maxBytes, maxFileBytes }, skipped) {
+  files.sort((a, b) => b.mtime - a.mtime);
+  const out = []; let bytes = 0;
+  const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, reason, parent: f.parent }); };
+  for (const f of files) {
+    // File cap is checked first so an oversized file is always labelled "file-cap", never "session-cap"
+    // just because it happened to arrive past the count limit. isDue counts file-cap drops as real work,
+    // so the label has to describe the file, not its position in the list.
+    if (f.size > maxFileBytes) { drop(f, "file-cap"); continue; }   // one huge file must not starve the rest
+    // session-count cap: keep iterating (not `break`) so the rest is recorded as skipped rather than
+    // vanishing — the caller must be able to say what it did not read.
+    if (out.length >= maxSessions) { drop(f, "session-cap"); continue; }
+    if (bytes + f.size > maxBytes) { drop(f, "budget"); continue; } // byte cap: skip this one, keep scanning smaller ones
+    out.push(f); bytes += f.size;
+  }
+  return out;
+}
+
 function listSessionFiles(dir, opts = {}) {
   const { sinceMtime = 0, maxSessions = MAX_SESSIONS, maxBytes = MAX_BYTES,
           maxFileBytes = MAX_FILE_BYTES, skipped = null } = opts;
@@ -80,26 +106,59 @@ function listSessionFiles(dir, opts = {}) {
       files.push({ path: join(dir, n), mtime, size: st.size });
     } catch (_) { /* skip */ }
   }
-  files.sort((a, b) => b.mtime - a.mtime);
-  const out = []; let bytes = 0;
-  const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, reason }); };
-  for (const f of files) {
-    // File cap is checked first so an oversized file is always labelled "file-cap", never "session-cap"
-    // just because it happened to arrive past the count limit. isDue counts file-cap drops as real work,
-    // so the label has to describe the file, not its position in the list.
-    if (f.size > maxFileBytes) { drop(f, "file-cap"); continue; }   // one huge file must not starve the rest
-    // session-count cap: keep iterating (not `break`) so the rest is recorded as skipped rather than
-    // vanishing — the caller must be able to say what it did not read.
-    if (out.length >= maxSessions) { drop(f, "session-cap"); continue; }
-    if (bytes + f.size > maxBytes) { drop(f, "budget"); continue; } // byte cap: skip this one, keep scanning smaller ones
-    out.push(f); bytes += f.size;
+  return applyCaps(files, { maxSessions, maxBytes, maxFileBytes }, skipped);
+}
+
+// 게이트(서브에이전트) 층: `<transcriptDir>/<sessionId>/subagents/*.jsonl`.
+// **이 층은 v0.41.1까지 한 번도 읽히지 않았다.** plan-validator·pr-reviewer의 보고서 본문과 그들이 실제로
+// 무엇에 막혔는지는 전부 여기 있고, 부모 세션엔 요약만 남는다. 실측(2026-07-30): honclwd 456파일 87.5MB ·
+// dow-relay 회고가 "44회"로 보고한 리뷰 차단이 이 층 전수로는 853건이었다(20배). 즉 이 층이 빠지면 회고가
+// 축소된 숫자로 판단을 유도한다.
+// 예산은 부모 층과 **분리**한다(한 층이 다른 층을 굶기지 않게). 파일이 작아서(실측 중앙값 141KB · 최대
+// 1.2MB) 개수 상한이 실질 바운드이고 바이트 상한은 병리적 경우의 백스톱이다.
+const AGENT_WALK_MAX_DEPTH = 4;
+function walkAgentDir(sub, parent, sinceMtime, files, depth, skipped) {
+  // 깊이 초과도 **사유와 함께** 남긴다 — 다른 모든 드롭이 보고되는데 이것만 조용하면, 나중에 구조가 더
+  // 깊어졌을 때 v0.41.0 이전과 똑같이 한 층이 소리 없이 빠진다(pr-reviewer low).
+  if (depth > AGENT_WALK_MAX_DEPTH) { if (skipped) skipped.push({ path: sub, size: 0, reason: "depth-cap" }); return; }
+  let entries;
+  try { entries = readdirSync(sub, { withFileTypes: true }); } catch (_) { return; }  // subagents/ 없으면 조용히 종료
+  for (const e of entries) {
+    const p = join(sub, e.name);
+    if (e.isDirectory()) { walkAgentDir(p, parent, sinceMtime, files, depth + 1, skipped); continue; }
+    if (!e.name.endsWith(".jsonl")) continue;
+    try {
+      const st = statSync(p);
+      if (!st.isFile()) continue;
+      const mtime = Math.floor(st.mtimeMs / 1000);
+      if (mtime <= sinceMtime) continue;
+      files.push({ path: p, mtime, size: st.size, parent });
+    } catch (_) { /* skip */ }
   }
-  return out;
+}
+function listAgentFiles(dir, opts = {}) {
+  const { sinceMtime = 0, maxSessions = MAX_AGENT_FILES, maxBytes = MAX_AGENT_BYTES,
+          maxFileBytes = MAX_FILE_BYTES, skipped = null } = opts;
+  const files = [];
+  let sessions;
+  try { sessions = readdirSync(dir, { withFileTypes: true }); } catch (_) { return []; }
+  for (const s of sessions) {
+    if (!s.isDirectory()) continue;
+    // `subagents/` 아래는 **한 겹이 아니다** — 워크플로우 실행은 `subagents/workflows/<wf_id>/agent-*.jsonl`로
+    // 한 단계 더 들어간다(실측 honclwd: 1단계 239 · 워크플로우 층 217 = 전체의 48%). 처음 구현이 1단계만
+    // 읽어서, 고치려던 것과 **똑같은 종류의 조용한 누락**을 다시 만들 뻔했다. 그래서 재귀로 훑는다(깊이 상한은
+    // 폭주 방지용 — 실측 최대 깊이는 2).
+    walkAgentDir(join(dir, s.name, "subagents"), s.name, sinceMtime, files, 0, skipped);
+  }
+  return applyCaps(files, { maxSessions, maxBytes, maxFileBytes }, skipped);
 }
 
 function parseSession(path) {
   let raw;
   try { raw = readFileSync(path, "utf8"); } catch (_) { return []; }
+  return parseLines(raw);
+}
+function parseLines(raw) {
   const objs = [];
   for (const ln of raw.split("\n")) {
     const s = ln.trim(); if (!s) continue;
@@ -192,6 +251,9 @@ function detectUserCorrections(objs, sessionId) {
 // tool_result echoes the file content, e.g. the REASONS map's "무인 모드 차단:") would else false-positive
 // (dry-run caught exactly this). Real chageun denies all carry "PreToolUse:…hook error" via pretooluse.js. (C1)
 const DENY_MARKER_RE = /(?:Pre|Post)ToolUse:[^\n]*hook error/;
+// 게이트 층 선별식(파싱 전 값싼 필터). **DENY_MARKER_RE와 Stop-블록 접두의 상위집합이어야 한다** —
+// 좁히면 조용한 유실이 되고, 넓으면 파싱을 조금 더 할 뿐이다(안전 방향).
+const AGENT_SIGNAL_RE = /hook error|Stop hook feedback:/;
 function detectNearMisses(objs, sessionId) {
   const out = [];
   for (const o of objs) {
@@ -275,8 +337,10 @@ function maskFindings(findings, secrets) {
 function aggregate(raw) {
   const byKey = new Map();
   for (const f of raw) {
-    const key = `${f.type}::${f.gate || f.rule || f.phrase || ""}`.slice(0, 200);
-    const cur = byKey.get(key) || { type: f.type, gate: f.gate, rule: f.rule, phrase: f.phrase, count: 0, sessions: [], evidence: [] };
+    // layer를 키에 넣는다 — 같은 규칙이라도 **어느 층에서 몇 번**인지가 판단을 바꾼다(부모 층 요약만 보고
+    // "44회"로 보고했던 것이 게이트 층 전수로는 853건이었던 실측 사례).
+    const key = `${f.type}::${f.layer || "session"}::${f.gate || f.rule || f.phrase || ""}`.slice(0, 200);
+    const cur = byKey.get(key) || { type: f.type, layer: f.layer || "session", gate: f.gate, rule: f.rule, phrase: f.phrase, count: 0, sessions: [], evidence: [] };
     cur.count++;
     if (f.sessionId && !cur.sessions.includes(f.sessionId)) cur.sessions.push(f.sessionId);
     if (f.evidence && cur.evidence.length < 3) cur.evidence.push(f.evidence);
@@ -300,6 +364,35 @@ function scan(cwd, opts = {}) {
     const sid = sessionIdOf(f.path);
     raw.push(...detectGateGaps(objs, sid), ...detectUserCorrections(objs, sid), ...detectNearMisses(objs, sid));
   }
+  // 게이트 층: near-miss만 돌린다. 나머지 두 탐지기는 이 층에서 **뜻이 달라진다** —
+  // detectGateGaps는 스킬 로드를 보는데 서브에이전트는 스킬을 안 쓰고, detectUserCorrections의 "user" 역할은
+  // 사람이 아니라 **메인 세션이 보낸 프롬프트**라 사람의 교정으로 오독된다. near-miss는 구조(안전훅 deny의
+  // tool_result + hook-error 접두)에 걸려 있어 층이 바뀌어도 그대로 참이다(실측 확인).
+  // 값싼 선별로 예산을 넓힌다: 이 층에서 돌리는 탐지기가 near-miss 하나뿐이고, 그게 찾는 두 구조는 원문에
+  // 반드시 `hook error` 또는 `Stop hook feedback:` 문자열을 남긴다. 그래서 **읽되 대부분 파싱하지 않는다**.
+  // 실측(dow-relay 전량 323파일 103.5MB): 읽기+선별 3.9초 → 신호 있는 78파일만 파싱 0.2초. 선별 없이 예산
+  // 24MB로 잘랐을 땐 near-miss 46건, 선별로 전량을 보니 149건이었다(3배). 선별식은 탐지기가 보는 것의
+  // **상위집합**이어야 조용한 유실이 없다 — 테스트가 이 포함관계를 못박는다.
+  // 🛑 마커는 **층마다 따로** 쓴다. 부모 마커를 그대로 쓰면 "여기까지 분석했다"가 게이트 층에 대해선
+  // 거짓이다(이 층은 v0.41.0까지 한 번도 안 읽혔다) → 업그레이드 후 기존 프로젝트의 게이트 과거분이
+  // `sinceMtime`에 걸려 **무보고로 영구 제외**된다. 이 PR이 고치려는 것과 같은 종류의 조용한 유실이라
+  // 별도 필드를 둬서 첫 실행 때 상한 안에서 따라잡게 한다(pr-reviewer medium).
+  const agentSkipped = [];
+  const agentSince = (marker && marker.lastRunNewestAgentMtime) || 0;
+  const agentFiles = listAgentFiles(dir, { sinceMtime: agentSince, skipped: agentSkipped });
+  let agentScanned = 0, agentWithSignal = 0;
+  let newestAgentMtime = agentSince;
+  for (const f of agentFiles) {
+    newestAgentMtime = Math.max(newestAgentMtime, f.mtime);
+    let text;
+    try { text = readFileSync(f.path, "utf8"); } catch (_) { continue; }
+    agentScanned++;
+    if (!AGENT_SIGNAL_RE.test(text)) continue;                  // 신호 없음 → 파싱 생략(읽긴 읽었다)
+    const objs = parseLines(text);
+    if (!hasRealContent(objs)) continue;
+    agentWithSignal++;
+    for (const nm of detectNearMisses(objs, f.parent || sessionIdOf(f.path))) raw.push({ ...nm, layer: "gate" });
+  }
   const drift = driftSignal(cwd); if (drift) raw.push({ ...drift, sessionId: null });
   let secrets = []; try { secrets = collectSecrets(cwd); } catch (_) {}
   const findings = maskFindings(aggregate(raw), secrets);
@@ -315,7 +408,15 @@ function scan(cwd, opts = {}) {
       sessionsScanned: realSessions,
       sessionsSkipped,
       coverage: `${files.length}/${files.length + skipped.length}`,
-      newestMtime, cwd,
+      // 게이트 층은 **따로** 밝힌다. 한 숫자로 합치면 "4/4 다 읽음"이 부모 층만 센 것인데도 전부 읽은 것처럼
+      // 읽힌다(2026-07-30 회고가 정확히 그렇게 보고됐다 — 바이트로는 44%였다).
+      agentFilesScanned: agentScanned,
+      agentFilesWithSignal: agentWithSignal,
+      agentCoverage: `${agentFiles.length}/${agentFiles.length + agentSkipped.length}`,
+      agentFilesSkipped: agentSkipped
+        .map((s) => ({ file: sessionIdOf(s.path), parent: s.parent || null, sizeMB: Math.round((s.size / 1048576) * 10) / 10, reason: s.reason }))
+        .sort((a, b) => b.sizeMB - a.sizeMB),
+      newestMtime, newestAgentMtime, cwd,
     },
   };
 }
@@ -356,10 +457,11 @@ function isDue(cwd, opts = {}) {
 }
 
 export {
-  transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession,
+  transcriptDir, resolveTranscriptDir, listSessionFiles, listAgentFiles, parseSession,
   detectGateGaps, detectUserCorrections, detectNearMisses, driftSignal,
   scan, readMarker, writeMarker, isDue,
   MAX_SESSIONS, MAX_FILE_BYTES, MAX_BYTES, // exported so the cap-ordering invariant is testable
+  MAX_AGENT_FILES, MAX_AGENT_BYTES, AGENT_SIGNAL_RE,
 };
 
 // Note (marker docs/ dir): writeMarker creates <cwd>/docs/ if missing (recursive mkdir) then writes the
