@@ -428,3 +428,135 @@ test("retrospect SKILL.md에 마커 갱신 눈확인 절차 존재(회고 9번)"
   assert.ok(s.includes("retrospect-state.json"), "마커 파일 경로 부재");
   assert.ok(s.includes("눈으로 확인"), "마커 갱신 눈확인 절차 부재");
 });
+
+// ── 게이트(서브에이전트) 층 수집 — v0.41.1 ───────────────────────────────────
+// 이 층은 v0.41.0까지 **한 번도 읽히지 않았다**. plan-validator·pr-reviewer가 실제로 무엇에 막혔는지는
+// 전부 여기 있고 부모 세션엔 요약만 남는다. 실측: dow-relay 회고가 "44회"로 보고한 리뷰 차단이 이 층
+// 전수로는 853건(20배)이었다. 아래 테스트가 (1) 수집 (2) 상한 (3) 선별식의 상위집합 관계를 못박는다.
+import { listAgentFiles, MAX_AGENT_FILES, MAX_AGENT_BYTES, AGENT_SIGNAL_RE } from "../src/skills/retrospect/retrospect-scan.mjs";
+
+function mkAgentFixture(files) {
+  const dir = mkdtempSync(join(tmpdir(), "rs-agent-"));
+  for (const [session, name, body, size] of files) {
+    const sub = join(dir, session, "subagents");
+    mkdirSync(sub, { recursive: true });
+    const p = join(sub, name);
+    writeFileSync(p, size ? "x".repeat(size) : body);
+  }
+  return dir;
+}
+
+test("listAgentFiles: <dir>/<session>/subagents/*.jsonl 를 수집한다(부모 층과 별개)", () => {
+  const dir = mkAgentFixture([
+    ["sessA", "agent-1.jsonl", "{}\n"],
+    ["sessA", "agent-2.jsonl", "{}\n"],
+    ["sessB", "agent-3.jsonl", "{}\n"],
+    ["sessB", "notes.txt", "not jsonl"],
+  ]);
+  mkdirSync(join(dir, "sessC"), { recursive: true });          // subagents/ 없는 세션 → 조용히 건너뜀
+  writeFileSync(join(dir, "parent.jsonl"), "{}\n");            // 부모 층 파일은 이 수집기 대상 아님
+  const got = listAgentFiles(dir).map((f) => f.path.split("/").pop()).sort();
+  assert.deepEqual(got, ["agent-1.jsonl", "agent-2.jsonl", "agent-3.jsonl"]);
+  assert.equal(listAgentFiles(dir).every((f) => typeof f.parent === "string"), true, "parent 세션 id가 붙어야 보고에서 묶인다");
+});
+
+test("listAgentFiles: 상한이 부모 층과 같은 순서로 적용된다(파일캡 → 개수캡)", () => {
+  const dir = mkAgentFixture([
+    ["s", "big.jsonl", null, 5 * 1024 * 1024],   // 4MB 초과 → file-cap
+    ["s", "ok1.jsonl", "{}\n"],
+    ["s", "ok2.jsonl", "{}\n"],
+  ]);
+  const skipped = [];
+  const got = listAgentFiles(dir, { maxSessions: 1, skipped });
+  assert.equal(got.length, 1);
+  assert.deepEqual(skipped.map((s) => s.reason).sort(), ["file-cap", "session-cap"],
+    "큰 파일은 위치와 무관하게 file-cap으로 라벨돼야 한다(부모 층과 동일 규칙)");
+});
+
+test("게이트 층 예산은 부모 층과 분리돼 있고 개수 상한이 실질 바운드", () => {
+  assert.ok(MAX_AGENT_FILES >= 300, "실측 456파일 프로젝트를 덮어야 한다");
+  assert.ok(MAX_AGENT_BYTES >= 64 * 1024 * 1024, "좁게 잡으면 발견이 1/3로 줄었다(46 vs 149건)");
+});
+
+test("선별식은 near-miss 탐지기가 보는 것의 상위집합이다(조용한 유실 방지)", async () => {
+  const { detectNearMisses, parseSession } = await import("../src/skills/retrospect/retrospect-scan.mjs");
+  // 🛑 사본이 아니라 **스캐너의 원본 정규식**을 검사한다 — 사본을 두면 나중에 원본을 좁혀도 테스트가 초록이라
+  // 이 PR이 두려워한 "조용한 유실"이 테스트 보호 밖에 남는다(pr-reviewer medium).
+  const deny = JSON.stringify({
+    type: "user",
+    message: { role: "user", content: [{ type: "tool_result", is_error: true,
+      content: "PreToolUse:Bash [hook] hook error: 차단: 리뷰 에이전트의 Bash는 git 읽기만 허용됩니다" }] },
+  });
+  const stop = JSON.stringify({
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text: "Stop hook feedback: 증거 없는 완료 선언" }] },
+  });
+  const plain = JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "리뷰를 계속합니다" }] } });
+
+  for (const [label, line] of [["deny", deny], ["stop", stop]]) {
+    const dir = mkAgentFixture([["s", "a.jsonl", line + "\n"]]);
+    const p = listAgentFiles(dir)[0].path;
+    const found = detectNearMisses(parseSession(p), "s");
+    assert.ok(found.length > 0, label + ": 탐지기가 잡아야 하는 기록");
+    assert.ok(AGENT_SIGNAL_RE.test(line), label + ": 탐지기가 잡는 것을 선별식이 반드시 통과시켜야 한다(상위집합)");
+  }
+  assert.equal(detectNearMisses(parseSession(listAgentFiles(mkAgentFixture([["s", "a.jsonl", plain + "\n"]]))[0].path), "s").length, 0);
+});
+
+// 워크플로우 층(`subagents/workflows/<wf>/agent-*.jsonl`)은 한 겹 더 들어간다 — 실측 honclwd 456개 중
+// **217개(48%)가 이 층**이었고, 1단계만 읽던 첫 구현이 그만큼을 조용히 빠뜨렸다(고치려던 것과 같은 종류의 누락).
+test("listAgentFiles: subagents/ 아래 중첩(workflows/<wf>/)까지 재귀로 수집한다", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-agent-nested-"));
+  const flat = join(dir, "sessA", "subagents");
+  const nested = join(dir, "sessA", "subagents", "workflows", "wf_abc123");
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(join(flat, "agent-flat.jsonl"), "{}\n");
+  writeFileSync(join(nested, "agent-wf1.jsonl"), "{}\n");
+  writeFileSync(join(nested, "agent-wf2.jsonl"), "{}\n");
+  const got = listAgentFiles(dir).map((f) => f.path.split("/").pop()).sort();
+  assert.deepEqual(got, ["agent-flat.jsonl", "agent-wf1.jsonl", "agent-wf2.jsonl"]);
+  assert.equal(listAgentFiles(dir).every((f) => f.parent === "sessA"), true, "중첩돼도 부모 세션으로 묶여야 한다");
+});
+
+// scan() 통합 — 게이트 층이 실제로 findings·meta까지 흘러가는지(층 태그·커버리지·부모 귀속).
+// 단위 테스트만 있으면 배선이 끊겨도 초록이라, 엔드투엔드로 한 번 통과시킨다(pr-reviewer medium).
+test("scan(): 게이트 층 near-miss가 layer:'gate'로 findings에 실리고 커버리지가 따로 보고된다", async () => {
+  const { scan } = await import("../src/skills/retrospect/retrospect-scan.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "rs-scan-gate-"));
+  const cwd = mkdtempSync(join(tmpdir(), "rs-cwd-"));           // 마커 없음 → 첫 실행(sinceMtime=0)
+  writeFileSync(join(dir, "sess1.jsonl"),
+    JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "작업 시작" }] } }) + "\n");
+  const sub = join(dir, "sess1", "subagents");
+  mkdirSync(sub, { recursive: true });
+  writeFileSync(join(sub, "agent-a1.jsonl"),
+    JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", is_error: true,
+      content: "PreToolUse:Bash [hook] hook error: 차단: 리뷰 에이전트의 Bash는 git 읽기 명령만 허용됩니다" }] } }) + "\n");
+  writeFileSync(join(sub, "agent-a2.jsonl"),                    // 신호 없음 → 읽되 파싱 생략
+    JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "리뷰 계속" }] } }) + "\n");
+
+  const r = scan(cwd, { transcriptDirOverride: dir });
+  const gate = r.findings.filter((f) => f.layer === "gate");
+  assert.equal(gate.length, 1, "게이트 층 발견이 findings에 실려야 한다");
+  assert.equal(gate[0].type, "near-miss");
+  assert.deepEqual(gate[0].sessions, ["sess1"], "중첩·서브에이전트여도 부모 세션으로 귀속돼야 한다");
+  assert.equal(r.meta.agentCoverage, "2/2", "게이트 커버리지는 부모와 따로 보고");
+  assert.equal(r.meta.agentFilesScanned, 2, "읽은 파일 수");
+  assert.equal(r.meta.agentFilesWithSignal, 1, "신호 있어 파싱한 파일 수 — 선별이 실제로 작동했다는 증거");
+  assert.ok(r.meta.newestAgentMtime > 0, "게이트 층 마커 값이 따로 나와야 다음 실행이 층별로 이어간다");
+});
+
+test("scan(): 게이트 층 마커는 부모 마커와 분리돼 업그레이드 첫 실행에 과거분을 따라잡는다", async () => {
+  const { scan, writeMarker } = await import("../src/skills/retrospect/retrospect-scan.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "rs-scan-marker-"));
+  const cwd = mkdtempSync(join(tmpdir(), "rs-cwd2-"));
+  const sub = join(dir, "sessX", "subagents");
+  mkdirSync(sub, { recursive: true });
+  writeFileSync(join(sub, "agent-old.jsonl"),
+    JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", is_error: true,
+      content: "PreToolUse:Bash [hook] hook error: 차단: 테스트" }] } }) + "\n");
+  // 부모 마커만 있는 상태 = v0.41.0까지 회고를 돌려온 기존 프로젝트
+  writeMarker(cwd, { lastRunAt: new Date().toISOString(), lastRunNewestMtime: Math.floor(Date.now() / 1000) + 3600 });
+  const r = scan(cwd, { transcriptDirOverride: dir });
+  assert.equal(r.meta.agentFilesScanned, 1,
+    "부모 마커가 미래여도 게이트 층은 자기 필드가 없으므로 0부터 따라잡아야 한다(무보고 영구 제외 방지)");
+});
