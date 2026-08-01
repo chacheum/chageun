@@ -8,12 +8,12 @@ import { transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession,
          MAX_SESSIONS, MAX_FILE_BYTES, MAX_BYTES } from "../src/skills/retrospect/retrospect-scan.mjs";
 
 test("transcriptDir: encodes cwd like Claude Code (slashes → dashes)", () => {
-  const d = transcriptDir("/home/mokgam/projects/honclwd");
-  assert.ok(d.endsWith("/.claude/projects/-home-mokgam-projects-honclwd"), d);
+  const d = transcriptDir("/home/u/projects/honclwd");
+  assert.ok(d.endsWith("/.claude/projects/-home-u-projects-honclwd"), d);
 });
 test("resolveTranscriptDir: encoded dir present → returns it directly (no glob needed) (FIX 2)", () => {
   const tmpHome = mkdtempSync(join(tmpdir(), "rs-home-"));
-  const targetCwd = "/home/mokgam/projects/honclwd";
+  const targetCwd = "/home/u/projects/honclwd";
   const encoded = join(tmpHome, ".claude", "projects", targetCwd.replace(/[^A-Za-z0-9]/g, "-"));
   mkdirSync(encoded, { recursive: true });
   const prevHome = process.env.HOME;
@@ -27,7 +27,7 @@ test("resolveTranscriptDir: encoded dir present → returns it directly (no glob
 test("resolveTranscriptDir: encoded dir absent → globs sibling dirs, matches by transcript cwd field (FIX 2 fallback)", () => {
   const tmpHome = mkdtempSync(join(tmpdir(), "rs-home2-"));
   const projectsRoot = join(tmpHome, ".claude", "projects");
-  const targetCwd = "/home/mokgam/projects/weird.path";
+  const targetCwd = "/home/u/projects/weird.path";
   const siblingDir = join(projectsRoot, "-mismatched-encoded-name");
   mkdirSync(siblingDir, { recursive: true });
   writeFileSync(join(siblingDir, "a.jsonl"), JSON.stringify({ type: "user", cwd: targetCwd }) + "\n");
@@ -42,7 +42,7 @@ test("resolveTranscriptDir: encoded dir absent → globs sibling dirs, matches b
 test("resolveTranscriptDir: no candidate matches anywhere → falls back to the encoded path (FIX 2 fail-safe)", () => {
   const tmpHome = mkdtempSync(join(tmpdir(), "rs-home3-"));
   const projectsRoot = join(tmpHome, ".claude", "projects");
-  const targetCwd = "/home/mokgam/projects/never-matched";
+  const targetCwd = "/home/u/projects/never-matched";
   const siblingDir = join(projectsRoot, "-some-other-project");
   mkdirSync(siblingDir, { recursive: true });
   writeFileSync(join(siblingDir, "a.jsonl"), JSON.stringify({ type: "user", cwd: "/completely/different/cwd" }) + "\n");
@@ -436,7 +436,7 @@ test("retrospect SKILL.md에 마커 갱신 눈확인 절차 존재(회고 9번)"
 
 // ── 게이트(서브에이전트) 층 수집 — v0.41.1 ───────────────────────────────────
 // 이 층은 v0.41.0까지 **한 번도 읽히지 않았다**. plan-validator·pr-reviewer가 실제로 무엇에 막혔는지는
-// 전부 여기 있고 부모 세션엔 요약만 남는다. 실측: dow-relay 회고가 "44회"로 보고한 리뷰 차단이 이 층
+// 전부 여기 있고 부모 세션엔 요약만 남는다. 실측: 한 실무 프로젝트의 회고가 "44회"로 보고한 리뷰 차단이 이 층
 // 전수로는 853건(20배)이었다. 아래 테스트가 (1) 수집 (2) 상한 (3) 선별식의 상위집합 관계를 못박는다.
 import { listAgentFiles, MAX_AGENT_FILES, MAX_AGENT_BYTES, AGENT_SIGNAL_RE } from "../src/skills/retrospect/retrospect-scan.mjs";
 
