@@ -179,6 +179,10 @@ test("scan: 상한 초과 세션에서도 near-miss는 건져낸다(v0.42 부분
   assert.equal(nm.length, 1, "초과 파일 안의 차단 기록을 건져냄");
   assert.equal(nm[0].layer, "session-partial", "부분 판독 층으로 표시돼 전량 분석과 섞이지 않음");
   assert.equal(res.meta.sessionsScanned, 0, "부분 판독은 '분석한 세션'으로 안 센다");
+  // 🛑 마커 회귀 잠금(pr-reviewer high): skip 레코드에 mtime이 없으면 Math.max가 NaN이 되고
+  // 마커에 null이 적혀 **매 회고가 전량 재스캔·같은 발견 재보고·영구 DUE**가 된다.
+  assert.equal(res.meta.newestMtime, 3000, "부분 판독도 마커를 전진시킨다(NaN 아님)");
+  assert.ok(Number.isFinite(res.meta.newestMtime), "newestMtime은 항상 유한한 수");
   assert.ok(!res.findings.some((f) => f.type === "gate-gap"), "gate-gap은 초과 파일에서 안 돌린다(가짜 구멍 방지)");
 });
 test("parseSession: parses jsonl, skips malformed lines", () => {

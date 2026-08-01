@@ -75,7 +75,10 @@ function resolveTranscriptDir(cwd) {
 function applyCaps(files, { maxSessions, maxBytes, maxFileBytes }, skipped) {
   files.sort((a, b) => b.mtime - a.mtime);
   const out = []; let bytes = 0;
-  const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, reason, parent: f.parent }); };
+  // mtime을 반드시 실어 보낸다 — v0.42의 부분 판독이 이 레코드로 `newestMtime`을 전진시킨다.
+  // 빠지면 `Math.max(n, undefined)`가 **NaN**이 되고, NaN은 이후 어떤 Math.max로도 안 돌아온다
+  // → 마커에 null이 적혀 매 회고가 전량 재스캔·같은 발견 재보고·영구 DUE가 된다(pr-reviewer high).
+  const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, mtime: f.mtime, reason, parent: f.parent }); };
   for (const f of files) {
     // File cap is checked first so an oversized file is always labelled "file-cap", never "session-cap"
     // just because it happened to arrive past the count limit. isDue counts file-cap drops as real work,
