@@ -155,8 +155,31 @@ test("scan: meta reports coverage and skipped sessions", () => {
   assert.equal(res.meta.coverage, "1/2", "coverage names how much of the candidate set was actually read");
   assert.equal(res.meta.sessionsSkipped.length, 1);
   assert.equal(res.meta.sessionsSkipped[0].session, "huge", "skipped entry carries the session id, not the path");
-  assert.equal(res.meta.sessionsSkipped[0].reason, "file-cap");
+  // v0.42: 상한 초과 파일은 통째 스킵이 아니라 **부분 판독**(near-miss만)이다 — 라벨이 그 사실을 말한다.
+  assert.equal(res.meta.sessionsSkipped[0].reason, "file-cap-partial");
+  assert.ok(res.meta.sessionsSkipped[0].note.includes("near-miss"), "무엇을 봤고 무엇을 못 봤는지 명시");
   assert.ok(res.meta.sessionsSkipped[0].sizeMB >= 6, "size is reported so the caller knows what it is opening");
+  assert.equal(res.meta.sessionsPartiallyRead, 1, "부분 판독 세션 수를 따로 보고(전량 분석과 구분)");
+});
+
+// v0.42(8번): 상한 초과 세션에서도 안전훅 차단(near-miss)은 건져낸다. 통째 스킵의 근거는
+// gate-gap(세션 전체 상태 의존)에만 참이고, near-miss는 레코드 단위 독립 판정이라 부분 판독이 안전하다.
+test("scan: 상한 초과 세션에서도 near-miss는 건져낸다(v0.42 부분 판독)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rs-part-"));
+  const cwd = mkdtempSync(join(tmpdir(), "rs-part-cwd-"));
+  const deny = JSON.stringify({ type: "user", message: { role: "user", content: [
+    { type: "tool_result", is_error: true, content: 'PreToolUse:Bash hook error: 차단: 리뷰 에이전트의 Bash는' }] } }) + "\n";
+  const filler = JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "x".repeat(200) }] } }) + "\n";
+  const p = join(dir, "huge.jsonl");
+  writeFileSync(p, deny + filler.repeat(30000));           // 6MB+ → 파일 상한 초과
+  utimesSync(p, 3000, 3000);
+  const res = scan(cwd, { transcriptDirOverride: dir });
+  assert.equal(res.meta.sessionsPartiallyRead, 1);
+  const nm = res.findings.filter((f) => f.type === "near-miss");
+  assert.equal(nm.length, 1, "초과 파일 안의 차단 기록을 건져냄");
+  assert.equal(nm[0].layer, "session-partial", "부분 판독 층으로 표시돼 전량 분석과 섞이지 않음");
+  assert.equal(res.meta.sessionsScanned, 0, "부분 판독은 '분석한 세션'으로 안 센다");
+  assert.ok(!res.findings.some((f) => f.type === "gate-gap"), "gate-gap은 초과 파일에서 안 돌린다(가짜 구멍 방지)");
 });
 test("parseSession: parses jsonl, skips malformed lines", () => {
   const dir = mkdtempSync(join(tmpdir(), "rs-"));
