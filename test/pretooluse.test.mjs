@@ -737,3 +737,25 @@ test("P4 안전점: 색 블록이 P1·P3 리마인더보다 먼저 → stdout �
     assert.equal(r.stdout, "", "블록 시 stdout 리마인더 없음(이중 write 불가)");
   });
 });
+
+// ── v0.42(5번): 배포 차단 문구를 서브에이전트에게는 다르게 준다 ───────────────
+// 실측: 서브에이전트가 배포 CLI에 막혔는데 문구가 "세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하라"고
+// 안내했다. 그 탈출구는 훅 프로세스의 환경변수라 서브에이전트가 켤 수 없고(명령 앞 `VAR=1` 접두는
+// 훅에 안 닿는다 — 라이브 확인), 애초에 운영 배포 승인은 사람이 내릴 판단이다.
+test("배포 차단 문구: 메인 세션은 종전대로 탈출구를 안내한다", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  assert.ok(reasonFor("deploy", false).includes("CHAGEUN_ALLOW_DEPLOY=1"), "사람은 실제로 켤 수 있다");
+});
+test("배포 차단 문구: 서브에이전트는 켤 수 없는 스위치 대신 park+BLOCKED 지시를 받는다", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("deploy", true);
+  assert.ok(!msg.includes("CHAGEUN_ALLOW_DEPLOY=1"), "켤 수 없는 스위치를 안내하면 왕복만 늘어난다");
+  assert.ok(msg.includes("BLOCKED"), "본 세션에 무엇을 보고할지 알려야 한다");
+  assert.ok(msg.includes("park"), "멈추라는 지시");
+});
+test("배포 차단 문구: 변형이 없는 사유는 기존 문구 그대로(회귀 방지)", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  for (const k of ["force-push", "rm-recursive", "gate-skip", "sql-destructive", "ra-bash"]) {
+    assert.equal(reasonFor(k, true), reasonFor(k, false), k + ": 서브에이전트 변형 없음");
+  }
+});
