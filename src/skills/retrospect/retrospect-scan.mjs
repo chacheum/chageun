@@ -37,8 +37,8 @@ const MAX_AGENT_BYTES = 128 * 1024 * 1024;
 const sessionIdOf = (p) => String(p).split("/").pop().replace(/\.jsonl$/, "");
 
 // Claude Code stores per-project transcripts under ~/.claude/projects/<encoded cwd>/, where the
-// encoding replaces every non-alphanumeric char with '-' (C4). Verified: /home/mokgam/projects/honclwd
-// → -home-mokgam-projects-honclwd. Task 0 confirms; a glob fallback (match a projects/* dir whose
+// encoding replaces every non-alphanumeric char with '-' (C4). Verified: /home/<user>/projects/honclwd
+// → -home-<user>-projects-honclwd. Task 0 confirms; a glob fallback (match a projects/* dir whose
 // transcripts' cwd field == target cwd) covers dot/special-char paths — add per C4.
 function transcriptDir(cwd) {
   return join(homedir(), ".claude", "projects", String(cwd).replace(/[^A-Za-z0-9]/g, "-"));
@@ -112,7 +112,7 @@ function listSessionFiles(dir, opts = {}) {
 // 게이트(서브에이전트) 층: `<transcriptDir>/<sessionId>/subagents/*.jsonl`.
 // **이 층은 v0.41.1까지 한 번도 읽히지 않았다.** plan-validator·pr-reviewer의 보고서 본문과 그들이 실제로
 // 무엇에 막혔는지는 전부 여기 있고, 부모 세션엔 요약만 남는다. 실측(2026-07-30): honclwd 456파일 87.5MB ·
-// dow-relay 회고가 "44회"로 보고한 리뷰 차단이 이 층 전수로는 853건이었다(20배). 즉 이 층이 빠지면 회고가
+// 한 실무 프로젝트의 회고가 "44회"로 보고한 리뷰 차단이 이 층 전수로는 853건이었다(20배). 즉 이 층이 빠지면 회고가
 // 축소된 숫자로 판단을 유도한다.
 // 예산은 부모 층과 **분리**한다(한 층이 다른 층을 굶기지 않게). 파일이 작아서(실측 중앙값 141KB · 최대
 // 1.2MB) 개수 상한이 실질 바운드이고 바이트 상한은 병리적 경우의 백스톱이다.
@@ -370,7 +370,7 @@ function scan(cwd, opts = {}) {
   // tool_result + hook-error 접두)에 걸려 있어 층이 바뀌어도 그대로 참이다(실측 확인).
   // 값싼 선별로 예산을 넓힌다: 이 층에서 돌리는 탐지기가 near-miss 하나뿐이고, 그게 찾는 두 구조는 원문에
   // 반드시 `hook error` 또는 `Stop hook feedback:` 문자열을 남긴다. 그래서 **읽되 대부분 파싱하지 않는다**.
-  // 실측(dow-relay 전량 323파일 103.5MB): 읽기+선별 3.9초 → 신호 있는 78파일만 파싱 0.2초. 선별 없이 예산
+  // 실측(한 실무 프로젝트 전량 323파일 103.5MB): 읽기+선별 3.9초 → 신호 있는 78파일만 파싱 0.2초. 선별 없이 예산
   // 24MB로 잘랐을 땐 near-miss 46건, 선별로 전량을 보니 149건이었다(3배). 선별식은 탐지기가 보는 것의
   // **상위집합**이어야 조용한 유실이 없다 — 테스트가 이 포함관계를 못박는다.
   // 🛑 마커는 **층마다 따로** 쓴다. 부모 마커를 그대로 쓰면 "여기까지 분석했다"가 게이트 층에 대해선
