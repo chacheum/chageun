@@ -30,7 +30,11 @@ const EXEC_CLAIM_RE = /돌려\s*(보|봤|본)|실행해\s*(보|봤|본)|테스�
 // 차단 좁게: FULL 끝 점검 채점 텍스트(끝 점검/자가점검 + 채점 표시 2개 이상, LIGHT 제외)와
 // 실구동 완료 주장만 반응. 채점 표시 1개는 설명일 수 있어 침묵(오탐 축소).
 // 세션 내 스킬 로드 1회면 통과(스펙 🙋 합의 — 훅은 바닥, "매번 로드" 규칙 자체는 각 절이 정의).
-const FINISH_TEXT_RE = /(끝\s*점검|자가점검)/;
+// v0.42: 회고 탐지기(retrospect-scan.mjs GATES[].ctx)가 이 훅보다 넓어 실측 10건 중 7건이 **어휘**로 샜다
+// ("완료했습니다 + 채점표"는 잡히지 않았다). 완료 어휘를 여기 더해 두 탐지기를 맞춘다.
+// **marks >= 2 는 필수 조건으로 유지한다** — `성공 기준`은 이 워크플로우의 정본 라벨이라 거의 모든 FULL
+// 턴에 나오고, 그걸 단독 신호로 쓰면 중간 진행 보고가 걸린다(plan-validator F-9).
+const FINISH_TEXT_RE = /(끝\s*점검|자가점검|마무리(했|합니다)|다\s*됐|완료(했|됐|됨|입니다)|모두\s*충족)/;
 const LIGHT_RE = /LIGHT/;
 const RUN_CLAIM_RE = /(실구동|구동\s*검증|띄워\s*(보|봤|서))[^.!?\n]{0,20}(✅|완료|했|됐|끝|통과)/;
 // formats 갭(batch6): FULL "비전문가 요약" 보고 형태만 반응 — 완료 맥락 한정으로 좁힌다.
@@ -58,24 +62,37 @@ function hasSkillLoad(objs, name) {
   return false;
 }
 
-// 이번 요청 구간(마지막 진짜 user 이후) assistant 텍스트를 합쳐 스킬갭 판정.
+// 이번 턴 + 직전 턴(SKILLGAP_TURNS) assistant 텍스트로 스킬갭 판정. **세그먼트(턴)별 독립 판정** —
+// 하나라도 성립하면 그 게이트를 돌려준다(합성 오차단 방지, plan-validator F-3).
+// 직전 턴까지 보는 이유는 위 assistantTurnSegments 주석 참조(마지막 메시지 미반영 실측).
 // WAIT_RE 면제 없음 — 질문으로 끝나도 이미 수행된 무절차 끝 점검/검증 선언은 위반(1회 차단이라 안전).
+// 게이트당 세션 1회 백스톱: 이미 되돌린 게이트는 침묵한다(alreadyBounced). 완전 커버리지가 아니라
+// 백스톱이다 — 한 번 되돌린 뒤 같은 세션에서 재발하면 못 잡는다(의식적 선택: 영구 루프가 더 나쁘다).
+const SKILLGAP_TURNS = 2;
 function shouldBlockSkillGap(objs) {
   if (!Array.isArray(objs) || !objs.length) return null;
-  const text = assistantTextSinceLastUser(objs, false); // F7: shared window(마지막 진짜 user 이후 assistant 텍스트)
-  if (!text) return null;
-  const marks = (text.match(/[✅❌]/g) || []).length;
-  if (FINISH_TEXT_RE.test(text) && marks >= 2 && !LIGHT_RE.test(text) &&
-      !hasSkillLoad(objs, "finish-check")) return "finish-check";
-  if (RUN_CLAIM_RE.test(text) && !hasSkillLoad(objs, "run-verify")) return "run-verify";
-  if (looksLikeFullSummary(text) && !hasSkillLoad(objs, "formats")) return "formats";
-  return null;
+  const segs = assistantTurnSegments(objs, SKILLGAP_TURNS);
+  if (!segs.length) return null;
+  let hit = null;
+  for (const text of segs) {
+    if (!text) continue;
+    const marks = (text.match(/[✅❌]/g) || []).length;
+    if (!hit && FINISH_TEXT_RE.test(text) && marks >= 2 && !LIGHT_RE.test(text) &&
+        !hasSkillLoad(objs, "finish-check")) hit = "finish-check";
+    if (!hit && RUN_CLAIM_RE.test(text) && !hasSkillLoad(objs, "run-verify")) hit = "run-verify";
+    if (!hit && looksLikeFullSummary(text) && !hasSkillLoad(objs, "formats")) hit = "formats";
+  }
+  if (hit && alreadyBounced(objs, hit)) return null;
+  return hit;
 }
 
+// 문구 끝의 "직전 턴 또는 이번 턴 앞부분" 은 정확한 서술이다 — 창이 2턴이라 지적 대상이 방금 쓴 글이
+// 아닐 수 있다(L-7). 어디를 말하는지 안 밝히면 받는 쪽이 엉뚱한 자리를 고친다.
+const WINDOW_NOTE = " (지적 대상은 **직전 턴 또는 이번 턴 앞부분**입니다 — 안전장치가 매 턴의 마지막 글은 못 보기 때문에 한 턴 늦게 잡습니다.)";
 const REASON_SKILLGAP = {
-  "finish-check": "FULL 끝 점검을 chageun:finish-check 스킬 로드 없이 마쳤습니다. 지금 Skill 도구로 chageun:finish-check를 로드하고 그 절차(채점·제품지도 갱신·체크리스트)대로 끝 점검을 다시 마치세요. (LIGHT 끝 점검이었다면 'LIGHT'를 명시하세요.)",
-  "run-verify": "실구동 검증을 chageun:run-verify 스킬 로드 없이 완료로 선언했습니다. 지금 Skill 도구로 chageun:run-verify를 로드하고 그 절차(띄우기·엣지 눌러보기·보고)대로 검증한 뒤 보고하세요.",
-  "formats": "FULL 비전문가 요약을 chageun:formats 스킬 로드 없이 작성했습니다. 지금 Skill 도구로 chageun:formats를 로드하고 그 양식(핵심5 칸·⚠위험 전부·심각도순)대로 요약을 다시 작성하세요. (LIGHT 한 줄 요약이었다면 'LIGHT'를 명시하세요.)",
+  "finish-check": "FULL 끝 점검을 chageun:finish-check 스킬 로드 없이 마쳤습니다. 지금 Skill 도구로 chageun:finish-check를 로드하고 그 절차(채점·제품지도 갱신·체크리스트)대로 끝 점검을 다시 마치세요. (LIGHT 끝 점검이었다면 'LIGHT'를 명시하세요.)" + WINDOW_NOTE,
+  "run-verify": "실구동 검증을 chageun:run-verify 스킬 로드 없이 완료로 선언했습니다. 지금 Skill 도구로 chageun:run-verify를 로드하고 그 절차(띄우기·엣지 눌러보기·보고)대로 검증한 뒤 보고하세요." + WINDOW_NOTE,
+  "formats": "FULL 비전문가 요약을 chageun:formats 스킬 로드 없이 작성했습니다. 지금 Skill 도구로 chageun:formats를 로드하고 그 양식(핵심5 칸·⚠위험 전부·심각도순)대로 요약을 다시 작성하세요. (LIGHT 한 줄 요약이었다면 'LIGHT'를 명시하세요.)" + WINDOW_NOTE,
 };
 
 // user 메시지가 도구결과(tool_result)로만 이뤄졌으면 '진짜 user'가 아님(도구 실행 결과).
@@ -168,6 +185,56 @@ function assistantTextSinceLastUser(objs, latestOnly) {
   return chosen.join("\n");
 }
 
+// ── 턴 세그먼트 창(v0.42) ────────────────────────────────────────────────────
+// **왜 이게 필요한가(실측):** Stop 훅은 그 턴의 **마지막 assistant 메시지가 트랜스크립트 파일에
+// 반영되기 전에** 돈다. 스킬갭 가드가 찾는 세 신호(끝 점검 채점표·실구동 완료 선언·비전문가 요약)는
+// 전부 턴의 마지막 메시지에 쓰이므로 가드는 그 글을 **절대 못 본다**. 실측(2026-08-02, 전 프로젝트
+// stop_hook_summary 전수): finish-work 훅 실행 2,941회 중 끝 점검 스킬갭 발동 **0회**. 같은 트랜스크립트를
+// 잘라 이 코드에 재생하면 50세션 312지점에서 51회 차단해야 한다. "약속만 하고 끝냄"만 살아 있는 이유는
+// 약속 문장이 도구 호출 **앞** 중간 메시지에 나와 이미 반영돼 있기 때문이다.
+// → 창을 **직전 턴까지** 넓힌다. 직전 턴의 마지막 메시지는 이미 반영돼 있으므로 한 턴 늦게 잡힌다.
+// **판정은 세그먼트(턴)별로 독립 수행한다** — 두 턴을 이어붙여 한 번에 매칭하면 "직전 턴의 끝 점검 언급 +
+// 이번 턴의 무관한 ✅✅"가 합성돼 오차단이 된다(plan-validator F-3). 세그먼트는 **턴 단위**이지 메시지
+// 단위가 아니다 — 같은 턴 안에서 어휘와 채점표가 두 메시지에 나뉜 경우는 계속 잡아야 한다(F-3/L-2).
+function assistantTurnSegments(objs, turns) {
+  if (!Array.isArray(objs) || !objs.length) return [];
+  const segs = [];
+  let cur = [];
+  for (const o of objs) {
+    const r = roleOf(o);
+    if (r === "user" && !isToolResultOnly(msgOf(o))) { if (cur.length) segs.push(cur.join("\n")); cur = []; continue; }
+    if (r === "assistant") { const t = textOf(msgOf(o)); if (t) cur.push(t); }
+  }
+  if (cur.length) segs.push(cur.join("\n"));
+  return segs.slice(-Math.max(1, turns | 0));
+}
+
+// 같은 게이트로 **이 세션에서 이미 되돌린 적이 있나**. 있으면 다시 막지 않는다(게이트당 세션 1회).
+// 지난 턴의 글은 고칠 수 없으므로, 창을 넓힌 채 반복 차단하면 영구 루프가 된다.
+// **판정은 문자열이 아니라 구조로 앵커한다** — 이 저장소는 차단 사유 문구를 소스·테스트에 담고 있어서
+// (REASON_SKILLGAP 여기 · "Stop hook feedback:" 리터럴이 retrospect-scan.mjs·test/finish-work.test.mjs)
+// 원시 부분문자열 검색으로 만들면 그 파일을 Read한 세션에서 **가드가 영구 침묵**한다.
+// detectNearMisses(retrospect-scan.mjs)가 이미 같은 함정을 밟고 구조 앵커로 해결한 전례가 있다. 4조건:
+//   1) role=user 레코드   2) content의 **text 블록만**(tool_result 블록 제외 — 파일 읽은 결과가 거기 실린다)
+//   3) 그 text가 `Stop hook feedback:` 로 **시작**(인용·언급은 접두가 안 맞아 탈락)
+//   4) 사유 대조는 REASON_SKILLGAP 상수에서 딴 부분문자열(문구를 고치면 자동으로 같이 움직인다)
+function alreadyBounced(objs, gate) {
+  const reason = REASON_SKILLGAP[gate];
+  if (!reason || !Array.isArray(objs)) return false;
+  const key = reason.slice(0, 24);
+  for (const o of objs) {
+    if (roleOf(o) !== "user") continue;
+    const c = msgOf(o).content;
+    const texts = typeof c === "string" ? [c]
+      : Array.isArray(c) ? c.filter((b) => b && b.type === "text").map((b) => String(b.text || "")) : [];
+    for (const t of texts) {
+      if (!/^\s*Stop hook feedback:/.test(t)) continue;
+      if (t.indexOf(key) !== -1) return true;
+    }
+  }
+  return false;
+}
+
 // G7 Stop 백스톱: .env 시크릿 '값'이 최종답에 인용됐으면 사유(키 이름만, 값 없음)를, 아니면 null.
 // stopHookActive(재작성)면 최신 메시지만 스캔(F1). 어떤 오류든 fail-open(null) — chageun를 막지 않는다.
 // 값은 어디에도 로깅/전송하지 않는다(secret-scan-core가 메모리 내에서만 처리).
@@ -215,18 +282,26 @@ function run() {
         if (roleOf(objs[i]) === "assistant") { lastIdx = i; break; }
       }
       if (lastIdx === -1) return process.exit(0);
-      if (endedWithTool(msgOf(objs[lastIdx]))) return process.exit(0);
 
-      const texts = [];
-      for (let i = lastIdx; i >= 0; i--) {
-        if (roleOf(objs[i]) !== "assistant") break;
-        const t = textOf(msgOf(objs[i]));
-        if (t) texts.unshift(t);
-      }
-      const text = texts.join("\n").trim();
-      const promise = text ? shouldBlock(text) : false;
-      const noEvidence = shouldBlockNoEvidence(objs);
+      // v0.42(F-1): `endedWithTool` 조기 종료를 **스킬갭 판정에는 적용하지 않는다.**
+      // 마지막 메시지가 아직 반영되지 않은 탓에 파일의 마지막 assistant 레코드가 tool_use로 끝나는
+      // 경우가 실측 25%(311 Stop 지점 중 78건)인데, 그때마다 스킬갭 검사에 **도달조차 못 했다.**
+      // Stop 시점은 이미 턴이 끝난 자리라 이 조기 종료는 스킬갭 판정에 의미가 없다.
+      // 약속·무증거 검사는 지금 경로 그대로 둔다(정상 동작 중 — 회귀 위험).
+      // 남는 사각(정직 고지): 미반영이 두 메시지 이상 걸치면 이 창으로도 못 잡는다. 백스톱이지 보장이 아니다.
       const gap = shouldBlockSkillGap(objs);
+      let promise = false, noEvidence = false;
+      if (!endedWithTool(msgOf(objs[lastIdx]))) {
+        const texts = [];
+        for (let i = lastIdx; i >= 0; i--) {
+          if (roleOf(objs[i]) !== "assistant") break;
+          const t = textOf(msgOf(objs[i]));
+          if (t) texts.unshift(t);
+        }
+        const text = texts.join("\n").trim();
+        promise = text ? shouldBlock(text) : false;
+        noEvidence = shouldBlockNoEvidence(objs);
+      }
       if (!promise && !noEvidence && !gap) return process.exit(0);
       const reason = promise ? REASON : noEvidence ? REASON_NOEVIDENCE : REASON_SKILLGAP[gap];
       process.stdout.write(JSON.stringify({ decision: "block", reason }));
@@ -237,5 +312,5 @@ function run() {
   });
 }
 
-module.exports = { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, assistantTextSinceLastUser, leakBlockReason, WAIT_RE, PROMISE_RE };
+module.exports = { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, assistantTextSinceLastUser, assistantTurnSegments, alreadyBounced, leakBlockReason, WAIT_RE, PROMISE_RE, SKILLGAP_TURNS };
 if (require.main === module) run();

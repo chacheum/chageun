@@ -134,3 +134,43 @@ test("Codex gate-agents.md: spawn 예시 read-only + 정직 3단 고지 유지(�
   assert.ok(g.includes('sandbox_mode="read-only"'), "spawn read-only 선언 부재");
   assert.ok(g.includes("인라인 모드(기본)") && g.includes("기계 강제가 없다"), "인라인 모드 정직 고지 부재");
 });
+
+// ── v0.42(7번): git branch 는 읽기 형태만 ────────────────────────────────────
+// 실측 32건의 리뷰 차단 중 3건이 읽기 전용 branch 조회였다. 거부목록이 아니라 allowlist인 이유:
+// `git branch 새이름` 은 옵션이 하나도 없는 쓰기라 거부목록이 원천적으로 못 잡는다(plan-validator F-5).
+test("branch 읽기 형태는 통과 — 실측으로 막혔던 3건", () => {
+  for (const cmd of [
+    "git -C /repo branch --show-current",
+    "git -C /repo branch --contains 8839c92 -a",
+    "git branch",                       // bare = 목록 조회
+    "git branch --list",
+    "git branch -a", "git branch -r", "git branch -v", "git branch -av",
+    "git branch --merged main", "git branch --format='%(refname)'", "git branch --sort=-committerdate",
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), null, cmd);
+});
+test("branch 쓰기 형태는 전부 차단 — 거부목록이 놓치던 경로 포함", () => {
+  for (const cmd of [
+    "git branch 새이름",                 // (a) 옵션 0개 쓰기 — 거부목록이 못 잡던 것
+    "git branch feature/x main",
+    "git branch -d old", "git branch -D old",
+    "git branch --delete old", "git branch --del old",   // (b)(d) 장형·접두 축약
+    "git branch -m a b", "git branch --move a b",
+    "git branch -c a b", "git branch --copy a b",
+    "git branch -f x main",                               // (c) 단형 -f
+    "git branch -rd origin/x",                            // (e) 묶음
+    "git branch -u origin/x", "git branch --set-upstream-to=origin/x",
+    "git branch --edit-description",
+    "git branch -- x",
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), "ra-bash", cmd);
+});
+test("branch 허용이 다른 서브명령 판정을 흔들지 않는다", () => {
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "git log --oneline -5" }), null);
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "git checkout main" }), "ra-bash");
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "git branch --show-current && rm -rf /tmp/x" }), "ra-bash");
+});
+test("차단 안내문이 branch 조건부 허용과 대체 명령을 알린다(M-2 정합)", () => {
+  const msg = reasonFor("ra-bash");
+  assert.ok(msg.includes("branch는 읽기 형태만"), "허용 목록에 branch를 넣었으면 안내문도 알려야 함");
+  assert.ok(msg.includes("rev-parse --abbrev-ref HEAD") && msg.includes("for-each-ref --contains"),
+    "자주 막히던 것의 이미 허용된 대체를 안내");
+});

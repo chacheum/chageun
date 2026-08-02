@@ -3,11 +3,12 @@
 // 얇은 그물이지 만능 아님 — 확실히 파괴적인 경우만 차단(오탐 회피). 매치 시 exit 2 + stderr 사유.
 // 예외·불확실은 안전 통과(exit 0). 외부 호출 없음. 개인/회사 정보 없음.
 // 순수 패턴 판정은 core, 부수효과(env 탈출구·transcript 읽기)는 이 래퍼에 둔다.
-// NOTE: Codex 훅은 PreToolUse 미지원 → 이 방어는 Claude에만 있다(Codex는 텍스트 멈춤규칙 의존).
+// NOTE: Codex에도 PreToolUse 훅이 있다(hooks/pretooluse-codex.mjs — 판정 코어는 공유). 다만 이 래퍼에만
+// 있는 것들(agent_type 분기·transcript 리마인더·디자인 색 백스톱)은 Claude 전용이다.
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
@@ -29,8 +30,11 @@ function readTranscriptIfMentions(transcriptPath, needle) {
   } catch (_) { return null; }
 }
 
+// v0.42: 서브에이전트면 사람 전용 탈출구를 안내하지 않는다(켤 수도 없고, 그 승인은 사람 판단이다).
+// input.agent_type은 서브에이전트에만 있다(메인 세션은 없음 → 기존 문구 그대로).
+let IS_SUBAGENT = false;
 function deny(reasonKey, unattended, detail) {
-  const base = unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey);
+  const base = unattended ? reasonForUnattended(reasonKey) : reasonFor(reasonKey, IS_SUBAGENT);
   // detail(예: 실제 위반 색 토큰 목록)이 있으면 정적 사유 뒤에 덧붙인다.
   process.stderr.write(detail ? base.replace(/\n?$/, "") + " (위반: " + detail + ")\n" : base);
   process.exit(2); // PreToolUse: exit 2 = 도구 호출 차단, stderr를 Claude에 전달
@@ -104,6 +108,7 @@ process.stdin.on("end", () => {
     const input = JSON.parse(raw);
     const name = input.tool_name;
     const ti = input.tool_input || {};
+    IS_SUBAGENT = !!input.agent_type;   // v0.42: 사람 전용 탈출구 안내를 서브에이전트에 주지 않기 위함
 
     // 0-pre) 리뷰 에이전트 격리(Claude 서브에이전트 한정 — 순수 문자열·fail-closed).
     //   transcript·fs 접근 없이 훅 초반에 판정. 판정 예외 시 안전측 차단(ra-error). agent_type은
@@ -139,6 +144,15 @@ process.stdin.on("end", () => {
       return deny(hit, UNATTENDED);
     }
 
+    // 1.5) 게이트 모델 런타임 강등 차단(v0.42). frontmatter 검사는 정적이라 Task 호출의 `model`
+    //   덮어쓰기를 못 본다(실측: plan-validator를 fable→opus로 강등해 띄운 세션이 있었다).
+    //   탈출구: fable 미보유 환경이 락아웃되면 게이트를 아예 안 부르게 돼 안전이 오히려 후퇴한다.
+    //   무인 모드는 다른 탈출구와 같은 원칙으로 이 탈출구를 무시한다(무인 중 심판 강등 금지).
+    {
+      const gm = gateModelBlock(name, ti);
+      if (gm && (UNATTENDED || process.env.CHAGEUN_ALLOW_GATE_MODEL !== "1")) return deny(gm, false);
+    }
+
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
     if (UNATTENDED) {
       if (isPrCreate(name, ti)) return deny("u-pr", true);
@@ -161,7 +175,7 @@ process.stdin.on("end", () => {
     //    생긴 색 토큰만(브라운필드 오탐 방지). Write는 신규 파일일 때만 검사(기존 파일 통짜 덮어쓰기는 v1 미차단
     //    = 정직한 열린 구멍 — old를 안 읽어 added 판정 불가). exit 2는 stderr 채널이라 §4 stdout 리마인더와
     //    충돌 없음(블록 시 리마인더 도달 전 종료). 무인·유인 모두 발동(색은 안전-park 사유는 아니나 회복
-    //    가능+watchdog 바운드). Codex 미러 없음(PreToolUse 미지원, v1 Claude 전용). 자체 try/catch로 격리.
+    //    가능+watchdog 바운드). Codex 미러 없음(이 백스톱은 이 래퍼에만 배선 — v1 Claude 전용). 자체 try/catch로 격리.
     if (EDIT_RE.test(String(name || "")) && isDesignScanTarget(ti.file_path || ti.notebook_path)
         && process.env.CHAGEUN_SKIP_DESIGN_LINT !== "1") {
       try {

@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-const { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, assistantTextSinceLastUser, leakBlockReason } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js"));
+const { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, assistantTextSinceLastUser, assistantTurnSegments, alreadyBounced, leakBlockReason } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js"));
 
 const U = (t) => ({ message: { role: "user", content: [{ type: "text", text: t }] } });
 const A = (t) => ({ message: { role: "assistant", content: [{ type: "text", text: t }] } });
@@ -89,8 +89,15 @@ test("스킬갭: LIGHT 끝 점검은 로드 불요 → 통과", () => {
   const objs = [U("오타 고쳐줘"), A("끝 점검(LIGHT): 성공 기준 충족 ✅✅ — 오타 2건 수정.")];
   assert.equal(shouldBlockSkillGap(objs), null);
 });
-test("스킬갭: 끝 점검 어휘 없으면(✅만) 침묵", () => {
+// v0.42(3번 어휘 맞추기): "끝 점검"이라는 말을 안 써도 완료 어휘 + 채점표면 잡는다.
+// 회고 탐지기는 이미 이 형태를 갭으로 세는데 훅만 못 잡아 실측 10건 중 7건이 어휘로 샜다.
+test("스킬갭: 완료 어휘 + 채점표면 '끝 점검'이라 안 써도 차단(v0.42)", () => {
   const objs = [U("요약해줘"), A("성공 기준 3개 ✅✅✅ 모두 충족했습니다.")];
+  assert.equal(shouldBlockSkillGap(objs), "finish-check");
+  assert.equal(shouldBlockSkillGap([U("해줘"), A("작업 완료했습니다. 기준1 ✅ 기준2 ✅")]), "finish-check");
+});
+test("스킬갭: 채점표만 있고 끝 점검·완료 어휘가 전혀 없으면 여전히 침묵(과차단 방지)", () => {
+  const objs = [U("표 그려줘"), A("비교표입니다. A안 ✅ 지원, B안 ✅ 지원.")];
   assert.equal(shouldBlockSkillGap(objs), null);
 });
 test("스킬갭: 끝 점검 언급만 있고 채점(✅/❌) 없으면 침묵", () => {
@@ -109,9 +116,59 @@ test("스킬갭: 실구동 주장 + run-verify 로드 → 통과", () => {
   const objs = [U("화면 고쳐줘"), ASkill("chageun:run-verify"), UResult(), ATool(), UResult(), A("실구동 검증 완료했습니다.")];
   assert.equal(shouldBlockSkillGap(objs), null);
 });
-test("스킬갭: 이전 요청의 끝 점검은 이번 요청과 무관(요청 구간만 검사)", () => {
+// ── v0.42: 창을 직전 턴까지 넓힘 (1번 진단의 실제 처방) ──────────────────────
+// **왜 뒤집혔나:** Stop 훅은 그 턴의 마지막 assistant 메시지가 파일에 반영되기 전에 돈다. 끝 점검
+// 채점표는 항상 마지막 메시지라 "요청 구간만" 보면 **영원히 못 본다**(실측: 훅 실행 2,941회 중 끝 점검
+// 스킬갭 발동 0회). 그래서 직전 턴까지 본다 — 한 턴 늦게 잡는 대신 0회를 벗어난다.
+test("스킬갭(v0.42): 직전 턴의 끝 점검을 이번 턴 Stop에서 잡는다 — 창 2턴", () => {
   const objs = [U("마무리해줘"), A("끝 점검 — 자가점검 ✅✅"), U("고마워, 다른 질문"), A("네, 답변입니다.")];
+  assert.equal(shouldBlockSkillGap(objs), "finish-check", "마지막 메시지 미반영 때문에 한 턴 늦게 잡는 것이 설계");
+});
+test("스킬갭(v0.42): 세 턴 전 것은 창 밖 — 무한 소급 안 함", () => {
+  const objs = [U("마무리해줘"), A("끝 점검 — 자가점검 ✅✅"), U("질문1"), A("답1"), U("질문2"), A("답2")];
   assert.equal(shouldBlockSkillGap(objs), null);
+});
+// F-3: 두 턴을 이어붙여 매칭하면 신호가 턴을 넘어 합성돼 오차단이 된다. 판정은 턴별 독립이어야 한다.
+test("스킬갭(v0.42): 어휘는 직전 턴·채점표는 이번 턴이면 합성하지 않는다(F-3 오차단 방지)", () => {
+  const objs = [U("설명해줘"), A("다음 단계는 끝 점검입니다."), U("표 보여줘"), A("비교표: A ✅ B ✅")];
+  assert.equal(shouldBlockSkillGap(objs), null, "각 턴 단독으로는 조건 미성립 → 침묵");
+});
+// L-2: 세그먼트는 **턴** 단위지 메시지 단위가 아니다. 같은 턴 안에서 나뉜 신호는 계속 잡아야 한다.
+test("스킬갭(v0.42): 같은 턴 두 메시지에 어휘·채점표가 나뉘어도 잡는다(L-2 미탐 회귀 방지)", () => {
+  const objs = [U("마무리해줘"), A("끝 점검을 보고합니다."), ATool(), UResult(), A("기준1 ✅ 기준2 ✅")];
+  assert.equal(shouldBlockSkillGap(objs), "finish-check");
+});
+test("스킬갭(v0.42): 세션 첫 턴(진짜 user 1개)도 정상 판정", () => {
+  assert.equal(shouldBlockSkillGap([U("해줘"), A("끝 점검 ✅✅ 완료")]), "finish-check");
+  assert.deepEqual(assistantTurnSegments([], 2), []);
+});
+
+// ── v0.42: 무한차단 방지 (게이트당 세션 1회) ─────────────────────────────────
+const UStop = (reasonPrefix) => ({ message: { role: "user", content: [{ type: "text", text: "Stop hook feedback: " + reasonPrefix }] } });
+const FINISH_REASON_HEAD = "FULL 끝 점검을 chageun:finish-check 스킬 로드 없이 마쳤습니다.";
+test("무한차단 방지: 같은 게이트로 이미 되돌렸으면 두 번째 Stop은 통과", () => {
+  const objs = [U("마무리해줘"), A("끝 점검 ✅✅"), UStop(FINISH_REASON_HEAD), A("다시 보고합니다. 끝 점검 ✅✅")];
+  assert.equal(alreadyBounced(objs, "finish-check"), true);
+  assert.equal(shouldBlockSkillGap(objs), null, "지난 글은 고칠 수 없어 반복 차단은 영구 루프가 된다");
+});
+test("무한차단 방지: 다른 게이트는 여전히 잡는다", () => {
+  const objs = [U("화면"), UStop(FINISH_REASON_HEAD), ATool(), UResult(), A("실구동 검증 완료했습니다.")];
+  assert.equal(shouldBlockSkillGap(objs), "run-verify");
+});
+// F-2: 이 저장소는 차단 사유 문구를 소스·테스트에 담고 있다. 순진한 부분문자열 검색이면
+// 그 파일을 Read한 세션에서 가드가 **영구 침묵**한다. 구조 앵커(text 블록만·접두)로 막는다.
+test("무한차단 방지: 소스 파일 Read 결과(tool_result)에 같은 문구가 있어도 침묵하지 않는다(F-2)", () => {
+  const leaked = 'Stop hook feedback: ' + FINISH_REASON_HEAD + ' // 이건 소스 안의 문자열이다';
+  const readResult = { message: { role: "user", content: [{ type: "tool_result", content: leaked }] } };
+  const objs = [U("훅 소스 보여줘"), ATool(), readResult, U("이제 마무리"), A("끝 점검 ✅✅")];
+  assert.equal(alreadyBounced(objs, "finish-check"), false, "tool_result 블록은 대상 아님");
+  assert.equal(shouldBlockSkillGap(objs), "finish-check");
+});
+test("무한차단 방지: 채팅에 사유를 인용만 해도 침묵하지 않는다(접두 앵커)", () => {
+  const quoted = { message: { role: "user", content: [{ type: "text", text: '예전에 "' + FINISH_REASON_HEAD + '" 라고 떴었지' }] } };
+  const objs = [quoted, A("끝 점검 ✅✅")];
+  assert.equal(alreadyBounced(objs, "finish-check"), false, "접두가 'Stop hook feedback:'이 아니면 탈락");
+  assert.equal(shouldBlockSkillGap(objs), "finish-check");
 });
 
 // ── formats 갭(batch6): FULL 비전문가 요약만 반응 — 카드 턴·LIGHT는 절대 미차단 ──
@@ -181,4 +238,38 @@ test("G7 백스톱: .env 없으면 null(fail-open) · 빈 objs null", () => {
   const cwd = mkdtempSync(join(tmpdir(), "g7fw-"));
   assert.equal(leakBlockReason([U("x"), A("sk-secret12345678")], cwd, false), null, "cwd에 .env 없음 → no-op");
   assert.equal(leakBlockReason([], envCwd("API_KEY=sk-secret12345678"), false), null, "빈 대화");
+});
+
+// ── v0.42 (F-1): endedWithTool 조기 종료가 스킬갭 판정을 삼키지 않는지 — 훅 전체 경로로 확인 ──
+// 실측 근거: 마지막 메시지가 아직 반영되지 않은 탓에 파일의 마지막 assistant 레코드가 tool_use로
+// 끝나는 Stop 지점이 25%(311 중 78)였고, 그때마다 스킬갭 검사에 도달조차 못 했다.
+import { execFileSync } from "node:child_process";
+const HOOK_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js");
+function runHook(objs, { stopHookActive = false } = {}) {
+  const cwd = mkdtempSync(join(tmpdir(), "fwrun-"));
+  const tpath = join(cwd, "t.jsonl");
+  writeFileSync(tpath, objs.map((o) => JSON.stringify(o)).join("\n") + "\n");
+  const out = execFileSync(process.execPath, [HOOK_PATH], {
+    input: JSON.stringify({ transcript_path: tpath, cwd, stop_hook_active: stopHookActive }),
+    encoding: "utf8",
+  });
+  return out.trim() ? JSON.parse(out) : null;
+}
+
+test("훅 경로(F-1): 마지막 레코드가 도구로 끝나도 스킬갭은 판정된다", () => {
+  const objs = [U("마무리해줘"), A("끝 점검 ✅✅ 자가점검 완료"), U("이제 커밋해"), ATool()];
+  const r = runHook(objs);
+  assert.ok(r && r.decision === "block", "조기 종료로 삼켜지면 안 됨");
+  assert.ok(r.reason.includes("finish-check"));
+});
+test("훅 경로(F-1): 약속·무증거 검사는 도구로 끝나면 종전대로 침묵(회귀 방지)", () => {
+  const objs = [U("해줘"), A("이제 로그인 폼을 구현하겠습니다"), ATool()];
+  assert.equal(runHook(objs), null, "약속 검사 경로는 endedWithTool 조기 종료를 유지");
+});
+test("훅 경로: 정상 대화는 통과(오차단 방지)", () => {
+  assert.equal(runHook([U("안녕"), A("안녕하세요. 무엇을 도와드릴까요?")]), null);
+});
+test("훅 경로: 차단 문구가 지적 대상 위치를 밝힌다(L-7)", () => {
+  const r = runHook([U("마무리해줘"), A("끝 점검 ✅✅")]);
+  assert.ok(r.reason.includes("직전 턴 또는 이번 턴 앞부분"), "어디를 고쳐야 하는지 알려야 함");
 });
