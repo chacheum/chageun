@@ -15,8 +15,14 @@ import { fileURLToPath } from "node:url";
 // 둘을 lockstep으로 묶어 조용한 노화를 시끄러운 한 줄 diff로 바꾼다. (2026-07-18: Opus→Fable 마이그레이션.)
 // (계측 아님 — 정적 프론트매터 검사, 로컬 로깅·카운터 없음.)
 const AGENTS = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "agents");
-// 오름차순 강도. Anthropic이 새 티어를 내면 여기에 추가한다.
-const TIER = { haiku: 1, sonnet: 2, opus: 3, fable: 4 };
+// v0.42: 등급표 사본을 **줄인다.** 예전엔 이 파일에만 TIER가 있었고 훅은 그걸 볼 수 없었다 —
+// 그래서 Task 호출의 `model` 파라미터로 게이트를 강등해도 아무도 안 막았다(실측 사례 있음).
+// 이제 표는 core(pretooluse-core.js)에 있고 훅과 테스트가 **같은 원본**을 쓴다. 사본은 2개
+// (core + 각 agent frontmatter)뿐이고, 아래 lockstep 테스트가 그 둘을 묶는다.
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { GATE_MODEL_TIER: TIER, GATE_DEFAULT_MODEL, gateModelBlock } =
+  require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 // 리뷰 게이트는 Fable(다른 집안 최상위 추론모델)로 독립 심판 — 통제 비교 3판(점검2·계획1) + 사용자 실사용
 // 근거(2026-07-18). 같은 집안 심판(Opus가 Opus)은 맹점 공유 → 다른 집안이 더 잡음. Claude 전용(Codex는 Fable 없음 → 아래 test 3은 '강한 모델' 산문 유지).
 const TOP_TIER = "fable";
@@ -80,4 +86,43 @@ test("Codex 게이트 미러도 심판=강한 모델·일꾼=빠른 모델을 �
     'Codex code-implementer 일꾼이 빠른 모델이 아님 — 심판<일꾼 역전(R6)');
   assert.ok(!/\*\*모델:\*\*\s*강한 모델/.test(workerSection),
     'Codex code-implementer 일꾼이 강한 모델로 승격됨 — 심판<일꾼 역전(R6)');
+});
+
+// ── v0.42(9번): 런타임 강등 가드 ─────────────────────────────────────────────
+// 위 테스트들은 정적 frontmatter만 본다. Task/Agent 호출의 `model` 파라미터는 그걸 덮어쓴다 —
+// 실측: 한 세션이 plan-validator를 `model:"opus"`(frontmatter는 fable)로 띄웠고 아무 층도 안 막았다.
+test("lockstep: core 등급표의 게이트 기본 모델 == 각 agent frontmatter의 model:", () => {
+  for (const [gate, want] of Object.entries(GATE_DEFAULT_MODEL)) {
+    assert.equal(modelOf(gate + ".md"), want,
+      `core의 GATE_DEFAULT_MODEL[${gate}]와 frontmatter가 어긋남 — 둘을 같은 커밋에서 함께 올려라`);
+  }
+  assert.equal(GATE_DEFAULT_MODEL["plan-validator"], TOP_TIER, "게이트 기본은 최상위 티어여야 함");
+  assert.ok(TIER[TOP_TIER], "TOP_TIER가 등급표에 있어야 함");
+});
+
+test("런타임 강등 가드: 게이트를 약한 모델로 띄우면 차단", () => {
+  for (const sub of ["plan-validator", "chageun:plan-validator", "pr-reviewer", "honclwd:pr-reviewer"]) {
+    assert.equal(gateModelBlock("Task", { subagent_type: sub, model: "opus" }), "gate-model-downgrade", sub);
+    assert.equal(gateModelBlock("Agent", { subagent_type: sub, model: "sonnet" }), "gate-model-downgrade", sub);
+  }
+});
+
+test("런타임 강등 가드: 오차단 0 — 미명시·비게이트·동급이상·미지값은 통과", () => {
+  const G = { subagent_type: "chageun:plan-validator" };
+  assert.equal(gateModelBlock("Task", G), null, "모델 미명시 = frontmatter 상속 → 정상");
+  assert.equal(gateModelBlock("Task", { ...G, model: "" }), null, "빈 문자열도 미명시");
+  assert.equal(gateModelBlock("Task", { ...G, model: "fable" }), null, "동급");
+  assert.equal(gateModelBlock("Task", { ...G, model: "FABLE" }), null, "대소문자 무관");
+  assert.equal(gateModelBlock("Task", { ...G, model: "claude-opus-5" }), null, "모르는 값 → fail-open");
+  assert.equal(gateModelBlock("Task", { subagent_type: "chageun:code-implementer", model: "sonnet" }), null, "게이트 아님");
+  assert.equal(gateModelBlock("Task", { subagent_type: "general-purpose", model: "haiku" }), null, "게이트 아님");
+  assert.equal(gateModelBlock("Bash", { command: "git status" }), null, "Task/Agent 아님");
+  assert.equal(gateModelBlock("Task", {}), null, "subagent_type 없음");
+});
+
+test("런타임 강등 가드: 차단 문구가 대처법과 탈출구를 알린다", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("gate-model-downgrade");
+  assert.ok(msg.includes("model"), "무엇을 고쳐야 하는지");
+  assert.ok(msg.includes("CHAGEUN_ALLOW_GATE_MODEL=1"), "락아웃 방지 탈출구를 알려야 함");
 });

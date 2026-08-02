@@ -75,7 +75,10 @@ function resolveTranscriptDir(cwd) {
 function applyCaps(files, { maxSessions, maxBytes, maxFileBytes }, skipped) {
   files.sort((a, b) => b.mtime - a.mtime);
   const out = []; let bytes = 0;
-  const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, reason, parent: f.parent }); };
+  // mtime을 반드시 실어 보낸다 — v0.42의 부분 판독이 이 레코드로 `newestMtime`을 전진시킨다.
+  // 빠지면 `Math.max(n, undefined)`가 **NaN**이 되고, NaN은 이후 어떤 Math.max로도 안 돌아온다
+  // → 마커에 null이 적혀 매 회고가 전량 재스캔·같은 발견 재보고·영구 DUE가 된다(pr-reviewer high).
+  const drop = (f, reason) => { if (skipped) skipped.push({ path: f.path, size: f.size, mtime: f.mtime, reason, parent: f.parent }); };
   for (const f of files) {
     // File cap is checked first so an oversized file is always labelled "file-cap", never "session-cap"
     // just because it happened to arrive past the count limit. isDue counts file-cap drops as real work,
@@ -393,20 +396,54 @@ function scan(cwd, opts = {}) {
     agentWithSignal++;
     for (const nm of detectNearMisses(objs, f.parent || sessionIdOf(f.path))) raw.push({ ...nm, layer: "gate" });
   }
+  // ── 상한 초과 세션의 부분 판독(v0.42) ──────────────────────────────────────
+  // 지금까지 4MB 초과 세션은 **통째로** 버려졌다. 통째 스킵의 근거(탐지기가 세션 전체 상태에 기대므로
+  // 잘라 읽으면 가짜 게이트 구멍을 만든다)는 gate-gap에 대해서만 참이다. **near-miss는 레코드 단위
+  // 독립 판정**이라 부분 판독이 안전하고, 게이트 층이 이미 같은 패턴(읽되 신호 없으면 파싱 생략)을 쓴다.
+  // 방식은 **(a) 전체 읽기 + 값싼 선별**이다 — 앞 N바이트 절단 읽기가 아니다. 절단하면 꼬리의 near-miss가
+  // 유실되고, 그 파일 mtime이 마커를 전진시켜 **유실이 영구**가 된다(plan-validator F-10).
+  // 돌리는 탐지기: near-miss 하나뿐. gate-gap(세션 전체 상태 의존)과 user-correction(이 층에서 뜻이
+  // 흔들려 보수적 제외)은 여전히 안 돌린다.
+  const partial = skipped.filter((s) => s.reason === "file-cap");
+  let partialRead = 0;
+  for (const f of partial) {
+    let text;
+    try { text = readFileSync(f.path, "utf8"); } catch (_) { continue; }
+    partialRead++;
+    newestMtime = Math.max(newestMtime, f.mtime);   // 부분 판독도 마커를 전진시킨다 — 안 그러면 매 회고마다 재보고
+    if (!AGENT_SIGNAL_RE.test(text)) continue;      // 신호 없음 → 파싱 생략(읽긴 읽었다)
+    const objs = parseLines(text);
+    if (!hasRealContent(objs)) continue;
+    // realSessions 에는 **안 센다** — near-miss만 본 부분 판독이라 "분석한 세션"과 뜻이 다르다.
+    for (const nm of detectNearMisses(objs, sessionIdOf(f.path))) raw.push({ ...nm, layer: "session-partial" });
+  }
+
   const drift = driftSignal(cwd); if (drift) raw.push({ ...drift, sessionId: null });
   let secrets = []; try { secrets = collectSecrets(cwd); } catch (_) {}
   const findings = maskFindings(aggregate(raw), secrets);
   // Coverage is reported unconditionally. A scan that silently read 10 of 48 sessions reads as
   // "nothing else was there", which is the failure this field exists to prevent. sessionsSkipped is
   // sorted biggest-first because that is the order a caller should read them directly in.
+  // v0.42: 상한 초과 파일은 이제 **통째 스킵이 아니라 부분 판독**이다 — 사유 라벨을 그렇게 바꿔
+  // 호출자가 "안 읽혔다"로 오해하지 않게 한다. 무엇을 못 봤는지는 여전히 정확히 말한다:
+  // 그 파일에서는 안전훅 차단(near-miss)만 봤고 게이트 저발동·사용자 교정은 못 봤다.
+  // ⚠ isDue의 가산 필터는 applyCaps가 붙이는 원래 라벨("file-cap")을 그대로 본다 — 여기 출력용
+  //   라벨만 바꾼 것이라 그 필터는 안 깨진다. 나중에 applyCaps 쪽 라벨을 바꾸려면 isDue도 함께 고쳐라
+  //   (안 그러면 장세션 프로젝트가 조용히 영구 NOT_DUE가 된다).
   const sessionsSkipped = skipped
-    .map((s) => ({ session: sessionIdOf(s.path), sizeMB: Math.round((s.size / 1048576) * 10) / 10, reason: s.reason }))
+    .map((s) => ({
+      session: sessionIdOf(s.path),
+      sizeMB: Math.round((s.size / 1048576) * 10) / 10,
+      reason: s.reason === "file-cap" ? "file-cap-partial" : s.reason,
+      ...(s.reason === "file-cap" ? { note: "부분 판독: 안전훅 차단(near-miss)만 봄 · 게이트 저발동·사용자 교정은 못 봄" } : {}),
+    }))
     .sort((a, b) => b.sizeMB - a.sizeMB);
   return {
     findings,
     meta: {
       sessionsScanned: realSessions,
       sessionsSkipped,
+      sessionsPartiallyRead: partialRead,   // v0.42: 상한 초과라 near-miss만 본 세션 수(전량 분석 아님)
       coverage: `${files.length}/${files.length + skipped.length}`,
       // 게이트 층은 **따로** 밝힌다. 한 숫자로 합치면 "4/4 다 읽음"이 부모 층만 센 것인데도 전부 읽은 것처럼
       // 읽힌다(2026-07-30 회고가 정확히 그렇게 보고됐다 — 바이트로는 44%였다).
