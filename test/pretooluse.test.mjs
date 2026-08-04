@@ -530,7 +530,107 @@ test("hasPrReviewer 신선도: 리뷰 → 문서만 수정 → 여전히 fresh",
   assert.equal(hasPrReviewer(objs), true, "문서 수정은 신선도 안 깸(🙋 합의)");
 });
 
+// ── v0.43.1 B-2: SendMessage 이어부르기 재검토도 리뷰 흔적 ──
+// 실측 근거: 에이전트 완료 레코드 최상위 toolUseResult에 agentId+agentType이 실린다.
+const AGENT_DONE = (agentId, agentType) => ({ type: "user", toolUseResult: { agentId, agentType, status: "completed" } });
+
+test("S1 hasPrReviewer: 코드 수정 → SendMessage 재검토 → fresh(true)", () => {
+  const objs = [
+    TU("Agent", { subagent_type: "chageun:pr-reviewer" }),
+    AGENT_DONE("a123", "chageun:pr-reviewer"),
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { to: "a123", message: "고쳤어요, 재검토 부탁" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "이어부르기 재검토가 인정돼야 정당한 push가 안 막힌다");
+});
+
+test("S1 hasPrReviewer: 2패스 — 완료 레코드가 SendMessage보다 뒤에 와도 인정(배경 실행)", () => {
+  const objs = [
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { recipient: "b999", message: "재검토" }),
+    AGENT_DONE("b999", "chageun:pr-reviewer"),   // 순서가 뒤 — 1패스면 놓친다
+  ];
+  assert.equal(hasPrReviewer(objs), true, "run_in_background 리뷰어의 완료 레코드는 뒤에 올 수 있다");
+});
+
+test("S2 hasPrReviewer: 매핑 실패·다른 게이트 대상 SendMessage는 불인정(안전측)", () => {
+  const unknown = [
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { to: "모르는-id", message: "재검토" }),
+  ];
+  assert.equal(hasPrReviewer(unknown), false, "매핑 못 하면 인정 안 함");
+
+  const otherGate = [
+    AGENT_DONE("c1", "chageun:plan-validator"),
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { to: "c1", message: "재검토" }),
+  ];
+  assert.equal(hasPrReviewer(otherGate), false, "plan-validator에게 보낸 쪽지는 코드 리뷰가 아니다");
+
+  const nameHeuristic = [
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { to: "chageun:pr-reviewer", message: "재검토" }),
+  ];
+  assert.equal(hasPrReviewer(nameHeuristic), false, "이름 문자열만으론 인정 안 함(우회 방지)");
+});
+
+test("S1 hasPrReviewer: SendMessage 재검토 → 그 뒤 또 코드 수정 → 다시 stale", () => {
+  const objs = [
+    AGENT_DONE("a123", "chageun:pr-reviewer"),
+    TU("SendMessage", { to: "a123", message: "재검토" }),
+    TU("Edit", { file_path: "src/app.js" }),
+  ];
+  assert.equal(hasPrReviewer(objs), false, "이어부르기도 신선도 규칙은 똑같이 적용");
+});
+
+// ── v0.43.1 오탐2: 임시·스크래치 경로는 코드 아님(isCodeTarget 경유) ──
+test("S5 hasPrReviewer: 스크래치패드·/tmp 파일 수정은 리뷰를 stale로 만들지 않음", () => {
+  const objs = [
+    TU("Agent", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Write", { file_path: "/home/u/.cache/claude-tmp/claude-1000/proj/sess/scratchpad/patch.py" }),
+    TU("Write", { file_path: "/tmp/claude-1000/proj/sess/scratchpad/note.mjs" }),
+    TU("Edit", { file_path: "/var/tmp/scratch.js" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "저장소 밖 임시파일은 어느 diff에도 안 들어간다");
+});
+
+test("S6 hasPrReviewer: 저장소 안 tmp/ 하위는 여전히 코드(선두 앵커 확인)", () => {
+  const inRepoTmp = [
+    TU("Agent", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Edit", { file_path: "/home/u/projects/myrepo/tmp/build.js" }),
+  ];
+  assert.equal(hasPrReviewer(inRepoTmp), false, "substring으로 짜면 여기서 구멍이 난다");
+
+  const relTmp = [
+    TU("Agent", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Edit", { file_path: "tmp/build.js" }),
+  ];
+  assert.equal(hasPrReviewer(relTmp), false, "상대경로 tmp/도 저장소 안");
+
+  const src = [
+    TU("Agent", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Edit", { file_path: "src/hooks/pretooluse-core.js" }),
+  ];
+  assert.equal(hasPrReviewer(src), false, "저장소 코드 수정은 여전히 stale로 만든다");
+});
+
 // ── P3 push 감지 ──
+test("S3 isPush: 순수 삭제 push는 게이트 대상 아님 · 결합 명령은 발동(세그먼트 판정)", () => {
+  const p = (command) => isPush("Bash", { command });
+  // 삭제 전용 = 리뷰할 diff 없음
+  assert.equal(p("git push --delete origin feat/safety-habits-C"), false);
+  assert.equal(p("git push -d origin fix/metrics-test-isolation"), false);
+  assert.equal(p("git push origin --delete a b"), false, "--delete면 나열된 ref 전부 삭제");
+  // ⚑ 탈출 방지: 앞 세그먼트의 -d가 뒤의 진짜 push를 면제하면 안 된다
+  assert.equal(p("git tag -d v1 && git push origin main"), true, "앞쪽 -d가 뒤 push를 면제하면 구멍");
+  assert.equal(p("git branch -d old && git push"), true);
+  assert.equal(p("git push --delete origin old && git push origin main"), true, "삭제 아닌 push가 하나라도 있으면 발동");
+  assert.equal(p("git push origin main; git push --delete origin old"), true);
+  // -d 오인 금지
+  assert.equal(p("git push --dry-run origin main"), true, "--dry-run은 삭제 아님");
+  assert.equal(p("git push -D origin main"), true, "-D는 -d가 아님");
+});
+
 test("isPush: git push 변형 감지 · 비push는 침묵 · 부분문자열 한계 명시", () => {
   const p = (command) => isPush("Bash", { command });
   assert.equal(p("git push origin main"), true);

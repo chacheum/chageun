@@ -24,8 +24,9 @@ const DEPLOY = /\b(vercel|netlify)\b[^\n]*--prod\b|\bfly(ctl)?\s+deploy\b|\bwran
 
 // 배포 여부: 명령을 세그먼트(&&·;·| ·개행)로 쪼개 각 세그먼트별로 판정 —
 // --dry-run 예외가 무관한 세그먼트(`npm publish && echo --dry-run`)로 새는 것 방지.
+function shellSegments(cmd) { return String(cmd || "").split(/&&|\|\||[;|\n]/); }
 function isDeploy(cmd) {
-  for (const seg of String(cmd || "").split(/&&|\|\||[;|\n]/)) {
+  for (const seg of shellSegments(cmd)) {
     if (DEPLOY.test(seg) && !/--dry-run\b/.test(seg)) return true;
   }
   return false;
@@ -50,7 +51,7 @@ const REASONS = {
   "sql-delete-no-where": "차단: WHERE 없는 DELETE는 테이블 전체를 지웁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "sql-update-no-where": "차단: WHERE 없는 UPDATE는 테이블 전체를 덮어씁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "deploy": "차단(배포는 되돌리기 어려움): 사용자 확인 후 진행하려면 세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하세요(그 세션 동안 배포 검사가 꺼집니다). 이 브레이크는 CLI 배포만 막고 git push→자동배포(Vercel/Netlify 깃연동)는 못 막습니다 — 그건 멈춤 규칙으로 확인하세요.",
-  "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). 이미 검토했거나 예외면 CHAGEUN_SKIP_GATE_CHECK=1로 재실행하세요.",
+  "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). pr-reviewer에게 **재검토를 요청**하세요 — 이미 돌린 리뷰어를 SendMessage로 이어 부른 재검토도 인정됩니다(새 Agent로 다시 띄워도 됩니다). 예외로 건너뛰어야 하면 **세션 자체를 CHAGEUN_SKIP_GATE_CHECK=1로 시작**해야 합니다(명령 앞에 인라인으로 붙이는 건 훅 프로세스에 안 닿아 안 켜집니다).",
   "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
   "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
   "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged, 그리고 **branch는 읽기 형태만** — `--show-current`·`--list`·`--contains`·`-a`·`-r`·`-v` 등이나 인자 없는 `git branch`. 브랜치 이름을 인자로 주거나 `-d`·`-m`·`-f`를 붙이면 쓰기라 막힙니다). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 자주 막히던 것의 이미 허용된 대체: 현재 브랜치는 `git rev-parse --abbrev-ref HEAD`, 특정 커밋을 담은 브랜치는 `git for-each-ref --contains <sha>`. 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
@@ -131,8 +132,32 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 // (Edit/Write류, 문서 제외 — isCodeTarget)이 있으면 stale(false): 검토 안 받은 코드가
 // 검토 딱지를 달고 나가지 않게(🙋 합의: 문서 수정은 무효화 안 함 · 재검토 1회 강제 수용).
 // 한계(자인): Bash(sed·리다이렉션)로 고친 파일은 lastCodeEdit에 안 잡힌다 — 얇은 그물. 순수함수(fs 없음).
+// v0.43.1: `SendMessage`로 같은 게이트를 이어 불러 재검토한 것도 리뷰 흔적으로 인정한다.
+//   그 전엔 Task/Agent 스폰만 세서, 재검토를 했는데도 "리뷰 없음"으로 **정당한 push가 두 번 막혔다**
+//   (2026-08-02 v0.42.0·v0.42.2). SendMessage의 input엔 subagent_type이 없고 대상 id(`to`)만 있다.
+//   연결 고리: 에이전트 실행 결과 레코드의 **최상위** `toolUseResult`에 `agentId`+`agentType`이 같이 실린다
+//   (실측: 최근 세션의 SendMessage 10건 전부 이 경로로 매핑 성공).
+//   **2패스인 이유**: run_in_background 에이전트는 완료 레코드가 SendMessage보다 뒤에 올 수 있어
+//   1패스면 그 건을 놓친다. 덤으로 "아직 안 끝난 리뷰는 맵에 없어 불인정"이라는 안전측 부수 속성이 생긴다.
+//   매핑 실패는 **불인정**(false 유지). 이름 문자열 휴리스틱(`to`에 "pr-reviewer"가 들어있으면 인정)은
+//   일부러 안 넣는다 — 게이트 통과 조건을 문자열로 열면 우회가 쉬워진다.
+// 남는 구멍(정직 · plan-validator high 수용): Task 스폰은 리뷰 절차가 **항상** 돌지만 SendMessage는
+//   **배달만 보장**한다. 그래서 통보성 쪽지 한 통으로도 신선도가 되살아난다. 메시지 내용 검사는 일부러
+//   안 한다 — 실제로 막혔던 메시지가 "변한 게 없으면 APPROVE 유지로 한 줄 확답해줘"였고, 어휘 목록으로
+//   좁히면 이 봉합이 고치려는 오차단이 되살아난다. 마지막 방어선은 push 직전 사람 승인(멈춤 규칙 2)이다.
+//   하위 확장(수용): 전송 성공 여부(tool_result의 is_error)를 안 본다 — 이미 회수된 리뷰어에게 보내 실패해도
+//   신선도가 복구된다. Task 스폰도 결과가 아닌 호출 시점 계상이라 대칭이다(pr-reviewer low).
 function hasPrReviewer(objs) {
   if (!Array.isArray(objs)) return false;
+  // 패스1: agentId → agentType 맵.
+  const agentTypeById = new Map();
+  for (const o of objs) {
+    const tur = o && o.toolUseResult;
+    if (tur && typeof tur === "object" && tur.agentId) {
+      agentTypeById.set(String(tur.agentId), String(tur.agentType || ""));
+    }
+  }
+  // 패스2: 리뷰 흔적과 코드 수정의 선후.
   let lastReview = -1, lastCodeEdit = -1, seq = 0;
   for (const o of objs) {
     const m = (o && o.message) || o;
@@ -146,6 +171,9 @@ function hasPrReviewer(objs) {
       if (/^(Task|Agent)$/.test(nm)) {
         const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
         if (/pr-reviewer/.test(sub)) lastReview = seq;
+      } else if (nm === "SendMessage") {
+        const to = String(inp.to || inp.recipient || "");
+        if (to && /pr-reviewer/.test(agentTypeById.get(to) || "")) lastReview = seq;
       } else if (EDIT_TOOLS_RE.test(nm)) {
         if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
       }
@@ -158,9 +186,36 @@ function hasPrReviewer(objs) {
 // (bare "push" 문자열 오탐 방지 — 무인 ANY_PUSH(과차단 허용)보다 좁게). 알려진 한계:
 // 따옴표를 해석하지 않아 명령 안의 "git push" 부분문자열은 오탐 가능(SKIP env로 해소, 테스트에 고정).
 const PUSH_RE = /\bgit(?:\s+(?:-[cC]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+push\b/;
+// v0.43.1: 순수 삭제 push(`git push --delete <ref>`)는 리뷰할 diff가 없어 게이트 대상에서 뺀다
+// (회고 실측 2026-08-01: 머지된 브랜치를 지우려는데 게이트가 리뷰를 요구해 막혔다).
+// git은 `--delete`가 붙으면 나열된 ref를 **전부** 삭제한다(혼합 불가)라 세그먼트 단위로 안전하게 판정 가능.
+// ⚑ 토큰은 그 세그먼트의 `push` **뒤**만 본다 — 안 그러면 `git tag -d v1 && git push origin main`처럼
+//   아주 흔한 결합 명령에서 앞쪽 -d가 뒤쪽 진짜 push를 면제해 **리뷰 안 받은 코드가 통과**한다
+//   (plan-validator high). 세그먼트 분리(isDeploy와 같은 분할기)와 이 위치 제한이 같이 있어야 닫힌다.
+// 알려진 한계(정직): (a) git이 허용하는 장옵션 축약 `--de`는 exact 토큰이 못 알아봐 게이트가 그대로
+//   발동한다(과차단 = 안전 방향) (b) 셸 주석 뒤 `-d`(`git push origin main # cleanup -d`)는 git엔 안 닿는데
+//   여기선 보인다 (b') 형제 사례 — git이 **값으로 먹는 옵션 뒤의 `-d`**(`git push --repo -d origin main` ·
+//   `git push -o -d origin main`)는 삭제가 아닌데 여기선 삭제로 본다(pr-reviewer low). (b)·(b')는 둘 다
+//   탈출 방향이지만 고의 조립이 필요한 클래스라 수용 — 다음에 손볼 때 값 소비 옵션(--repo·-o·--push-option·
+//   --receive-pack·--exec) 뒤 토큰 1개 건너뛰기가 후속 후보. 콜론 refspec 삭제(`git push origin :foo`)는 미처리 — 혼합
+//   (`:old new`)이 가능해 파싱이 커지고, 안 고치면 "게이트를 더 요구"라 안전측이다.
+function isDeleteOnlyPush(seg) {
+  const toks = String(seg || "").trim().split(/\s+/);
+  const i = toks.indexOf("push");
+  if (i === -1) return false;
+  for (let j = i + 1; j < toks.length; j++) {
+    if (toks[j] === "--delete" || toks[j] === "-d") return true;
+  }
+  return false;
+}
 function isPush(toolName, toolInput) {
   if (toolName !== "Bash") return false;
-  return PUSH_RE.test(String((toolInput && toolInput.command) || ""));
+  const cmd = String((toolInput && toolInput.command) || "");
+  // 삭제 아닌 push 세그먼트가 하나라도 있으면 게이트 발동.
+  for (const seg of shellSegments(cmd)) {
+    if (PUSH_RE.test(seg) && !isDeleteOnlyPush(seg)) return true;
+  }
+  return false;
 }
 
 // ── P1 plan-validator 리마인더(soft) ────────────────────────────────────────
@@ -170,11 +225,28 @@ function isPush(toolName, toolInput) {
 // 새 plan을 다시 쓰면 재무장(validated·codeEdited 리셋 — 새 plan은 새 검증 대상). 순수함수(fs 없음).
 const EDIT_TOOLS_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
 function isPlanDocPath(p) { const s = String(p || ""); return /\.md$/i.test(s) && /plan/i.test(s); }
+// v0.43.1: 어느 저장소 diff에도 못 들어가는 임시·스크래치 위치는 코드가 아니다 —
+// 실측(honclwd 최근 트랜스크립트 12개): 코드로 계상된 편집 192건 중 43건(22%)이 저장소 밖 스크래치라
+// 저장소를 안 건드렸는데 리뷰가 헛되이 stale이 됐다.
+// ⚑ 앵커 주의: `/tmp/`·`/var/tmp/`는 **선두 앵커**로만 본다. substring으로 짜면
+//   `~/projects/myrepo/tmp/build.js`(Rails·빌드 산출물 등 저장소 안 tmp)까지 면제돼
+//   **진짜 코드 수정이 리뷰를 안 무효화**한다(plan-validator medium · 탈출 방향).
+//   `/.cache/claude-tmp/`는 디렉토리명이 고유해 substring 허용. `scratchpad/`는 별도 규칙을 두지 않는다
+//   (위 둘에 포섭 · "어디서나 scratchpad/"로 열면 저장소 안 같은 이름 폴더가 면제되는 구멍).
+// 남는 오탐(정직): `~/.bashrc` 같은 홈 설정파일은 여전히 코드로 계상된다 — 과차단이라 안전측으로 수용.
+//   "cwd 하위만 코드"로 뒤집지 않는 이유: 워크트리 작업(다른 저장소를 고치고 그쪽을 push)에서
+//   진짜 리뷰 대상이 면제되는 구멍이 생긴다.
+// 주의(부수효과): 이 함수는 hasPrReviewer 말고 planReminderNeeded(P1 소프트 리마인더)도 쓴다.
+const SCRATCH_ROOT_RE = /^\/(?:var\/)?tmp\//;
+function isScratchPath(s) {
+  return SCRATCH_ROOT_RE.test(s) || s.indexOf("/.cache/claude-tmp/") !== -1;
+}
 function isCodeTarget(p) {
   const s = String(p || "");
   if (!s) return false;
   if (/\.mdx?$/i.test(s)) return false;      // 문서는 구현 아님
   if (/(^|\/)docs\//i.test(s)) return false; // docs/ 밑도 문서
+  if (isScratchPath(s)) return false;        // 임시·스크래치는 어느 diff에도 안 들어감
   return true;
 }
 function planReminderNeeded(objs, toolName, toolInput) {
@@ -345,7 +417,7 @@ const GIT_COMMIT = /^\s*git\b(?:\s+\S+)*?\s+commit\b/;
 function isGitCommit(name, toolInput) {
   if (name !== "Bash") return false;
   const cmd = String((toolInput && toolInput.command) || "");
-  return cmd.split(/&&|\|\||[;|\n]/).some((seg) => GIT_COMMIT.test(seg));
+  return shellSegments(cmd).some((seg) => GIT_COMMIT.test(seg)); // 분할기는 한 곳(shellSegments)만 — 사본이 갈리면 조용히 표류(pr-reviewer [정리])
 }
 // 순수 예산 판정: 이전 상태 + 지금 시각 + 이번 호출이 진전인가 → 갱신 상태 + 사유(없으면 null).
 // 상태 없으면 now로 생성. calls 증가. 진전이면 lastProgressAt=now. 한도 초과 시 사유.
