@@ -34,6 +34,17 @@ test("템플릿은 색 예외용 lint-allow-colors 칸을 담는다", () => {
   assert.match(TPL, /lint-allow-colors:/, "lint-allow-colors 키 누락(직접색상 예외 선언)");
 });
 
+test("UI 설명문 기본값은 반복 억제와 필요한 정보 보존을 함께 담는다", () => {
+  const preserved = ["입력 형식", "조건", "결과", "위험", "다음 행동", "접근성"];
+  for (const [name, text] of [["스킬", SKILL], ["템플릿", TPL]]) {
+    const rule = text.split("\n").find((line) => /같은 뜻[^\n]*(부제|도움말|설명)/.test(line));
+    assert.ok(rule, `${name}: UI 설명문 규칙 누락`);
+    assert.match(rule, /기본값으로 붙이지 않는다|기본 생성하지 않는다/, `${name}: 반복 설명 억제 방향 누락`);
+    assert.match(rule, /사용자가 명시적으로 요청/, `${name}: 사용자 요청 예외 누락`);
+    for (const item of preserved) assert.ok(rule.includes(item), `${name}: 필요한 정보 보존 누락: ${item}`);
+  }
+});
+
 test("찍어낼 검사기 3종은 스킬에 번들되고, check-template은 배포하지 않는다", () => {
   for (const f of ["check-design-violations.sh", "check-profile.sh", "check-token-parity.sh"])
     assert.ok(existsSync(join(SKILL_DIR, f)), `번들 누락: ${f}`);
