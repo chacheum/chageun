@@ -642,13 +642,18 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
 
 // ── 게이트 모델 런타임 강등 가드(v0.42 · Claude 전용) ────────────────────────
 // gate-model-tier.test.mjs 는 **frontmatter만** 본다. 그런데 Task/Agent 호출의 `model` 파라미터는
-// frontmatter를 덮어쓴다 — 실측: 한 세션이 plan-validator 를 `model: "opus"` 로 띄웠고(frontmatter는
-// fable), "게이트 규칙대로 Opus"라는 잘못된 믿음까지 적혀 있었다. 아무 층도 이걸 안 막았다.
+// frontmatter를 덮어쓴다 — 실측: 한 세션이 게이트를 frontmatter보다 낮은 티어로 띄웠고, "게이트
+// 규칙대로다"라는 잘못된 믿음까지 적혀 있었다. 아무 층도 이걸 안 막았다.
 // 등급표를 **여기(core)에 두고** 테스트가 "core == 각 agent frontmatter" 를 대조한다(사본 2개로 고정 —
 // 세 번째 사본은 모델 마이그레이션 때 한 곳만 올려 가드가 조용히 죽는 길이다).
 const GATE_MODEL_TIER = { haiku: 1, sonnet: 2, opus: 3, fable: 4 };
 // 게이트별 기본(=frontmatter의 model:). 테스트가 lockstep으로 묶는다.
-const GATE_DEFAULT_MODEL = { "plan-validator": "fable", "pr-reviewer": "fable" };
+// v0.44.0: fable → opus. 사유는 **비용**이다 — Anthropic 공지 원문 "Fable 5 draws down usage
+// faster than Opus 5"(+ 주간 한도의 50% 상한). v0.37.0이 Fable을 고른 근거는 **품질**이었고
+// (통제 비교 3판: 같은 집안 심판은 맹점 공유 → 다른 집안이 더 잡는다), 이번 변경은 그 품질을
+// 비용과 맞바꾼 것이다. **되돌리는 결정임을 명시한다** — 품질 저하가 관측되면 fable로 되돌린다.
+// 상세·되돌림 조건: docs/plans/2026-08-05-gate-model-fable-to-opus.md
+const GATE_DEFAULT_MODEL = { "plan-validator": "opus", "pr-reviewer": "opus" };
 // subagent_type 은 "plan-validator" 와 "chageun:plan-validator" 두 형태로 온다 — 네임스페이스 무관
 // 매칭(REVIEW_AGENT_RE와 같은 이유). 순진한 동등 비교면 네임스페이스 형태에서 조용히 죽는다.
 function gateOf(agentType) {
