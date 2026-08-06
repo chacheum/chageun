@@ -12,7 +12,8 @@ import { fileURLToPath } from "node:url";
 // 게이트가 메인보다 약해지는데, 규칙 본문의 "메인 세션보다 약한 모델 금지"가 그 경우를 산문으로
 // 덮는다(어떤 테스트도 세션 모델을 못 읽는다). 그래서 이 테스트는 **마이그레이션 체크포인트**다:
 // 새 최상위 티어가 표준이 되면 TOP_TIER와 게이트 `model:`을 같은 커밋에서 함께 올려야 하고, 이 테스트가
-// 둘을 lockstep으로 묶어 조용한 노화를 시끄러운 한 줄 diff로 바꾼다. (2026-07-18: Opus→Fable 마이그레이션.)
+// 둘을 lockstep으로 묶어 조용한 노화를 시끄러운 한 줄 diff로 바꾼다.
+// (2026-07-18: Opus→Fable 마이그레이션. 2026-08-05 v0.44.0: 비용 사유로 Fable→Opus 복귀.)
 // (계측 아님 — 정적 프론트매터 검사, 로컬 로깅·카운터 없음.)
 const AGENTS = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "agents");
 // v0.42: 등급표 사본을 **줄인다.** 예전엔 이 파일에만 TIER가 있었고 훅은 그걸 볼 수 없었다 —
@@ -23,9 +24,13 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { GATE_MODEL_TIER: TIER, GATE_DEFAULT_MODEL, gateModelBlock } =
   require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
-// 리뷰 게이트는 Fable(다른 집안 최상위 추론모델)로 독립 심판 — 통제 비교 3판(점검2·계획1) + 사용자 실사용
-// 근거(2026-07-18). 같은 집안 심판(Opus가 Opus)은 맹점 공유 → 다른 집안이 더 잡음. Claude 전용(Codex는 Fable 없음 → 아래 test 3은 '강한 모델' 산문 유지).
-const TOP_TIER = "fable";
+// v0.44.0: 게이트 심판 = **Opus**. (2026-07-18 v0.37.0에 Opus→Fable로 갔던 것을 되돌린 것이다.)
+// 되돌린 사유는 **비용**: Anthropic 공지 "Fable 5 draws down usage faster than Opus 5" + 주간 한도 50% 상한.
+// ⚠ 맞바꾼 것: Fable을 골랐던 근거는 **품질**이었다(통제 비교 3판 — 같은 집안 심판은 맹점 공유).
+// 이제 Opus가 Opus를 심판하므로 그 맹점 공유가 돌아온다. 품질 저하가 관측되면 되돌릴 것.
+// 상세·되돌림 조건: docs/plans/2026-08-05-gate-model-fable-to-opus.md
+// Claude 전용(Codex엔 Fable이 없어 원래 Opus였다 → 아래 Codex 미러 테스트는 '강한 모델' 산문 유지, 오히려 정합).
+const TOP_TIER = "opus";
 
 function modelOf(file) {
   const fm = readFileSync(join(AGENTS, file), "utf8");
@@ -90,7 +95,8 @@ test("Codex 게이트 미러도 심판=강한 모델·일꾼=빠른 모델을 �
 
 // ── v0.42(9번): 런타임 강등 가드 ─────────────────────────────────────────────
 // 위 테스트들은 정적 frontmatter만 본다. Task/Agent 호출의 `model` 파라미터는 그걸 덮어쓴다 —
-// 실측: 한 세션이 plan-validator를 `model:"opus"`(frontmatter는 fable)로 띄웠고 아무 층도 안 막았다.
+// 실측: 한 세션이 plan-validator를 `model:"opus"`로 띄웠고(**당시** frontmatter는 fable) 아무 층도
+// 안 막았다. v0.44.0 기준으로 그 호출은 강등이 아니라 기본 동작이다 — 지금 강등은 sonnet·haiku 쪽.
 test("lockstep: core 등급표의 게이트 기본 모델 == 각 agent frontmatter의 model:", () => {
   for (const [gate, want] of Object.entries(GATE_DEFAULT_MODEL)) {
     assert.equal(modelOf(gate + ".md"), want,
@@ -100,20 +106,56 @@ test("lockstep: core 등급표의 게이트 기본 모델 == 각 agent frontmatt
   assert.ok(TIER[TOP_TIER], "TOP_TIER가 등급표에 있어야 함");
 });
 
-test("런타임 강등 가드: 게이트를 약한 모델로 띄우면 차단", () => {
-  for (const sub of ["plan-validator", "chageun:plan-validator", "pr-reviewer", "honclwd:pr-reviewer"]) {
-    assert.equal(gateModelBlock("Task", { subagent_type: sub, model: "opus" }), "gate-model-downgrade", sub);
-    assert.equal(gateModelBlock("Agent", { subagent_type: sub, model: "sonnet" }), "gate-model-downgrade", sub);
+// ⚠ 이 블록은 **손으로 케이스를 쓰지 않는다** — 기대값을 TIER 표에서 파생시킨다.
+// 왜: TOP_TIER 마이그레이션 때 리터럴을 손으로 갈아끼우면, 뒤집는 김에 진짜 강등 케이스까지
+// 통과로 만들어도 전 테스트가 green이라 **가드가 조용히 죽는다**(v0.44.0 plan-validator medium).
+// 파생 루프 + 비공허 단언이면 그 실수가 성립 자체를 못 한다.
+// 네임스페이스 4종 축은 유지한다 — 떨어뜨리면 gateOf의 네임스페이스 무관 매칭이 무검증이 된다.
+const SUBAGENT_FORMS = ["plan-validator", "chageun:plan-validator", "pr-reviewer", "honclwd:pr-reviewer"];
+
+test("런타임 강등 가드: 기대값을 TIER 표에서 파생 — 낮은 티어만 차단, 동급이상은 통과", () => {
+  let blocked = 0, passed = 0;
+  for (const sub of SUBAGENT_FORMS) {
+    for (const m of Object.keys(TIER)) {
+      const want = TIER[m] < TIER[TOP_TIER] ? "gate-model-downgrade" : null;
+      assert.equal(gateModelBlock("Task", { subagent_type: sub, model: m }), want,
+        `Task ${sub} model=${m} (TIER ${TIER[m]} vs TOP ${TIER[TOP_TIER]})`);
+      assert.equal(gateModelBlock("Agent", { subagent_type: sub, model: m }), want,
+        `Agent ${sub} model=${m}`);
+      want ? blocked++ : passed++;
+    }
   }
+  // 비공허: 차단되는 조합이 하나도 없으면 가드가 죽은 것이다(전부 통과여도 위 루프는 green).
+  assert.ok(blocked > 0, "차단되는 모델이 0개 — 가드가 무력화됨(TOP_TIER가 최하위인가?)");
+  assert.ok(passed > 0, "통과하는 모델이 0개 — 오차단 0 요건 위반");
 });
 
-test("런타임 강등 가드: 오차단 0 — 미명시·비게이트·동급이상·미지값은 통과", () => {
+// ⚠ 파생 루프의 사각을 닫는 핀(v0.44.0 pr-reviewer medium): 위 루프는 기대값을 **구현이 쓰는 바로
+// 그 표**에서 뽑으므로, 표의 **값**을 조작하면 기대와 구현이 함께 움직여 전부 green이 된다.
+// (예: core에서 `sonnet: 2`를 `3`으로 바꾸면 sonnet 게이트가 통과되는데 366개 테스트가 다 초록.)
+// 구 테스트는 `sonnet → 차단`을 리터럴로 박아 이걸 잡았는데 파생으로 바꾸며 그 핀이 사라졌다.
+// 숫자가 아니라 **이름 순서**로 단언해 미래 재넘버링(10·20·30 등)도 견디게 한다.
+test("순서 불변식: haiku < sonnet < opus < fable — 등급표 값 조작 차단", () => {
+  assert.ok(TIER.haiku < TIER.sonnet, `haiku(${TIER.haiku}) < sonnet(${TIER.sonnet}) 위반`);
+  assert.ok(TIER.sonnet < TIER.opus, `sonnet(${TIER.sonnet}) < opus(${TIER.opus}) 위반`);
+  assert.ok(TIER.opus < TIER.fable, `opus(${TIER.opus}) < fable(${TIER.fable}) 위반`);
+});
+
+test("하한 래칫: 게이트 기본은 최소 Opus 이상 — sonnet·haiku까지 내려가는 표류 차단", () => {
+  assert.ok(TIER[TOP_TIER] >= TIER.opus,
+    `TOP_TIER(${TOP_TIER}, 티어 ${TIER[TOP_TIER]})가 opus(${TIER.opus}) 아래 — 심판이 일꾼 수준으로 추락. ` +
+    `비용 절감을 이유로 여기서 더 내리지 말 것(v0.44.0에 fable→opus까지가 합의된 하한).`);
+});
+
+test("런타임 강등 가드: 오차단 0 — 미명시·비게이트·미지값은 통과", () => {
   const G = { subagent_type: "chageun:plan-validator" };
   assert.equal(gateModelBlock("Task", G), null, "모델 미명시 = frontmatter 상속 → 정상");
   assert.equal(gateModelBlock("Task", { ...G, model: "" }), null, "빈 문자열도 미명시");
-  assert.equal(gateModelBlock("Task", { ...G, model: "fable" }), null, "동급");
-  assert.equal(gateModelBlock("Task", { ...G, model: "FABLE" }), null, "대소문자 무관");
-  assert.equal(gateModelBlock("Task", { ...G, model: "claude-opus-5" }), null, "모르는 값 → fail-open");
+  assert.equal(gateModelBlock("Task", { ...G, model: TOP_TIER }), null, "동급");
+  assert.equal(gateModelBlock("Task", { ...G, model: TOP_TIER.toUpperCase() }), null, "대소문자 무관");
+  assert.equal(gateModelBlock("Task", { ...G, model: "fable" }), null, "상위 티어 → 통과");
+  // 문서화된 한계(신규 아님): 등급표에 없는 값은 fail-open이라 **풀 ID 강등은 못 잡는다**.
+  assert.equal(gateModelBlock("Task", { ...G, model: "claude-sonnet-5" }), null, "모르는 값 → fail-open");
   assert.equal(gateModelBlock("Task", { subagent_type: "chageun:code-implementer", model: "sonnet" }), null, "게이트 아님");
   assert.equal(gateModelBlock("Task", { subagent_type: "general-purpose", model: "haiku" }), null, "게이트 아님");
   assert.equal(gateModelBlock("Bash", { command: "git status" }), null, "Task/Agent 아님");

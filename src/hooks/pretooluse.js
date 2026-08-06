@@ -8,8 +8,9 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, approvedDesignVariant } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
+const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -100,6 +101,165 @@ function prReviewerRan(transcriptPath) {
   } catch (_) { return true; } // 어떤 예외든 fail-open
 }
 
+// ── 공용 component 경계(Claude 편집 시점 hard block) ────────────────────────
+const COMPONENT_EDIT_RE = /^(Write|Edit|MultiEdit)$/;
+function boundaryIssue(code, detail) { return detail ? { code, detail } : { code }; }
+function readText(file) {
+  try { return fs.readFileSync(file, "utf8"); } catch (_) { return null; }
+}
+function normalizedRelative(root, file) {
+  return path.relative(root, file).replaceAll("\\", "/");
+}
+function boundaryDocumentPath(root) {
+  return path.resolve(root, process.env.DESIGN_COMPONENT_DOC || "docs/design-system.md");
+}
+function appendBoundary(entries, target, result) {
+  for (const entry of entries) target.push(entry.code ? entry : boundaryIssue(String(entry)));
+  if (result) {
+    appendBoundary(result.violations || [], target);
+    appendBoundary(result.errors || [], target);
+  }
+}
+function parseBoundaryConfig(text, label, entries) {
+  try { return componentBoundary.parseDesignConfig(text || ""); }
+  catch (error) {
+    entries.push(boundaryIssue("configuration-error", `${label}: ${error.message}`));
+    return null;
+  }
+}
+function parseBoundaryRegistry(text, label, entries) {
+  if (text === null) {
+    entries.push(boundaryIssue("registry-missing", label));
+    return null;
+  }
+  try { return componentBoundary.parseRegistry(text); }
+  catch (error) {
+    entries.push(boundaryIssue("registry-invalid", `${label}: ${error.message}`));
+    return null;
+  }
+}
+
+// 이 함수는 filesystem을 읽되, 수정 대상 파일은 tool input으로 계산한 after text로 덮어쓴다.
+// 색 검사와 달리 component 경계에는 lint ignore나 환경변수 우회가 없다.
+function runComponentBoundaryChannel(input, context) {
+  const name = input.tool_name;
+  const tool = input.tool_input || {};
+  if (!COMPONENT_EDIT_RE.test(String(name || ""))) return [];
+  const root = path.resolve(input.cwd || process.cwd());
+  const entries = [];
+  const document = boundaryDocumentPath(root);
+  if (typeof tool.file_path !== "string" || !tool.file_path) {
+    const config = parseBoundaryConfig(readText(document), "before design document", entries);
+    if (entries.length) return entries;
+    return config?.enabled ? [boundaryIssue("edit-input-invalid", "file_path")] : [];
+  }
+  const target = path.resolve(root, tool.file_path);
+  const beforeTarget = readText(target);
+  const beforeDocument = target === document ? beforeTarget : readText(document);
+
+  // 비채택 프로젝트에는 component 경계가 도구 입력 형식까지 관여하지 않는다.
+  // 다만 규칙 문서 자체를 바꾸는 경우에는 before/after 양쪽을 계산해 해제를 막는다.
+  let beforeConfig = null;
+  if (target !== document) {
+    beforeConfig = parseBoundaryConfig(beforeDocument, "before design document", entries);
+    if (entries.length || !beforeConfig?.enabled) return entries;
+  }
+  const applied = componentBoundary.applyToolEdit(tool, beforeTarget || "");
+  appendBoundary(applied.errors, entries);
+  if (entries.length) return entries;
+
+  const afterDocument = target === document ? applied.after : beforeDocument;
+  if (target === document) beforeConfig = parseBoundaryConfig(beforeDocument, "before design document", entries);
+  const afterConfig = parseBoundaryConfig(afterDocument, "after design document", entries);
+  if (entries.length || !afterConfig) return entries;
+  if (beforeConfig?.enabled && !afterConfig.enabled) {
+    entries.push(boundaryIssue("design-system-disabled", "docs/design-system.md"));
+    return entries;
+  }
+  if (!afterConfig.enabled) return entries; // 디자인 시스템 미채택 프로젝트는 무영향
+
+  const registryFile = path.resolve(root, afterConfig.registryPath);
+  const beforeRegistryFile = beforeConfig?.enabled ? path.resolve(root, beforeConfig.registryPath) : null;
+  const beforeRegistryText = beforeRegistryFile === target ? beforeTarget : (beforeRegistryFile ? readText(beforeRegistryFile) : null);
+  const afterRegistryText = registryFile === target ? applied.after : readText(registryFile);
+  const beforeRegistry = beforeConfig?.enabled
+    ? parseBoundaryRegistry(beforeRegistryText, "before registry", entries)
+    : null;
+  const afterRegistry = parseBoundaryRegistry(afterRegistryText, "after registry", entries);
+  if (entries.length || !afterRegistry) return entries;
+
+  appendBoundary(componentBoundary.validateRegistryBoundary({ config: afterConfig, registry: afterRegistry }).errors, entries);
+  const changes = beforeRegistry
+    ? componentBoundary.registryChanges(beforeRegistry, afterRegistry)
+    : { addedComponents: Object.keys(afterRegistry.components), addedVariants: [], addedDecisions: [], errors: [] };
+  appendBoundary(changes.errors, entries);
+
+  // 기존 component에 새 변형을 붙일 때만, 바로 앞 AskUserQuestion의 실제 두 번째 선택과 ID를 묶는다.
+  if (!entries.length && changes.addedVariants.length) {
+    const transcript = readTranscriptIfMentions(context.transcript_path, "chageun-design-variant:") || [];
+    for (const { component, variant } of changes.addedVariants) {
+      const decisions = changes.addedDecisions.filter((decision) => decision.component === component && decision.variant === variant);
+      if (decisions.length !== 1) continue; // registryChanges가 mismatch로 이미 막는다.
+      const approval = approvedDesignVariant(transcript, component, variant);
+      if (!approval.approved || decisions[0].approvalToolUseId !== approval.toolUseId) {
+        entries.push(boundaryIssue("variant-approval-missing", `${component}:${variant}`));
+      }
+    }
+  }
+  if (entries.length) return entries;
+
+  const relativeTarget = normalizedRelative(root, target);
+  const knownSources = {};
+  for (const component of Object.values(afterRegistry.components)) {
+    const sourceFile = path.resolve(root, component.path);
+    const source = sourceFile === target ? applied.after : readText(sourceFile);
+    if (source !== null) knownSources[component.path] = source;
+  }
+
+  // registry-first 직후에만 아직 없는 source를 후보 비교에서 제외한다. 프로젝트 검사기의
+  // 최종 snapshot 검사는 이 인자를 주지 않아 source 부재를 계속 실패로 처리한다.
+  const pendingSourcePaths = new Set(changes.addedComponents
+    .map((id) => afterRegistry.components[id].path)
+    .filter((file) => typeof knownSources[file] !== "string"));
+  const checked = new Set();
+  const inspectComponent = (file, source = knownSources[file]) => {
+    if (checked.has(file) || typeof source !== "string") return;
+    checked.add(file);
+    appendBoundary([], entries, componentBoundary.validateComponent({
+      file,
+      after: source,
+      config: afterConfig,
+      registry: afterRegistry,
+      knownSources,
+      pendingSourcePaths,
+    }));
+  };
+  const role = componentBoundary.pathRole(relativeTarget, afterConfig);
+  if (role === "page") {
+    appendBoundary([], entries, componentBoundary.validatePage({
+      file: relativeTarget,
+      before: beforeTarget,
+      after: applied.after,
+      config: afterConfig,
+      registry: afterRegistry,
+      knownSources,
+      mode: beforeTarget === null ? "full" : "incremental",
+    }));
+  } else if (role === "component" && relativeTarget !== afterConfig.registryPath) {
+    inspectComponent(relativeTarget, applied.after);
+  }
+
+  // registry-first는 source가 아직 없으면 허용한다. 이미 있는 source를 새 registry entry로 편입하면
+  // marker와 구조를 지금 검사해 이름만 바꾼 복사를 숨기지 못하게 한다.
+  for (const id of changes.addedComponents) inspectComponent(afterRegistry.components[id].path);
+  // 레지스트리를 고치면 이미 등록된 source도 새 ID·변형과 맞는지 그 자리에서 확인한다.
+  // source가 아직 없는 새 항목은 registry-first 생성 순서를 위해 위 inspectComponent가 건너뛴다.
+  if (relativeTarget === afterConfig.registryPath) {
+    for (const component of Object.values(afterRegistry.components)) inspectComponent(component.path);
+  }
+  return entries;
+}
+
 let raw = "";
 process.stdin.on("data", (d) => { raw += d; });
 process.stdin.on("end", () => {
@@ -145,8 +305,10 @@ process.stdin.on("end", () => {
     }
 
     // 1.5) 게이트 모델 런타임 강등 차단(v0.42). frontmatter 검사는 정적이라 Task 호출의 `model`
-    //   덮어쓰기를 못 본다(실측: plan-validator를 fable→opus로 강등해 띄운 세션이 있었다).
-    //   탈출구: fable 미보유 환경이 락아웃되면 게이트를 아예 안 부르게 돼 안전이 오히려 후퇴한다.
+    //   덮어쓰기를 못 본다(실측: 게이트를 frontmatter보다 낮은 티어로 강등해 띄운 세션이 있었다).
+    //   ⚠ v0.44.0에서 게이트 기본이 fable→opus로 내려갔다. 그래서 위 실측 사례("opus로 띄움")는
+    //   이제 강등이 아니라 **기본 동작**이다. 지금 강등은 sonnet·haiku 쪽이다.
+    //   탈출구: 기본 티어 모델이 없는 환경이 락아웃되면 게이트를 아예 안 부르게 돼 안전이 오히려 후퇴한다.
     //   무인 모드는 다른 탈출구와 같은 원칙으로 이 탈출구를 무시한다(무인 중 심판 강등 금지).
     {
       const gm = gateModelBlock(name, ti);
@@ -196,6 +358,19 @@ process.stdin.on("end", () => {
           }
         }
       } catch (_) { /* fail-open — 백스톱 오류가 정상 작업을 막지 않는다 */ }
+    }
+
+    // 4.8) 공용 component 경계(hard block, Claude 전용): 색 검사 뒤, soft 리마인더 전에 실행한다.
+    // 색 정책의 기존 우회는 그대로 두되, component 경계는 어떤 lint ignore나 env로도 우회하지 않는다.
+    if (COMPONENT_EDIT_RE.test(String(name || ""))) {
+      let componentEntries;
+      try { componentEntries = runComponentBoundaryChannel(input, input); }
+      catch (error) { componentEntries = [boundaryIssue("component-boundary-error", error.message)]; }
+      if (componentEntries.length) {
+        const detail = [...new Set(componentEntries.map((entry) => `${entry.code}${entry.detail ? `:${entry.detail}` : ""}`))]
+          .slice(0, 8).join(", ");
+        return deny("component-boundary", false, detail);
+      }
     }
 
     // 4) P1 리마인더(soft): plan 문서를 쓰고 plan-validator 없이 첫 코드 수정 시작 →

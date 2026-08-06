@@ -93,20 +93,21 @@ UI 작업을 시작하기 전, 프로젝트에 이미 디자인 규칙 파일이
 글쓰기 방식, 접근성, 오류·빈 상태 처리 원칙을 정의한다.
 
 - **보이스·라이팅:** 짧고 명확한 문장. 전문 용어 대신 일상 언어 사용. 오류 메시지는 "문제 + 해결 방법" 형식으로 (예: "이메일 형식이 맞지 않아요. 다시 확인해 주세요.").
+- **UI 설명문:** 제목·레이블·카드·설정은 짧고 자명한 이름을 우선하고, 같은 뜻의 부제·도움말·설명을 기본값으로 붙이지 않는다. 보조 문구는 사용자가 명시적으로 요청했거나, 입력 형식·조건·결과·위험·다음 행동·접근성처럼 사용자의 판단에 필요한 새 정보가 있을 때만 짧게 쓴다.
 - **접근성:** 모든 이미지에 대체 텍스트 제공. 색만으로 정보를 전달하지 않음(아이콘·텍스트 병행). 포커스 링 항상 표시.
 - **오류 상태:** 인라인 오류는 해당 필드 바로 아래에 빨간 텍스트로 표시. 전체 오류는 폼 상단 배너.
 - **빈 상태(Empty State):** "아직 항목이 없어요" + 안내 일러스트 + 주요 액션 버튼 1개. 빈 화면을 그냥 두지 않는다.
 
 ---
 
-## 1.5 자라나는 레지스트리 (부품+변형) — v1: 페이지 폭·모달
+## 1.5 공용 컴포넌트 레지스트리
 
-관리 대상을 "값(토큰)"과 "부품+이름붙은변형"으로 나눠 다룬다. 상세 양식은 `design-system.template.md`의 "부품과 변형" 절이 단일 원본. 요지:
-- **원본은 코드**(CSS 변수·공용 컴포넌트) — 문서 값만 적으면 재스타일이 안 퍼진다. 문서는 사람·AI가 읽는 참고이고, 강제력은 코드 원본에서 나온다.
-- **만들기 전 조회 → 있으면 재사용, 없으면 등록**(+"왜 다른지" 한 줄). 준중복(320px·360px 공존)을 이 한 줄이 막는다. **진짜 일회성은 등록하지 말고 아래 `## 3`의 일회성 예외로 처리**(레지스트리 부풀림 방지).
-- **v1 = 페이지 폭(3계층 토큰)** + **모달(크기 변형 sm~full + 반응형 행동은 공용 부품이 담음)**. 각 모달은 크기 이름표를 고르지 자기 px를 정하지 않는다.
-- **재스타일 = 토큰·변형 한 곳 수정 → 전체 반영.**
-- 프로젝트가 이미 라이브러리(shadcn·MUI 등)를 쓰면 그 부품을 원본으로 재사용하고, 없으면 시드한다(라이브러리 무관).
+관리 대상은 "값(토큰)"과 "공용 컴포넌트와 이름 붙은 변형"이다. 상세 양식은 `design-system.template.md`의 "공용 컴포넌트와 변형" 절이 단일 원본이다.
+- **원본은 코드:** CSS 변수와 공용 컴포넌트가 원본이며, 문서는 사람이 읽는 참고다.
+- **만들기 전 조회:** 등록된 변형이 있으면 재사용하고, 없으면 공용 컴포넌트나 공용 변형으로 등록한다.
+- **페이지와 라우트는 조립만:** 의미 있는 UI는 공용 컴포넌트 파일에 만들고, 페이지와 라우트는 등록된 공용 컴포넌트만 조립한다.
+- **v1 시작점:** 페이지 폭과 모달을 먼저 관리한다. 나머지는 필요할 때 공용 컴포넌트로 등록한다.
+- 프로젝트가 이미 라이브러리(shadcn·MUI 등)를 쓰면 그 부품을 원본으로 재사용하고, 없으면 시드한다.
 
 ---
 
@@ -118,7 +119,7 @@ UI 작업을 시작할 때 `## 0`의 절차대로 규칙 소스를 탐색하고 
 ### 검증
 UI를 만들거나 변경한 뒤 **빌드·실제 구동 검증·끝 점검** 단계에서 화면과 규칙을 대조한다.
 - 규칙에 맞으면 통과.
-- 규칙과 다르면 어떤 규칙을 어떻게 어겼는지 명시하고, 수정 또는 예외 처리를 제안한다(아래 `## 3` 3택).
+- 규칙과 다르면 어떤 규칙을 어떻게 어겼는지 명시하고, 기존 공용 컴포넌트 재사용 또는 새 공용 변형 등록을 제안한다(아래 `## 3` 2택).
 
 **화면(IA 노드)마다 "디자인 준수" 점검을 기능 점검과 나란히 둔다.** 기능 검증 체크리스트가 *"작동하나"*(진입/동작/영향)를 본다면, 디자인 점검은 *"문서 규칙대로 생겼나"*(헤더 높이·간격·토큰·컴포넌트 규칙)를 본다 — **직각(orthogonal) 축**이다. 기능이 완벽해도 외형이 규칙과 다를 수 있으니 둘은 별개로 본다.
 
@@ -129,16 +130,31 @@ UI를 만들거나 변경한 뒤 **빌드·실제 구동 검증·끝 점검** �
 
 ---
 
-## 3. 새 UI → 새 규칙 제안 루프
+## 3. 새 UI와 공용 컴포넌트 결정
 
-규칙에 없는 새 UI 패턴이 필요할 때 아래 3택을 사용자에게 제안한다.
+새 UI가 필요하면 레지스트리를 먼저 읽는다. 관련 후보가 없으면 레지스트리 항목을 먼저 추가한 뒤 새 공용 컴포넌트를 만든다. 관련 후보가 있으면 아래 두 선택지만 사용자에게 제시한다.
 
-> 이 패턴은 현재 디자인 규칙에 없어요. 어떻게 할까요?
-> 1. 기존 규칙에 맞추기 — 가장 가까운 기존 패턴을 적용합니다.
-> 2. 새 규칙으로 등록 — 이번 패턴을 디자인 규칙 문서에 추가합니다.
-> 3. 일회성 예외 — 이번 한 번만 예외로 처리하고 문서는 바꾸지 않습니다.
+**컴포넌트 선택지(정확히 2개):**
+1. 기존 컴포넌트와 변형 사용
+2. 기존 컴포넌트에 새 공용 변형 등록
 
-**②번 선택 시:** 사용자가 승인한 뒤에만 규칙 문서에 추가한다. 변경된 부분만 간결하게 갱신하며, 파일 전체를 다시 쓰지 않는다.
+두 번째 선택이 필요하면 다음 형식의 단일 `AskUserQuestion`을 사용한다. 질문의 승인 키는 실제 component ID와 variant ID로 바꾸고, 성공한 실제 `tool_use_id`를 레지스트리 decision의 `approvalToolUseId`에 기록한다.
+
+```json
+{
+  "questions": [{
+    "header": "UI 변형",
+    "question": "<component-id>에 <variant-id> 변형이 필요합니다. 기존 변형을 사용할까요, 새 공용 변형으로 등록할까요? [chageun-design-variant:<component-id>:<variant-id>]",
+    "options": [
+      { "label": "기존 변형 사용", "description": "가장 가까운 기존 변형을 재사용합니다." },
+      { "label": "새 공용 변형 등록", "description": "차이를 기록하고 공용 변형으로 추가합니다." }
+    ],
+    "multiSelect": false
+  }]
+}
+```
+
+새 공용 변형은 코드 표식과 레지스트리에 함께 등록한다. 한 번만 쓰는 UI도 이 흐름 밖으로 두지 않는다.
 
 ---
 
@@ -173,25 +189,46 @@ chageun는 난장판을 **자동으로 통일해 주지 않는다**(어느 스�
 디자인 규칙을 **새로 만들 때**(위 자동 시드 / 코드 추출), 차근이 표준 템플릿과 검사기를 대상 프로젝트로 복사한다. **정의는 차근 한 곳, 실행은 프로젝트 소유** — 이게 프로젝트마다 손복사돼 규칙이 갈라지던 문제를 없앤다.
 
 **찍어낼 것:**
-- `docs/design-system.md` — 템플릿을 기본값으로 채운 초안(그린필드) 또는 코드에서 추출한 초안(브라운필드).
-- `scripts/check-design-violations.sh` — **색 하드코딩 차단(핵심 이빨)** — Tailwind 팔레트 직접 색·`-[#hex]` 임의값을 막고 토큰만 쓰게 강제(커밋 차단). 색을 코드에 직접 박는 건 디자인 시스템의 존재 이유와 정면 충돌하므로 이게 CI의 실질 강제력이다.
-- `scripts/check-profile.sh` — 성격 선언 점검(조언 전용·비차단).
-- `scripts/check-token-parity.sh` — 문서↔CSS 토큰 이름 정합(문서 front-matter의 `css-path`를 읽음).
+- `src/components/design-registry.json` 또는 문서의 `component-registry-path` - 빈 `component-registry.template.json`에서 시작한다.
+- `scripts/component-boundary-core.cjs`와 `scripts/check-component-boundaries.cjs` - 공용 컴포넌트 경계를 프로젝트가 직접 검사한다.
+- `docs/design-system.md` - 템플릿을 기본값으로 채운 초안(그린필드) 또는 코드에서 추출한 초안(브라운필드).
+- `scripts/check-design-violations.sh` - **색 하드코딩 차단(핵심 이빨)**. Tailwind 팔레트 직접 색과 `-[#hex]` 임의값을 막고 토큰만 쓰게 강제한다.
+- `scripts/check-profile.sh` - 성격 선언 점검(조언 전용·비차단).
+- `scripts/check-token-parity.sh` - 문서와 CSS 토큰 이름 정합(문서 front-matter의 `css-path`를 읽음).
 
-> `check-template`은 **찍어내지 않는다** — 그건 템플릿 자체를 검증하는 차근 내부 테스트라 프로젝트엔 불필요하다.
+**새 프로젝트 순서:**
+1. registry template을 설정 경로에 복사한다.
+2. component boundary core와 checker를 `scripts/`에 복사한다.
+3. 마지막에 디자인 문서를 만들어 채택을 활성화한다.
 
-> **check-design-violations의 범위(한계 명시 — 벽이 아니라 안전벨트):** Tailwind **색 클래스 채널**(`bg-blue-500`·`-[#hex]`·`-[rgb()/hsl()]`)만 본다. 인라인 `style={{color:'#..'}}`·CSS 파일 안 hex는 **못 잡는다** — 그 채널은 별도 규칙이 필요하다("다 막힌다"는 거짓 안심 금지). 오탐(문자열·URL에 우연히 `to-green-100` 등)은 그 라인에 `design-lint-ignore` 주석으로 **그 줄만** 예외 처리한다(전체 검사를 끄는 `CHAGEUN_SKIP_DESIGN_LINT`와 구분 — 한 줄 예외가 우선).
+**기존 프로젝트 순서:**
+1. 기존 component root를 확인한다.
+2. 현재 공용 컴포넌트의 ID, path, family, purpose를 사용자 검토용 초안으로 만든다.
+3. 충돌을 자동으로 해소하지 않는다.
+4. registry와 scripts를 만든 뒤 디자인 문서에 경로를 추가한다.
+5. staged 검사로 신규와 수정 영역만 확인한다.
 
-> **색은 편집 시점에도 하드블록된다(v0.36+, Claude 전용 · 위 `.sh`와 별개 채널):** `docs/design-system.md`가 있는 프로젝트에선, AI가 UI 파일(js/ts/jsx/tsx/vue/svelte/astro)에 **새로** raw 색을 넣는 편집을 차근 PreToolUse 훅이 그 자리에서 막는다(`git add`·커밋을 기다리지 않음). 검출 규칙·탈출구(`design-lint-ignore`·`lint-allow-colors`·`CHAGEUN_SKIP_DESIGN_LINT`)는 위 `.sh`와 동일하고, **새로 추가된 색만**(기존 코드 줄 수정은 오탐 방지로 통과). 기존 파일을 Write로 통째로 덮어쓰는 경우는 v1에서 안 막는다(정직한 갭 — 그건 커밋 시점 `.sh`가 담당). Codex는 PreToolUse 미지원이라 이 편집시점 차단이 없다(커밋시점 `.sh`만).
+> `check-template`은 **찍어내지 않는다**. 템플릿 자체를 검증하는 차근 내부 테스트라 프로젝트에는 불필요하다.
+
+> **check-design-violations의 범위:** Tailwind **색 클래스 채널**(`bg-blue-500`, `-[#hex]`, `-[rgb()/hsl()]`)만 본다. 인라인 `style={{color:'#..'}}`와 CSS 파일 안 hex는 못 잡으므로 별도 규칙이 필요하다. 오탐(문자열·URL에 우연히 `to-green-100` 등이 있는 경우)은 그 줄에 `design-lint-ignore` 주석으로 그 줄만 예외 처리한다. 전체 검사를 끄는 `CHAGEUN_SKIP_DESIGN_LINT`와는 다르다.
+
+> **색은 편집 시점에도 하드블록된다(v0.36+, Claude 전용):** `docs/design-system.md`가 있는 프로젝트에서 AI가 UI 파일(js/ts/jsx/tsx/vue/svelte/astro)에 새 raw 색을 넣으면 차근 PreToolUse 훅이 그 자리에서 막는다. 검출 규칙과 탈출구(`design-lint-ignore`, `lint-allow-colors`, `CHAGEUN_SKIP_DESIGN_LINT`)는 위 `.sh`와 같다. 기존 파일을 Write로 통째로 덮어쓰는 경우는 v1에서 막지 않으며, 커밋 시점 `.sh`가 담당한다. Codex는 PreToolUse 미지원이라 이 편집 시점 차단이 없다.
 
 **원본 찾는 순서 (못 찾으면 빈 파일 만들지 말 것):**
-1. 이 스킬(이 SKILL.md)이 있는 디렉터리에서 `design-system.template.md`·`check-design-violations.sh`·`check-profile.sh`·`check-token-parity.sh`를 찾는다.
+1. 이 스킬(이 SKILL.md)이 있는 디렉터리에서 `design-system.template.md`, `component-registry.template.json`, `component-boundary-core.cjs`, `check-component-boundaries.cjs`, `check-design-violations.sh`, `check-profile.sh`, `check-token-parity.sh`를 찾는다.
 2. 못 찾으면 플러그인 설치 경로를 넓게 탐색한다(`**/skills/design-system/`).
-3. **그래도 못 찾으면 STOP + 보고**한다 — 빈 파일이나 지어낸 내용을 쓰지 않는다(허구 산출 금지).
+3. 그래도 못 찾으면 STOP + 보고한다. 빈 파일이나 지어낸 내용을 쓰지 않는다.
 
-**덮어쓰기 가드:** 대상에 같은 파일(`scripts/check-*.sh`·`docs/design-system.md`)이 **이미 있으면 덮어쓰지 않는다** — 차이(diff)를 보여주고 사용자에게 확인한다(로컬 수정본 유실 방지).
+**덮어쓰기 가드:** 대상에 같은 파일(`scripts/check-*.sh`, `scripts/component-boundary-core.cjs`, `docs/design-system.md`, registry)이 이미 있으면 덮어쓰지 않는다. 차이(diff)를 보여주고 사용자에게 확인한다.
 
-**연결:** 찍어낸 검사기는 `## 5`대로 그 프로젝트 CI(push/PR)에 물린다. `check-token-parity`는 `docs/design-system.md` front-matter의 `css-path`가 있어야 실동작한다 — 없으면 "설정 필요"로 **눈에 띄게 실패**하고 조용히 통과하지 않는다.
+**연결:** 찍어낸 검사기는 `## 5`대로 그 프로젝트 CI(push/PR)에 물린다. `check-token-parity`는 `docs/design-system.md` front-matter의 `css-path`가 있어야 실동작한다. 없으면 "설정 필요"로 눈에 띄게 실패하고 조용히 통과하지 않는다.
+
+**공용 컴포넌트 경계 검사:**
+- 커밋 전 기본 명령: `node scripts/check-component-boundaries.cjs`
+- 전체 감사: `node scripts/check-component-boundaries.cjs --all`
+- CI의 commit 간 검사: `node scripts/check-component-boundaries.cjs --range <base> <head>`
+- 이번 버전은 CI 배선을 자동 감지하거나 workflow를 자동 생성하지 않는다.
+- Claude는 Write, Edit, MultiEdit 직전에 hard block한다. Codex에는 같은 편집 순간 hard block이 없으므로 프로젝트 검사기로 보완한다.
 
 ---
 
