@@ -12,6 +12,7 @@ const SKILL = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "skills
 const VIOL = join(SKILL, "check-design-violations.sh");
 const PARITY = join(SKILL, "check-token-parity.sh");
 const PROFILE = join(SKILL, "check-profile.sh");
+const COMPONENT_BOUNDARIES = join(SKILL, "check-component-boundaries.cjs");
 
 function run(script, args = [], { env = {}, cwd } = {}) {
   const r = spawnSync("bash", [script, ...args], { encoding: "utf8", cwd, env: { ...process.env, ...env } });
@@ -148,4 +149,228 @@ test("check-token-parity: 이름만 대조라 값이 달라도 통과 — 단 �
   assert.equal(r.code, 0, "이름 정합이라 통과(알려진 한계): " + r.out);
   assert.match(r.out, /이름만/, "값 드리프트 못 잡는다는 고지가 있어야: " + r.out);
   rmSync(d, { recursive: true, force: true });
+});
+
+// 공용 컴포넌트 경계 검사기는 실제 Git snapshot을 읽는다.
+function git(dir, ...args) {
+  const result = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+  assert.equal(result.status, 0, (result.stdout || "") + (result.stderr || ""));
+  return (result.stdout || "").trim();
+}
+
+function projectFile(dir, path, content) {
+  const target = join(dir, path);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, content);
+}
+
+function boundaryFixture() {
+  const dir = mkdtempSync(join(tmpdir(), "component-boundary-"));
+  git(dir, "init", "--quiet");
+  git(dir, "config", "user.email", "test@example.com");
+  git(dir, "config", "user.name", "Test");
+  projectFile(dir, "docs/design-system.md", `---
+component-registry-path: src/components/design-registry.json
+component-roots:
+  - src/components
+  - components
+page-patterns:
+  - src/app/**/page.tsx
+  - src/app/**/layout.tsx
+  - app/**/page.tsx
+  - app/**/layout.tsx
+  - src/pages/**/*.vue
+  - pages/**/*.vue
+  - src/routes/**/+page.svelte
+  - src/pages/**/*.astro
+---
+`);
+  projectFile(dir, "src/components/design-registry.json", JSON.stringify({
+    version: 1,
+    components: {
+      "user-list": {
+        path: "src/components/UserList.tsx",
+        kind: "composite",
+        family: "user-list",
+        purpose: "사용자 목록",
+        variants: { default: { purpose: "기본" } },
+      },
+    },
+    decisions: [],
+  }, null, 2));
+  projectFile(dir, "src/components/UserList.tsx", "// @design-component user-list\n// @design-variants default\nexport const UserList = () => <article />;\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "--quiet", "-m", "base");
+  return dir;
+}
+
+function runBoundary(dir, args = []) {
+  const result = spawnSync(process.execPath, [COMPONENT_BOUNDARIES, ...args], { cwd: dir, encoding: "utf8" });
+  return { code: result.status, out: (result.stdout || "") + (result.stderr || "") };
+}
+
+test("component boundaries: staged 직접 UI와 미등록 component를 차단한다", () => {
+  const direct = boundaryFixture();
+  projectFile(direct, "src/app/users/page.tsx", "export default () => <button>저장</button>;\n");
+  git(direct, "add", "src/app/users/page.tsx");
+  const directResult = runBoundary(direct);
+  assert.equal(directResult.code, 1, directResult.out);
+  assert.match(directResult.out, /page-direct-ui/);
+  rmSync(direct, { recursive: true, force: true });
+
+  const component = boundaryFixture();
+  projectFile(component, "src/components/Unregistered.tsx", "export const Unregistered = () => <button />;\n");
+  git(component, "add", "src/components/Unregistered.tsx");
+  const componentResult = runBoundary(component);
+  assert.equal(componentResult.code, 1, componentResult.out);
+  assert.match(componentResult.out, /component-unregistered/);
+  rmSync(component, { recursive: true, force: true });
+});
+
+test("component boundaries: staged 조립은 통과하고 과거 위반 증가는 막는다", () => {
+  const dir = boundaryFixture();
+  projectFile(dir, "src/app/users/page.tsx", "import { UserList } from '../../components/UserList'; export default () => <UserList />;\n");
+  git(dir, "add", "src/app/users/page.tsx");
+  const assembly = runBoundary(dir);
+  assert.equal(assembly.code, 0, assembly.out);
+  git(dir, "commit", "--quiet", "-m", "assembly");
+
+  projectFile(dir, "src/app/legacy/page.tsx", "export default () => <div />;\n");
+  git(dir, "add", "src/app/legacy/page.tsx");
+  git(dir, "commit", "--quiet", "-m", "legacy");
+  projectFile(dir, "src/app/legacy/page.tsx", "const id = data.id; export default () => <div />;\n");
+  git(dir, "add", "src/app/legacy/page.tsx");
+  const unchanged = runBoundary(dir);
+  assert.equal(unchanged.code, 0, unchanged.out);
+  projectFile(dir, "src/app/legacy/page.tsx", "export default () => <div /><div />;\n");
+  git(dir, "add", "src/app/legacy/page.tsx");
+  const increased = runBoundary(dir);
+  assert.equal(increased.code, 1, increased.out);
+  assert.match(increased.out, /page-direct-ui/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("component boundaries: --all, --range, 설정 해제를 snapshot으로 판정한다", () => {
+  const all = boundaryFixture();
+  projectFile(all, "src/components/Unregistered.tsx", "export const Unregistered = () => <button />;\n");
+  git(all, "add", ".");
+  git(all, "commit", "--quiet", "-m", "bad component");
+  const allResult = runBoundary(all, ["--all"]);
+  assert.equal(allResult.code, 1, allResult.out);
+  assert.match(allResult.out, /component-unregistered/);
+  rmSync(all, { recursive: true, force: true });
+
+  const range = boundaryFixture();
+  const base = git(range, "rev-parse", "HEAD");
+  projectFile(range, "src/app/users/page.tsx", "export default () => <button>저장</button>;\n");
+  git(range, "add", ".");
+  git(range, "commit", "--quiet", "-m", "bad page");
+  const rangeResult = runBoundary(range, ["--range", base, "HEAD"]);
+  assert.equal(rangeResult.code, 1, rangeResult.out);
+  assert.match(rangeResult.out, /page-direct-ui/);
+  const usage = runBoundary(range, ["--range", base]);
+  assert.equal(usage.code, 2, usage.out);
+  rmSync(range, { recursive: true, force: true });
+
+  const removed = boundaryFixture();
+  git(removed, "rm", "--quiet", "docs/design-system.md");
+  const removedResult = runBoundary(removed);
+  assert.equal(removedResult.code, 2, removedResult.out);
+  assert.match(removedResult.out, /design-system/);
+  rmSync(removed, { recursive: true, force: true });
+});
+
+test("component boundaries: 최종 snapshot의 source 없는 registry 항목은 모든 실행 모드에서 차단한다", () => {
+  const addPending = (dir) => {
+    const registryPath = join(dir, "src/components/design-registry.json");
+    const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+    registry.components["pending-card"] = {
+      path: "src/components/PendingCard.tsx", kind: "composite", family: "pending-card", purpose: "새 카드",
+      variants: { default: { purpose: "기본" } },
+    };
+    writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+  };
+
+  const staged = boundaryFixture();
+  addPending(staged);
+  git(staged, "add", "src/components/design-registry.json");
+  const stagedResult = runBoundary(staged);
+  assert.equal(stagedResult.code, 2, stagedResult.out);
+  assert.match(stagedResult.out, /registered-source-unavailable/);
+  rmSync(staged, { recursive: true, force: true });
+
+  const all = boundaryFixture();
+  addPending(all);
+  git(all, "add", ".");
+  git(all, "commit", "--quiet", "-m", "pending registry");
+  const allResult = runBoundary(all, ["--all"]);
+  assert.equal(allResult.code, 2, allResult.out);
+  assert.match(allResult.out, /registered-source-unavailable/);
+  rmSync(all, { recursive: true, force: true });
+
+  const range = boundaryFixture();
+  const base = git(range, "rev-parse", "HEAD");
+  addPending(range);
+  git(range, "add", ".");
+  git(range, "commit", "--quiet", "-m", "pending registry");
+  const rangeResult = runBoundary(range, ["--range", base, "HEAD"]);
+  assert.equal(rangeResult.code, 2, rangeResult.out);
+  assert.match(rangeResult.out, /registered-source-unavailable/);
+  rmSync(range, { recursive: true, force: true });
+});
+
+test("component boundaries: 디자인 시스템을 채택하지 않은 프로젝트는 통과한다", () => {
+  const dir = mkdtempSync(join(tmpdir(), "component-boundary-none-"));
+  git(dir, "init", "--quiet");
+  git(dir, "config", "user.email", "test@example.com");
+  git(dir, "config", "user.name", "Test");
+  projectFile(dir, "src/app/users/page.tsx", "export default () => <button>저장</button>;\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "--quiet", "-m", "base");
+  projectFile(dir, "src/app/users/page.tsx", "export default () => <button>바꾸기</button>;\n");
+  git(dir, "add", ".");
+  const result = runBoundary(dir);
+  assert.equal(result.code, 0, result.out);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("component boundaries: staged 새 변형은 승인 기록이 필요하고 working tree를 읽지 않는다", () => {
+  const variants = boundaryFixture();
+  const registryPath = join(variants, "src/components/design-registry.json");
+  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  registry.components["user-list"].variants.compact = { purpose: "좁은 목록" };
+  writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+  git(variants, "add", "src/components/design-registry.json");
+  const missingDecision = runBoundary(variants);
+  assert.equal(missingDecision.code, 2, missingDecision.out);
+  assert.match(missingDecision.out, /variant-decision-mismatch/);
+  rmSync(variants, { recursive: true, force: true });
+
+  const snapshot = boundaryFixture();
+  projectFile(snapshot, "src/app/users/page.tsx", "import { UserList } from '../../components/UserList'; export default () => <UserList />;\n");
+  git(snapshot, "add", "src/app/users/page.tsx");
+  projectFile(snapshot, "src/components/design-registry.json", "not valid json");
+  const snapshotResult = runBoundary(snapshot);
+  assert.equal(snapshotResult.code, 0, snapshotResult.out);
+  rmSync(snapshot, { recursive: true, force: true });
+});
+
+test("component boundaries: staged Vue component 조립을 snapshot source로 확인한다", () => {
+  const dir = boundaryFixture();
+  const registryPath = join(dir, "src/components/design-registry.json");
+  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  registry.components["registered-card"] = {
+    path: "src/components/RegisteredCard.vue",
+    kind: "composite",
+    family: "registered-card",
+    purpose: "등록 카드",
+    variants: { default: { purpose: "기본" } },
+  };
+  writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+  projectFile(dir, "src/components/RegisteredCard.vue", "<!-- @design-component registered-card -->\n<!-- @design-variants default -->\n<template><article /></template>\n");
+  projectFile(dir, "src/pages/users.vue", "<script setup>\nimport RegisteredCard from '../components/RegisteredCard.vue';\n</script><template><RegisteredCard /><registered-card /></template>\n");
+  git(dir, "add", ".");
+  const result = runBoundary(dir);
+  assert.equal(result.code, 0, result.out);
+  rmSync(dir, { recursive: true, force: true });
 });
