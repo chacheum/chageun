@@ -29,11 +29,22 @@ function procSkillBytes() {
 // (수신 규율은 틀린 발견의 기각만 정의). Fable 독립 감사 medium. 분량 압박에 안전 단서를 깎지 않기로 해
 // 상향(plan-validator CONDITIONAL 조건 4): 반드시 남길 5개 = medium 이상 금지 · 개수+종류 표기 ·
 // 애매하면 접지 않기 · 접기는 기각 아님(요청 시 전체) · 대조 확인 면제 아님.
-const CEILING_BYTES = 17640;
+// 2026-08-07 +309 (17640→17949): 게이트 재검증 회차의 **쓰기 규칙** 신설(v0.46.0).
+// 초안 +187에 pr-reviewer 반영분 +122: 마커를 번역하지 말 것(영어 세션에서 조용히 꺼짐) ·
+// 지적 제목은 직전 회차 것만(누적하면 계획서가 커져 다음 검증기가 새 지적을 내는 되먹임을 규칙이 먹임) ·
+// **통과하면 마커를 지운다**(GO 난 계획서를 이어 쓸 때 남은 옛 숫자가 새 작업의 첫 검증을 N차로 만들고,
+// "모르면 붙인다"와 겹쳐 없는 루프에 표시·finding이 붙는다 — pr-reviewer medium).
+// v0.42.0이 넣은 수렴 가드는 읽는 쪽(plan-validator·codex 미러)만 있었고, 그 회차를 적으라는 규칙이
+// src 어디에도 없었다(grep 실측) — 아무도 안 적으면 게이트는 영구히 1차로 보고 규칙이 한 번도 안 켜진다.
+// 스킬 위임 검토: 재검증은 routing·formats가 안 떠 있는 자리에서 일어나고, PreToolUse 리마인더는
+// 세션당 1회성(pretooluse-core.js가 첫 게이트 후 validated를 굳힘)이라 상시 바닥 외에 도달 경로가 없다.
+// 이 변경분 단독 델타다(작업 트리에 다른 미커밋 변경 0건인 상태에서 측정 — plan-validator 4차 H-3).
+const CEILING_BYTES = 17949;
 // Codex 상시 주입의 '규칙' 면 = operating-rules.md + addendum. 코어 규칙을 addendum으로 옮겨
 // Claude 상한을 우회하는 걸 막는다(pr-reviewer medium 반영).
 // 2026-07-27 +34 (21500→21534): 위 "접기" 규칙이 공유 코어에 들어가 규칙면도 같이 커짐(addendum 무변경).
-const CODEX_CORE_CEILING = 21534;
+// 2026-08-07 +309 (21534→21843): 위 회차 쓰기 규칙이 공유 코어에 들어가 규칙면도 같이 커짐(addendum 무변경).
+const CODEX_CORE_CEILING = 21843;
 // Codex 상시 주입 '총면' = 규칙면 + 인라인 절차 스킬 본문. batch6가 규칙→스킬 이동을 시작하면서
 // "스킬로 옮기면 두 상한 다 빠져나간다"는 새 우회로가 생겼다 — 이 합산 상한이 그 우회를 막는다
 // (Claude는 스킬이 지연로드라 이 면이 없고, Codex만 인라인이라 총면이 실체다).
@@ -64,7 +75,9 @@ const CODEX_CORE_CEILING = 21534;
 // pr-reviewer 반영분(+38): description을 "GO 직후"에서 "서브에이전트를 띄우기 직전이면 언제나"로 넓혀
 // 계획 전 조사 위임에서도 스킬이 로드되게 함(규칙이 가장 필요한 시점에 안 뜨던 구멍) · 대신 본문의
 // 설정 특유 수치(1M 창 기준 턴당 82k/391k)는 공개 플러그인 문구로 부적절해 삭제.
-const CODEX_TOTAL_CEILING = 55492;
+// 2026-08-07 +305 (55492→55797): 위 회차 쓰기 규칙이 코어를 +309 늘림(인라인 절차 스킬은 무변경).
+// 총면 증가분이 309가 아니라 305인 것은 직전 상한이 4바이트 여유를 안고 있었기 때문이다. 이제 헤드룸 0.
+const CODEX_TOTAL_CEILING = 55797;
 
 test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
   const bytes = normBytes(CORE);
