@@ -4,11 +4,11 @@ import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush, approvedDesignVariant } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 
 const bash = (command) => block("Bash", { command });
 const sql = (query) => block("mcp__plugin_supabase_supabase__execute_sql", { query });
@@ -857,5 +857,355 @@ test("배포 차단 문구: 변형이 없는 사유는 기존 문구 그대로(�
   const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
   for (const k of ["force-push", "rm-recursive", "gate-skip", "sql-destructive", "ra-bash"]) {
     assert.equal(reasonFor(k, true), reasonFor(k, false), k + ": 서브에이전트 변형 없음");
+  }
+});
+
+// ── F-11: 공용 component 경계의 실제 AskUserQuestion 승인 기록 ─────────────
+const VARIANT_KEY = "[chageun-design-variant:modal:side-panel]";
+const VARIANT_QUESTION = `modal에 side-panel 변형이 필요합니다. 기존 변형을 사용할까요, 새 공용 변형으로 등록할까요? ${VARIANT_KEY}`;
+const VARIANT_OPTIONS = [
+  { label: "기존 변형 사용", description: "기존 것을 사용" },
+  { label: "새 공용 변형 등록", description: "공용 변형 추가" },
+];
+function variantApproval({ question = VARIANT_QUESTION, options = VARIANT_OPTIONS, multiSelect = false, result = VARIANT_OPTIONS[1].label, isError = false } = {}) {
+  return [
+    { message: { content: [{
+      type: "tool_use", name: "AskUserQuestion", id: "toolu_123",
+      input: { questions: [{ header: "UI 변형", question, options, multiSelect }] },
+    }] } },
+    { message: { content: [{
+      type: "tool_result", tool_use_id: "toolu_123", is_error: isError,
+      content: `${JSON.stringify(question)}=${JSON.stringify(result)}`,
+    }] } },
+  ];
+}
+
+test("변형 승인: 실제 AskUserQuestion 기록의 정확한 두 번째 선택만 인정한다", () => {
+  assert.deepEqual(approvedDesignVariant(variantApproval(), "modal", "side-panel"), {
+    approved: true, toolUseId: "toolu_123",
+  });
+  for (const record of [
+    variantApproval({ question: "다른 질문 [chageun-design-variant:modal:side-panel] extra [chageun-design-variant:modal:side-panel]" }),
+    variantApproval({ question: VARIANT_QUESTION.replace("modal:side-panel", "card:side-panel") }),
+    variantApproval({ question: VARIANT_QUESTION.replace("side-panel]", "compact]") }),
+    variantApproval({ result: VARIANT_OPTIONS[0].label }),
+    variantApproval({ isError: true }),
+    variantApproval({ options: [...VARIANT_OPTIONS, { label: "일회성", description: "금지" }] }),
+    variantApproval({ multiSelect: true }),
+  ]) assert.equal(approvedDesignVariant(record, "modal", "side-panel").approved, false);
+});
+
+const HOOK_COMPONENT = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+function componentProject({ sourceVariants = "default", source = "export const UserList = () => <article />;" } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "component-hook-"));
+  mkdirSync(join(dir, "docs"), { recursive: true });
+  mkdirSync(join(dir, "src", "components"), { recursive: true });
+  writeFileSync(join(dir, "docs", "design-system.md"), `---
+component-registry-path: src/components/design-registry.json
+component-roots:
+  - src/components
+  - components
+page-patterns:
+  - src/app/**/page.tsx
+  - src/app/**/layout.tsx
+  - app/**/page.tsx
+  - app/**/layout.tsx
+  - src/pages/**/*.vue
+  - pages/**/*.vue
+---
+`);
+  writeFileSync(join(dir, "src", "components", "design-registry.json"), JSON.stringify({
+    version: 1,
+    components: {
+      "user-list": {
+        path: "src/components/UserList.tsx", kind: "composite", family: "user-list", purpose: "사용자 목록",
+        variants: { default: { purpose: "기본" } },
+      },
+    },
+    decisions: [],
+  }, null, 2));
+  writeFileSync(join(dir, "src", "components", "UserList.tsx"), `// @design-component user-list
+// @design-variants ${sourceVariants}
+${source}
+`);
+  return dir;
+}
+function componentHook(dir, tool_name, tool_input, transcript = [], env = {}) {
+  const baseEnv = { ...process.env };
+  for (const key of Object.keys(baseEnv)) if (key.startsWith("CHAGEUN_")) delete baseEnv[key];
+  const transcriptPath = join(dir, "transcript.jsonl");
+  writeFileSync(transcriptPath, transcript.map((record) => JSON.stringify(record)).join("\n") + "\n");
+  return spawnSync(process.execPath, [HOOK_COMPONENT], {
+    input: JSON.stringify({ tool_name, tool_input, cwd: dir, transcript_path: transcriptPath }),
+    env: { ...baseEnv, ...env }, encoding: "utf8",
+  });
+}
+
+// 세 종류의 편집 모두 동일한 component 경계 채널로 들어가야 한다.
+test("component 경계 wiring: Write, Edit, MultiEdit의 페이지 직접 UI는 우회 없이 차단한다", () => {
+  const cases = [
+    ["Write", { file_path: "src/app/users/page.tsx", content: "export default () => <button>저장</button>;" }],
+    ["Edit", { file_path: "src/app/users/page.tsx", old_string: "export default () => <UserList />;", new_string: "export default () => <button>저장</button>;" }],
+    ["MultiEdit", { file_path: "src/app/users/page.tsx", edits: [{ old_string: "export default () => <UserList />;", new_string: "export default () => <button>저장</button>;" }] }],
+  ];
+  for (const [tool, input] of cases) {
+    const dir = componentProject();
+    if (tool !== "Write") {
+      mkdirSync(join(dir, "src", "app", "users"), { recursive: true });
+      writeFileSync(join(dir, "src", "app", "users", "page.tsx"), "export default () => <UserList />;");
+    }
+    const result = componentHook(dir, tool, input, [], { CHAGEUN_SKIP_DESIGN_LINT: "1" });
+    rmSync(dir, { recursive: true, force: true });
+    assert.equal(result.status, 2, `${tool}: ${result.stderr}`);
+    assert.match(result.stderr, /page-direct-ui/);
+  }
+});
+
+test("component 경계 wiring: 색 하드 블록이 component 경계보다 먼저 실행된다", () => {
+  const dir = componentProject();
+  const result = componentHook(dir, "Write", {
+    file_path: "src/app/users/page.tsx",
+    content: "export default () => <button className=\"bg-blue-500\">저장</button>;",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /색/);
+  assert.doesNotMatch(result.stderr, /공용 컴포넌트 경계/);
+});
+
+test("component 경계 wiring: 등록 조립·legacy 유지·미채택 프로젝트는 통과한다", () => {
+  const dir = componentProject();
+  const assembly = componentHook(dir, "Write", {
+    file_path: "src/app/users/page.tsx",
+    content: "import { UserList } from '../../components/UserList'; export default () => <UserList />;",
+  });
+  assert.equal(assembly.status, 0, assembly.stderr);
+  mkdirSync(join(dir, "src", "app", "legacy"), { recursive: true });
+  writeFileSync(join(dir, "src", "app", "legacy", "page.tsx"), "export default () => <div />;");
+  const legacy = componentHook(dir, "Edit", {
+    file_path: "src/app/legacy/page.tsx", old_string: "export default", new_string: "const id = data.id; export default",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(legacy.status, 0, legacy.stderr);
+
+  const plain = mkdtempSync(join(tmpdir(), "component-hook-none-"));
+  const none = componentHook(plain, "Write", { file_path: "src/app/users/page.tsx", content: "export default () => <button />;" });
+  rmSync(plain, { recursive: true, force: true });
+  assert.equal(none.status, 0, none.stderr);
+});
+
+test("component 경계 wiring: 채택 프로젝트의 잘못된 편집 입력만 fail-closed한다", () => {
+  const adopted = componentProject();
+  const blocked = componentHook(adopted, "Write", { file_path: 12345, content: "x" });
+  rmSync(adopted, { recursive: true, force: true });
+  assert.equal(blocked.status, 2, blocked.stderr);
+  assert.match(blocked.stderr, /edit-input-invalid/);
+
+  const plain = mkdtempSync(join(tmpdir(), "component-hook-none-"));
+  const passed = componentHook(plain, "Write", { file_path: 12345, content: "x" });
+  rmSync(plain, { recursive: true, force: true });
+  assert.equal(passed.status, 0, passed.stderr);
+});
+
+test("component 경계 wiring: 새 변형은 실승인 ID가 있는 정확한 decision만 통과한다", () => {
+  const updatedRegistry = (withDecision) => JSON.stringify({
+    version: 1,
+    components: {
+      "user-list": {
+        path: "src/components/UserList.tsx", kind: "composite", family: "user-list", purpose: "사용자 목록",
+        variants: { default: { purpose: "기본" }, compact: { purpose: "좁은 목록" } },
+      },
+    },
+    decisions: withDecision ? [{
+      component: "user-list", variant: "compact", choice: "new-variant", reason: "더 좁은 목록", approvalToolUseId: "toolu_123",
+    }] : [],
+  }, null, 2);
+  const missing = componentProject({ sourceVariants: "default, compact" });
+  let result = componentHook(missing, "Write", { file_path: "src/components/design-registry.json", content: updatedRegistry(false) });
+  rmSync(missing, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /variant-decision-mismatch/);
+
+  const wrong = componentProject({ sourceVariants: "default, compact" });
+  result = componentHook(wrong, "Write", { file_path: "src/components/design-registry.json", content: updatedRegistry(true) }, variantApproval());
+  rmSync(wrong, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /variant-approval-missing/);
+
+  const correct = componentProject({ sourceVariants: "default, compact" });
+  const approval = variantApproval({
+    question: "user-list에 compact 변형이 필요합니다. 기존 변형을 사용할까요, 새 공용 변형으로 등록할까요? [chageun-design-variant:user-list:compact]",
+  });
+  result = componentHook(correct, "Write", { file_path: "src/components/design-registry.json", content: updatedRegistry(true) }, approval);
+  rmSync(correct, { recursive: true, force: true });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("component 경계 wiring: registry-first는 새 source 생성 전에도 기존 component 검사를 유지한다", () => {
+  const dir = componentProject();
+  const registryPath = join(dir, "src", "components", "design-registry.json");
+  const updated = JSON.parse(readFileSync(registryPath, "utf8"));
+  updated.components["pending-card"] = {
+    path: "src/components/PendingCard.tsx", kind: "composite", family: "pending-card", purpose: "새 카드",
+    variants: { default: { purpose: "기본" } },
+  };
+  const result = componentHook(dir, "Write", {
+    file_path: "src/components/design-registry.json", content: JSON.stringify(updated, null, 2),
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("component 경계 wiring: registry 편집도 기존 source의 변형 표식을 즉시 검증한다", () => {
+  const dir = componentProject({ sourceVariants: "default" });
+  const updated = {
+    version: 1,
+    components: {
+      "user-list": {
+        path: "src/components/UserList.tsx", kind: "composite", family: "user-list", purpose: "사용자 목록",
+        variants: { default: { purpose: "기본" }, compact: { purpose: "좁은 목록" } },
+      },
+    },
+    decisions: [{
+      component: "user-list", variant: "compact", choice: "new-variant", reason: "더 좁은 목록", approvalToolUseId: "toolu_123",
+    }],
+  };
+  const approval = variantApproval({
+    question: "user-list에 compact 변형이 필요합니다. 기존 변형을 사용할까요, 새 공용 변형으로 등록할까요? [chageun-design-variant:user-list:compact]",
+  });
+  const result = componentHook(dir, "Write", {
+    file_path: "src/components/design-registry.json", content: JSON.stringify(updated, null, 2),
+  }, approval);
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /component-marker-mismatch/);
+});
+
+test("component 경계 wiring: 설정 삭제와 등록 source 표식 불일치를 차단한다", () => {
+  const config = componentProject();
+  let result = componentHook(config, "Edit", {
+    file_path: "docs/design-system.md", old_string: "component-registry-path: src/components/design-registry.json", new_string: "component-registry-path:",
+  });
+  rmSync(config, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /configuration-error/);
+
+  const marker = componentProject({ source: "export const UserList = () => <article />;" });
+  writeFileSync(join(marker, "src", "components", "UserList.tsx"), "// @design-component wrong\n// @design-variants default\nexport const UserList = () => <article />;");
+  result = componentHook(marker, "Write", {
+    file_path: "src/app/users/page.tsx",
+    content: "import { UserList } from '../../components/UserList'; export default () => <UserList />;",
+  });
+  rmSync(marker, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /component-marker-mismatch/);
+});
+
+test("component 경계 wiring: Vue 조립과 Next root shell을 허용하되 직접 UI는 차단한다", () => {
+  const vue = componentProject();
+  const registryPath = join(vue, "src", "components", "design-registry.json");
+  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  registry.components["registered-card"] = {
+    path: "src/components/RegisteredCard.vue", kind: "composite", family: "registered-card", purpose: "등록 카드",
+    variants: { default: { purpose: "기본" } },
+  };
+  writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+  writeFileSync(join(vue, "src", "components", "RegisteredCard.vue"), "<!-- @design-component registered-card -->\n<!-- @design-variants default -->\n<template><article /></template>");
+  let result = componentHook(vue, "Write", {
+    file_path: "src/pages/users.vue",
+    content: "<script setup>import RegisteredCard from '../components/RegisteredCard.vue';</script><template><RegisteredCard /><registered-card /></template>",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = componentHook(vue, "Write", {
+    file_path: "src/pages/blocked.vue",
+    content: "<script setup>import QuickPanel from '../features/QuickPanel.vue';</script><template><quick-panel /></template>",
+  });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /page-unregistered-component/);
+  result = componentHook(vue, "Write", {
+    file_path: "src/pages/local.vue",
+    content: "<script setup>import { defineComponent } from 'vue'; const LocalPanel = defineComponent({});</script><template><local-panel /></template>",
+  });
+  rmSync(vue, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /page-local-component/);
+
+  const layout = componentProject();
+  result = componentHook(layout, "Write", {
+    file_path: "src/app/layout.tsx",
+    content: "export default function Root({ children }) { return <html><body>{children}</body></html>; }",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = componentHook(layout, "Write", {
+    file_path: "app/layout.tsx",
+    content: "export default function Root({ children }) { return <html><body><div>{children}</div></body></html>; }",
+  });
+  rmSync(layout, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /page-direct-ui/);
+});
+
+test("component 경계 wiring: root app·pages와 root components도 같은 경계를 적용한다", () => {
+  const cases = [
+    ["app/users/page.tsx", "export default () => <button>저장</button>;", "page-direct-ui"],
+    ["pages/users.vue", "<template><button>저장</button></template>", "page-direct-ui"],
+    ["components/QuickPanel.tsx", "export const QuickPanel = () => <button>저장</button>;", "component-unregistered"],
+  ];
+  for (const [file_path, content, expected] of cases) {
+    const dir = componentProject();
+    const result = componentHook(dir, "Write", { file_path, content });
+    rmSync(dir, { recursive: true, force: true });
+    assert.equal(result.status, 2, `${file_path}: ${result.stderr}`);
+    assert.match(result.stderr, new RegExp(expected));
+  }
+});
+
+test("component 경계 wiring: component root 밖 registry와 이름만 바꾼 구조 복제를 차단한다", () => {
+  const outside = componentProject();
+  const outsideRegistry = JSON.parse(readFileSync(join(outside, "src", "components", "design-registry.json"), "utf8"));
+  outsideRegistry.components["outside-card"] = {
+    path: "src/ui/OutsideCard.tsx", kind: "composite", family: "outside-card", purpose: "밖 카드",
+    variants: { default: { purpose: "기본" } },
+  };
+  let result = componentHook(outside, "Write", {
+    file_path: "src/components/design-registry.json", content: JSON.stringify(outsideRegistry, null, 2),
+  });
+  rmSync(outside, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /registry-path-outside-root/);
+
+  const registryOnly = componentProject();
+  const registryOnlyPath = join(registryOnly, "src", "components", "design-registry.json");
+  const registryOnlyData = JSON.parse(readFileSync(registryOnlyPath, "utf8"));
+  registryOnlyData.components.copy = {
+    path: "src/components/Copy.tsx", kind: "composite", family: "copy", purpose: "사용자 목록",
+    variants: { default: { purpose: "기본" } },
+  };
+  writeFileSync(join(registryOnly, "src", "components", "Copy.tsx"), "// @design-component copy\n// @design-variants default\nexport const Copy = () => <article />;");
+  result = componentHook(registryOnly, "Write", {
+    file_path: "src/components/design-registry.json", content: JSON.stringify(registryOnlyData, null, 2),
+  });
+  rmSync(registryOnly, { recursive: true, force: true });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /component-duplicate-structure/);
+
+  for (const [tool, inputFor] of [
+    ["Write", () => ({ file_path: "src/components/Copy.tsx", content: "// @design-component copy\n// @design-variants default\nexport const Copy = () => <article />;" })],
+    ["Edit", () => ({ file_path: "src/components/Copy.tsx", old_string: "<section />", new_string: "<article />" })],
+    ["MultiEdit", () => ({ file_path: "src/components/Copy.tsx", edits: [{ old_string: "<section />", new_string: "<article />" }] })],
+  ]) {
+    const dir = componentProject();
+    const registryPath = join(dir, "src", "components", "design-registry.json");
+    const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+    registry.components.copy = {
+      path: "src/components/Copy.tsx", kind: "composite", family: "copy", purpose: "사용자 목록",
+      variants: { default: { purpose: "기본" } },
+    };
+    writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+    if (tool !== "Write") writeFileSync(join(dir, "src", "components", "Copy.tsx"), "// @design-component copy\n// @design-variants default\nexport const Copy = () => <section />;");
+    result = componentHook(dir, tool, inputFor());
+    rmSync(dir, { recursive: true, force: true });
+    assert.equal(result.status, 2, `${tool}: ${result.stderr}`);
+    assert.match(result.stderr, /component-duplicate-structure/);
   }
 });
