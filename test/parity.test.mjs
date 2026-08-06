@@ -18,6 +18,19 @@ test("스킬 5종은 두 플랫폼에 동일 경로·동일 내용", () => {
     assert.equal(readFileSync(join(C, rc), "utf8"), readFileSync(join(X, rc), "utf8"), s);
   }
 });
+test("component 경계 검사 자산은 Claude와 Codex 배포물에 동일하다", () => {
+  for (const file of [
+    "component-registry.template.json",
+    "component-boundary-core.cjs",
+    "check-component-boundaries.cjs",
+  ]) {
+    const relative = join("skills", "design-system", file);
+    assert.ok(existsSync(join(C, relative)), `Claude 자산 누락: ${relative}`);
+    assert.ok(existsSync(join(X, relative)), `Codex 자산 누락: ${relative}`);
+    assert.equal(readFileSync(join(C, relative), "utf8"), readFileSync(join(X, relative), "utf8"), relative);
+  }
+});
+
 test("operating-rules는 두 플랫폼 공유(내용 동일)", () => {
   assert.equal(readFileSync(join(C,"rules/operating-rules.md"),"utf8"), readFileSync(join(X,"rules/operating-rules.md"),"utf8"));
 });

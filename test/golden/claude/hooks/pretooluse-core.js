@@ -58,6 +58,7 @@ const REASONS = {
   "ra-error": "차단: 리뷰 에이전트 안전 판정 중 오류라 안전측 차단(fail-closed)합니다. 검토는 Read/Grep으로 계속하세요.",
   "gate-model-downgrade": "차단: 검증 게이트를 기본보다 약한 모델로 띄우려 했습니다. 게이트는 \"검토 대상보다 최소 같거나 강한 독립 심판\"이라 약한 모델로 내리면 게이트의 의미가 사라집니다(심판이 일꾼보다 약해짐). **`model` 파라미터를 빼면** 에이전트 설정의 기본 모델이 그대로 쓰입니다 — 그게 정답인 경우가 대부분입니다. 그 모델을 못 쓰는 환경이면 실행 전 사용자가 CHAGEUN_ALLOW_GATE_MODEL=1로만 열 수 있습니다(게이트를 아예 안 부르는 것보다는 약한 심판이 낫기 때문입니다).",
   "design-color": "차단(차근 색 백스톱): 새로 넣는 코드에 디자인 토큰 대신 직접 색이 있습니다. 팔레트 색 클래스(`bg-blue-500` 등)·임의값(`-[#hex]`) 대신 docs/design-system.md의 토큰을 쓰세요. 색 견본판·Tailwind safelist처럼 색 이름이 원래 나열되는 파일이면, design-system.md front-matter의 `lint-allow-colors`에 그 팔레트명을 선언하거나 그 줄에 `design-lint-ignore` 주석을 붙이세요(그 줄만 통과). 전체 우회는 실행 전 사용자가 CHAGEUN_SKIP_DESIGN_LINT=1로만 켤 수 있습니다.",
+  "component-boundary": "차단(공용 컴포넌트 경계): 페이지와 라우트는 등록된 공용 컴포넌트만 조립할 수 있습니다. 직접 UI는 공용 컴포넌트로 옮기고 레지스트리와 코드 표식을 맞추세요.",
 };
 
 // 어떤 도구·입력이 위험한지 판정. 위험하면 사유 키를, 아니면 null.
@@ -642,13 +643,18 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
 
 // ── 게이트 모델 런타임 강등 가드(v0.42 · Claude 전용) ────────────────────────
 // gate-model-tier.test.mjs 는 **frontmatter만** 본다. 그런데 Task/Agent 호출의 `model` 파라미터는
-// frontmatter를 덮어쓴다 — 실측: 한 세션이 plan-validator 를 `model: "opus"` 로 띄웠고(frontmatter는
-// fable), "게이트 규칙대로 Opus"라는 잘못된 믿음까지 적혀 있었다. 아무 층도 이걸 안 막았다.
+// frontmatter를 덮어쓴다 — 실측: 한 세션이 게이트를 frontmatter보다 낮은 티어로 띄웠고, "게이트
+// 규칙대로다"라는 잘못된 믿음까지 적혀 있었다. 아무 층도 이걸 안 막았다.
 // 등급표를 **여기(core)에 두고** 테스트가 "core == 각 agent frontmatter" 를 대조한다(사본 2개로 고정 —
 // 세 번째 사본은 모델 마이그레이션 때 한 곳만 올려 가드가 조용히 죽는 길이다).
 const GATE_MODEL_TIER = { haiku: 1, sonnet: 2, opus: 3, fable: 4 };
 // 게이트별 기본(=frontmatter의 model:). 테스트가 lockstep으로 묶는다.
-const GATE_DEFAULT_MODEL = { "plan-validator": "fable", "pr-reviewer": "fable" };
+// v0.44.0: fable → opus. 사유는 **비용**이다 — Anthropic 공지 원문 "Fable 5 draws down usage
+// faster than Opus 5"(+ 주간 한도의 50% 상한). v0.37.0이 Fable을 고른 근거는 **품질**이었고
+// (통제 비교 3판: 같은 집안 심판은 맹점 공유 → 다른 집안이 더 잡는다), 이번 변경은 그 품질을
+// 비용과 맞바꾼 것이다. **되돌리는 결정임을 명시한다** — 품질 저하가 관측되면 fable로 되돌린다.
+// 상세·되돌림 조건: docs/plans/2026-08-05-gate-model-fable-to-opus.md
+const GATE_DEFAULT_MODEL = { "plan-validator": "opus", "pr-reviewer": "opus" };
 // subagent_type 은 "plan-validator" 와 "chageun:plan-validator" 두 형태로 온다 — 네임스페이스 무관
 // 매칭(REVIEW_AGENT_RE와 같은 이유). 순진한 동등 비교면 네임스페이스 형태에서 조용히 죽는다.
 function gateOf(agentType) {
@@ -669,6 +675,40 @@ function gateModelBlock(toolName, toolInput) {
   const a = GATE_MODEL_TIER[asked], w = GATE_MODEL_TIER[want];
   if (!a || !w) return null;                                 // 모르는 값 → fail-open
   return a < w ? "gate-model-downgrade" : null;
+}
+
+// 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
+// 질문 문구는 사용자 언어가 달라도 되며, 보이는 키와 두 번째 선택이라는 구조만 고정한다.
+function approvedDesignVariant(transcript, componentId, variantId) {
+  const key = `[chageun-design-variant:${componentId}:${variantId}]`;
+  const blocks = [];
+  for (const record of Array.isArray(transcript) ? transcript : []) {
+    const content = (record && (record.message || record).content) || [];
+    if (!Array.isArray(content)) continue;
+    for (const block of content) blocks.push(block);
+  }
+  let ask = null;
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block || block.type !== "tool_use" || block.name !== "AskUserQuestion" || !block.id) continue;
+    const questions = block.input && block.input.questions;
+    if (!Array.isArray(questions) || questions.length !== 1) continue;
+    const question = questions[0];
+    if (!question || question.multiSelect !== false || !Array.isArray(question.options) || question.options.length !== 2
+      || typeof question.question !== "string" || typeof question.options[1]?.label !== "string") continue;
+    if (question.question.split(key).length - 1 !== 1) continue;
+    ask = { index, id: String(block.id), question: question.question, secondLabel: question.options[1].label };
+  }
+  if (!ask) return { approved: false, toolUseId: null };
+  const answer = `${JSON.stringify(ask.question)}=${JSON.stringify(ask.secondLabel)}`;
+  for (let index = ask.index + 1; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block && block.type === "tool_result" && String(block.tool_use_id || "") === ask.id
+      && !block.is_error && typeof block.content === "string" && block.content.includes(answer)) {
+      return { approved: true, toolUseId: ask.id };
+    }
+  }
+  return { approved: false, toolUseId: null };
 }
 
 function unattendedBlock(toolName, toolInput, opts) {
@@ -715,4 +755,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
