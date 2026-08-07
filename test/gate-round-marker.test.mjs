@@ -1,7 +1,8 @@
 // 게이트 재검증 회차 표시(v0.46.0) 배선 테스트.
 //
 // 이 기능의 실패 모드는 "규칙은 있는데 한 번도 안 켜짐"이다. 그래서 단순히 문장이 있나만 보지 않고,
-// 쓰는 쪽(코어)과 읽는 쪽(양 플랫폼 게이트)이 **같은 문자열로 이어져 있는지**를 양방향으로 잰다.
+// 쓰는 쪽(코어)과 읽는 쪽(게이트 두 벌: plan-validator·pr-reviewer)이 **같은 문자열로 이어져
+// 있는지**를 양방향으로 잰다.
 // 4차 게이트 H-1: 조건은 넣었는데 그 조건을 판정할 데이터를 아무도 안 남기면 기능이 조용히 꺼진다.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -52,13 +53,13 @@ test("쓰기 측: 지난 회차 지적도 함께 남기게 한다(4차 H-1)", ()
   );
 });
 
-test("읽기 측: 양 플랫폼이 코어가 쓰는 그 문자열을 회차 소스로 읽는다", () => {
+test("읽기 측: plan-validator가 코어가 쓰는 그 문자열을 회차 소스로 읽는다", () => {
   for (const [name, doc] of GATES) {
     assert.match(doc, /재검증 회차: N/, `${name}이 코어가 쓰는 마커를 안 읽는다(쓰기-읽기 단절)`);
   }
 });
 
-test("회차 계수 기준이 양 플랫폼에 못박혀 있다(문턱 밀림 방지)", () => {
+test("회차 계수 기준이 plan-validator에 못박혀 있다(문턱 밀림 방지)", () => {
   for (const [name, doc] of GATES) {
     assert.match(
       doc,
@@ -144,7 +145,7 @@ test("회차 finding이 판정을 밀어 올리지 못한다(pr-reviewer M-1)", 
   }
 });
 
-test("과잉 차단 방지 절이 양 플랫폼에 있다(pr-reviewer M-2 · 미러 표류)", () => {
+test("과잉 차단 방지 절이 plan-validator에 있다(pr-reviewer M-2)", () => {
   for (const [name, doc] of GATES) {
     assert.match(
       doc,
@@ -245,7 +246,7 @@ test("두 카운터가 섞이지 않는다(계획 회차 ≠ 코드 리뷰 회�
     "pr-reviewer가 계획 검증용 마커를 자기 회차 소스로 지목하면, 계획서 머리의 숫자를 코드 리뷰 회차로 읽는다");
 });
 
-test("읽기 측: 양 플랫폼 pr-reviewer가 재리뷰 회차를 센다", () => {
+test("읽기 측: pr-reviewer가 재리뷰 회차를 센다", () => {
   for (const [name, doc] of PR_GATES()) {
     assert.match(doc, /재리뷰 회차: N/, `${name}: 쓰기 마커를 읽는 쪽이 없다`);
     assert.match(doc, /모든 리뷰를 세고 최초 리뷰가 1차/, `${name}: 계수 기준이 없다`);
