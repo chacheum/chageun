@@ -1,6 +1,6 @@
 # 차근 (chageun)
 
-**비개발자가 안전하게 만들도록 돕는 워크플로우** — 작업카드·검증 게이트·실제 구동 검증·쉬운 말 요약. Claude Code와 Codex CLI 양쪽 지원.
+**비개발자가 안전하게 만들도록 돕는 워크플로우** — 작업카드·검증 게이트·실제 구동 검증·쉬운 말 요약. Claude Code에서 동작합니다.
 
 ---
 
@@ -37,13 +37,11 @@ AI로 뭔가를 만든다는 건 점점 "좋은 프롬프트 쓰기"가 아니�
 
 - **직접 짜지 않아도 됩니다** — 설계된 뼈대를 그대로 씁니다.
 - **숨겨져 있지 않습니다** — 무엇이 왜 일어나는지 쉬운 말로 보입니다.
-- **갇히지 않습니다** — 열린 하네스(Claude Code·Codex) 위에 얹혀, 만든 것이 그대로 이식됩니다.
+- **갇히지 않습니다** — 열린 하네스(Claude Code) 위에 얹혀, 만든 것이 그대로 이식됩니다.
 
 ---
 
 ## 설치
-
-### Claude Code
 
 ```
 /plugin marketplace add chacheum/chageun
@@ -52,23 +50,6 @@ AI로 뭔가를 만든다는 건 점점 "좋은 프롬프트 쓰기"가 아니�
 
 새 세션이 시작되면 워크플로우가 자동으로 켜집니다.
 
-### Codex CLI
-
-```
-codex plugin marketplace add chacheum/chageun
-```
-
-그다음 `/plugins`에서 `chageun`를 설치하고 `/reload-plugins`를 실행합니다.
-
-**훅 승인(1회):** Codex에서 `/hooks`를 열어 chageun 훅(SessionStart·Stop·PreToolUse)을 승인하세요. Codex 보안 규칙상 플러그인 훅은 승인 전까지 조용히 꺼져 있습니다.
-
-게이트 에이전트를 분리된 컨텍스트로 돌리고 싶으면 `~/.codex/config.toml`에 아래를 추가하세요. 없어도 인라인으로 동작합니다.
-
-```toml
-[features]
-multi_agent = true
-```
-
 ---
 
 ## 개발 / 기여
@@ -76,8 +57,8 @@ multi_agent = true
 정본(소스)은 `src/`에 있습니다.
 
 ```bash
-npm run build   # src/ → dist/claude + dist/codex 생성 (결과물은 커밋 대상)
-npm test        # 골든·패리티·드리프트 가드 (--test-concurrency=1)
+npm run build   # src/ → dist/claude 생성 (결과물은 커밋 대상)
+npm test        # 골든·드리프트 가드 (--test-concurrency=1)
 ```
 
 `dist/`는 빌드 산출물이지만 **레포에 커밋**합니다 — 마켓플레이스가 소스를 직접 참조하기 때문입니다.

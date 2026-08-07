@@ -12,15 +12,8 @@ import { fileURLToPath } from "node:url";
 // 재현성: 개행을 LF로 정규화해 재므로 OS/checkout(CRLF)에 무관(+ .gitattributes eol=lf 이중 방어).
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(ROOT, "src", "rules", "operating-rules.md");
-const CODEX_ADDENDUM = join(ROOT, "src", "codex", "operating-rules-addendum.md");
-// activate-codex.mjs가 인라인하는 절차 스킬 — 아래 drift 가드가 실제 소스와 일치를 강제한다.
-const PROC_SKILLS = ["finish-check", "spec-gate", "run-verify", "routing", "formats"];
-
 function normBytes(p) {
   return Buffer.byteLength(readFileSync(p, "utf8").replace(/\r\n/g, "\n"), "utf8");
-}
-function procSkillBytes() {
-  return PROC_SKILLS.reduce((n, s) => n + normBytes(join(ROOT, "src", "skills", s, "SKILL.md")), 0);
 }
 
 // Claude 상시 주입 = operating-rules.md 단독. batch6 다이어트 + batch7 영어화 기준으로 하향.
@@ -34,7 +27,7 @@ function procSkillBytes() {
 // 지적 제목은 직전 회차 것만(누적하면 계획서가 커져 다음 검증기가 새 지적을 내는 되먹임을 규칙이 먹임) ·
 // **통과하면 마커를 지운다**(GO 난 계획서를 이어 쓸 때 남은 옛 숫자가 새 작업의 첫 검증을 N차로 만들고,
 // "모르면 붙인다"와 겹쳐 없는 루프에 표시·finding이 붙는다 — pr-reviewer medium).
-// v0.42.0이 넣은 수렴 가드는 읽는 쪽(plan-validator·codex 미러)만 있었고, 그 회차를 적으라는 규칙이
+// v0.42.0이 넣은 수렴 가드는 읽는 쪽(plan-validator)만 있었고, 그 회차를 적으라는 규칙이
 // src 어디에도 없었다(grep 실측) — 아무도 안 적으면 게이트는 영구히 1차로 보고 규칙이 한 번도 안 켜진다.
 // 스킬 위임 검토: 재검증은 routing·formats가 안 떠 있는 자리에서 일어나고, PreToolUse 리마인더는
 // 세션당 1회성(pretooluse-core.js가 첫 게이트 후 validated를 굳힘)이라 상시 바닥 외에 도달 경로가 없다.
@@ -46,55 +39,16 @@ function procSkillBytes() {
 // 뒤 둘이 없으면 쓰는 쪽과 읽는 쪽이 한 칸 어긋난다(plan-validator 3차 H-2) — 읽는 쪽은 "모든 리뷰를
 // 세고 최초가 1차"로 세는데 쓰는 쪽이 "고쳐 다시 낸 것만" 세면 넘기는 숫자가 다르다.
 // **왜 스킬이 아니라 코어인가**: finish-check는 저발동 실측이 있고(honclwd 제외 10개 프로젝트 중 1회),
-// routing은 지연로드라 코어보다 발동 신뢰도가 낮으며, Codex에선 둘 다 인라인 procSkill이라 총면
-// 비용이 같다. 이 규칙은 v0.42.0 실패("읽는 쪽만 있어 2,941회 중 0회 발동")의 처방이라 가장 확실한 자리에 둔다.
+// routing은 지연로드라 코어보다 발동 신뢰도가 낮다. 이 규칙은 v0.42.0 실패("읽는 쪽만 있어 2,941회 중 0회 발동")의 처방이라 가장 확실한 자리에 둔다.
 // **왜 릴레이(리뷰어 출력 꼬리로 다음 회차를 넘김)가 아닌가** (plan-validator 2차 H-2): 도착 시점이
 // N회차 끝인데 행동 시점은 N+1회차 시작이라 그 사이 수정 사이클·압축·세션 교체를 지나야 하고,
 // 이전 리뷰어의 숫자를 베끼는 홉 체인이라 한 홉만 끊기면 영구히 1로 돌아가며 복구 경로가 없다.
 // plan-validator와 조건이 다른 이유: 계획 검증은 회차 소스 3개 중 2개가 계획서 파일에 앵커되지만
 // 코드 리뷰의 대상은 diff라 그 2개가 통째로 없다 — 남는 건 호출 프롬프트뿐이다.
 // 이 변경분 단독 델타다(작업 트리에 다른 미커밋 변경 0건인 상태에서 측정).
+// ⚠ 규칙을 스킬로 옮겨 이 상한을 피하는 변경은 발동률 근거를 커밋 메시지에 남긴다
+// (v0.49.0에 인라인 총면 상한이 사라져 이 우회에 기계 마찰이 없다 — finish-check 저발동 실측 참조).
 const CEILING_BYTES = 18201;
-// Codex 상시 주입의 '규칙' 면 = operating-rules.md + addendum. 코어 규칙을 addendum으로 옮겨
-// Claude 상한을 우회하는 걸 막는다(pr-reviewer medium 반영).
-// 2026-07-27 +34 (21500→21534): 위 "접기" 규칙이 공유 코어에 들어가 규칙면도 같이 커짐(addendum 무변경).
-// 2026-08-07 +309 (21534→21843): 위 회차 쓰기 규칙이 공유 코어에 들어가 규칙면도 같이 커짐(addendum 무변경).
-// 2026-08-07 +252 (21843→22095): 위 **코드 재리뷰** 회차 쓰기 규칙이 공유 코어에 들어감(addendum 무변경).
-const CODEX_CORE_CEILING = 22095;
-// Codex 상시 주입 '총면' = 규칙면 + 인라인 절차 스킬 본문. batch6가 규칙→스킬 이동을 시작하면서
-// "스킬로 옮기면 두 상한 다 빠져나간다"는 새 우회로가 생겼다 — 이 합산 상한이 그 우회를 막는다
-// (Claude는 스킬이 지연로드라 이 면이 없고, Codex만 인라인이라 총면이 실체다).
-// 2026-07-12 +348 (49700→50048): retrospect(회고) 완료-트리거 한 줄이 인라인 procSkill인 finish-check에
-// 들어가 총면이 커짐(retrospect 스킬 본문은 procSkill 아님=총면 무관). 트리거는 최소화(상세는 비인라인
-// retrospect 스킬로). 잔여는 근거 있는 소폭 상향 — v1.1에서 트리거를 Claude 전용 Stop-훅으로 옮기면 회수 가능.
-// 2026-07-12 +2593 (50048→52641): "예시로 확인"(계산·규칙 오라클) 규칙이 인라인 procSkill 3종
-// (spec-gate·finish-check·formats)에 들어감 — Fable5 UX 리뷰 지적6(AI가 AI 검사 → 도메인 로직이
-// 그럴듯하게 틀려도 게이트 통과) 방어. formats 커버리지 칸은 3상태(통과·미확인·직접확인) 정직 표기.
-// 세 스킬 자체가 절차라 비인라인 분리 불가. v2 훅 기계강제 시 재검토.
-// 2026-07-27 +801 (52641→53442): "접기" 규칙이 코어(+434)와 인라인 procSkill인 formats(+400)에 함께 들어감.
-// formats에도 넣는 이유 = 양식이 "위험은 빠짐없이 전부"를 요구하므로, 거기 예외를 안 적으면 규칙이 매 보고
-// 마다 무효화된다(plan-validator 지적: formats를 빼면 규칙이 매번 무효화). 접기 예시 줄에 "목록 원하시면
-// 말씀 주세요" 안내를 둔 것도 여기 — 비개발자가 요청 경로를 알 유일한 자리라 코어 대신 양식에 넣었다.
-// 2026-07-30 +665 (53442→54107): 회고 4번 — 🙋가 "기능·입력칸을 없앨까 남길까" 같은 제품 판단이면 여쭙기 전에
-// 타사 관행을 조사해 근거로 붙이고, **이미 가진 조사 근거를 '없애자'는 쪽 항목에도 대본다**는 규칙이 인라인
-// procSkill인 spec-gate에 들어감. 실측 사고 근거: 4사 조사가 하루 전 이미 있었는데 같은 답장에서 다른 항목엔
-// 그 표를 들이대고 삭제 항목엔 안 대봐, 오너가 두 번 되물은 끝에 결정이 뒤집혀 계획서를 다시 썼다.
-// 분량 압박에 단서를 깎지 않기로 해 상향(plan-validator CONDITIONAL 조건 3 — v0.38.0·v0.40.0과 같은 선례):
-// 반드시 남길 2개 = "여쭙기 전에" 시점 · "이미 가진 근거를 삭제 쪽에도 대본다"(사고의 실제 원인).
-// 2026-08-04 +1347 (54107→55454): 탐색·조사 위임 규율이 인라인 procSkill인 routing에 들어감.
-// 실측 근거(세션 105개·메인 59,239턴): 대화 누적의 76%가 도구 결과(파일·명령 출력)라 읽기 위임이
-// 최대 절감처인데(서브 턴당 컨텍스트 82k vs 메인 391k), 위임하면 서브가 "무엇이 관련 있나"를 정하고
-// 뺀 것을 메인이 감지 못 한다 — 구현 위임의 거짓 완료는 diff로 잡히지만 탐색 유실은 잡을 diff가 없다.
-// 그래서 "본 범위 · 제외한 것과 이유 · 확신 없는 지점"을 함께 받는 규율이 위임 확대의 전제다.
-// 스킬 위임 검토: routing 자체가 이미 인라인 procSkill이라 더 밀어낼 곳이 없다.
-// 초안 2195바이트를 1347로 39% 압축한 뒤 남은 분만 상향(one-in-one-out 대신 상향인 이유 = 뺄 등가 규칙 없음).
-// pr-reviewer 반영분(+38): description을 "GO 직후"에서 "서브에이전트를 띄우기 직전이면 언제나"로 넓혀
-// 계획 전 조사 위임에서도 스킬이 로드되게 함(규칙이 가장 필요한 시점에 안 뜨던 구멍) · 대신 본문의
-// 설정 특유 수치(1M 창 기준 턴당 82k/391k)는 공개 플러그인 문구로 부적절해 삭제.
-// 2026-08-07 +305 (55492→55797): 위 회차 쓰기 규칙이 코어를 +309 늘림(인라인 절차 스킬은 무변경).
-// 총면 증가분이 309가 아니라 305인 것은 직전 상한이 4바이트 여유를 안고 있었기 때문이다. 이제 헤드룸 0.
-// 2026-08-07 +252 (55797→56049): 위 코드 재리뷰 회차 쓰기 규칙(인라인 절차 스킬은 무변경).
-const CODEX_TOTAL_CEILING = 56049;
 
 test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
   const bytes = normBytes(CORE);
@@ -107,41 +61,10 @@ test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 
   );
 });
 
-test(`Codex 규칙면(operating-rules + addendum)이 상한 ${CODEX_CORE_CEILING} bytes 이하 — addendum 우회 차단`, () => {
-  const bytes = normBytes(CORE) + normBytes(CODEX_ADDENDUM);
-  assert.ok(
-    bytes <= CODEX_CORE_CEILING,
-    `operating-rules.md + addendum = ${bytes} bytes > 상한 ${CODEX_CORE_CEILING}. ` +
-    `코어 규칙을 addendum으로 옮겨 Claude 상한을 우회해도 Codex 상시 주입은 그대로 커진다 — ` +
-    `이 합산 상한이 그 우회를 막는다. 규칙 총량을 줄이거나 CODEX_CORE_CEILING을 근거와 함께 올려라.`
-  );
-});
-
-test(`Codex 총면(규칙면 + 인라인 절차 스킬)이 상한 ${CODEX_TOTAL_CEILING} bytes 이하 — 스킬 인라인 우회 차단`, () => {
-  const bytes = normBytes(CORE) + normBytes(CODEX_ADDENDUM) + procSkillBytes();
-  assert.ok(
-    bytes <= CODEX_TOTAL_CEILING,
-    `규칙면 + 인라인 스킬 = ${bytes} bytes > 상한 ${CODEX_TOTAL_CEILING}. ` +
-    `코어 규칙을 인라인 절차 스킬로 옮기면 Claude·Codex 규칙면 상한을 다 피하지만 Codex 상시 주입은 그대로 커진다 — ` +
-    `이 합산 상한이 그 우회를 막는다. 총량을 줄이거나 근거와 함께 상한을 올려라.`
-  );
-});
-
-// PROC_SKILLS 목록이 activate-codex.mjs의 실제 인라인 목록과 표류하면 총면 상한이 구멍난다.
-test("PROC_SKILLS 목록이 activate-codex.mjs procSkills와 일치(표류 가드)", () => {
-  const src = readFileSync(join(ROOT, "src", "hooks", "activate-codex.mjs"), "utf8");
-  const m = /const procSkills = \[([^\]]*)\]/.exec(src);
-  assert.ok(m, "activate-codex.mjs에서 procSkills 배열을 찾지 못함 — 이 테스트의 추출 정규식을 갱신하라");
-  const actual = m[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-  assert.deepEqual(actual, PROC_SKILLS);
-});
-
 // 상한이 실효(현재값에 붙어 있음)인지 — 헤드룸이 과도하면 게이트가 무력해진다.
 test("상한 헤드룸이 과도하지 않다(게이트 실효성)", () => {
   const claude = CEILING_BYTES - normBytes(CORE);
-  const codexFace = CODEX_CORE_CEILING - (normBytes(CORE) + normBytes(CODEX_ADDENDUM));
-  const codexTotal = CODEX_TOTAL_CEILING - (normBytes(CORE) + normBytes(CODEX_ADDENDUM) + procSkillBytes());
-  for (const [name, headroom] of [["Claude", claude], ["Codex 규칙면", codexFace], ["Codex 총면", codexTotal]]) {
+  for (const [name, headroom] of [["Claude", claude]]) {
     assert.ok(
       headroom >= 0 && headroom <= 2048,
       `${name} 헤드룸 ${headroom} bytes. 상한이 현재값보다 2KB 넘게 크면 one-in-one-out이 무력해진다 — ` +

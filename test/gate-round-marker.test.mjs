@@ -14,15 +14,13 @@ const read = (p) => readFileSync(join(ROOT, p), "utf8");
 
 const core = read("src/rules/operating-rules.md");
 const pv = read("src/agents/plan-validator.md");
-const codex = read("src/codex/gate-agents.md");
-const GATES = [["plan-validator", pv], ["codex gate-agents", codex]];
+const GATES = [["plan-validator", pv]];
 
 // v0.48.0: 코드 리뷰 회차(pr-reviewer)도 같은 방식으로 잰다.
 const pr = read("src/agents/pr-reviewer.md");
 
-// gate-agents.md는 plan-validator·pr-reviewer·code-implementer 지시문이 한 파일에 있다.
-// plan-validator 문단(:113)이 회차 리터럴 7개를 이미 갖고 있어서, 파일 전체 includes로 단언하면
-// pr-reviewer 절이 통째로 없어도 초록이 난다(실측). 반드시 절을 잘라서 본다.
+// 판정 형식 절만 잘라서 본다 — 파일 전체 includes로 단언하면 다른 절의 리터럴 때문에
+// 정작 그 절이 통째로 없어도 초록이 난다(실측).
 function slice(doc, startNeedle, endNeedle, label) {
   const s = doc.indexOf(startNeedle);
   assert.ok(s >= 0, `${label}: '${startNeedle}' 앵커가 깨졌다`);
@@ -36,20 +34,7 @@ function slice(doc, startNeedle, endNeedle, label) {
   );
   return doc.slice(s, e);
 }
-// 지연 계산한다: top-level에서 slice를 돌리면 앵커 하나가 깨졌을 때 모듈 로드가 통째로 실패해
-// 이 파일의 다른 테스트(plan-validator 회귀 포함)가 전부 안 돌고, "앵커 하나 깨짐"이 화면엔
-// "전부 안 돌았음"으로 보여 진단이 흐려진다(pr-reviewer 1차 low).
-const codexPr = () => slice(codex, "## pr-reviewer 지시문", "## code-implementer 지시문", "codex");
-const PR_GATES = () => [["pr-reviewer", pr], ["codex pr-reviewer 절", codexPr()]];
-
-test("슬라이스 가드: codex pr-reviewer 절이 plan-validator 문단을 안 물고 온다", () => {
-  const seg = codexPr();
-  assert.ok(seg.length < codex.length, "슬라이스가 파일 전체다");
-  assert.ok(
-    !seg.includes("재검증 회차"),
-    "pr-reviewer 절 슬라이스에 plan-validator의 회차 마커가 섞였다 — 이후 단언이 전부 위약이 된다"
-  );
-});
+const PR_GATES = () => [["pr-reviewer", pr]];
 
 test("쓰기 측: 코어가 재검증 시 회차를 적으라고 지시한다", () => {
   assert.match(
@@ -169,14 +154,6 @@ test("과잉 차단 방지 절이 양 플랫폼에 있다(pr-reviewer M-2 · 미
   }
 });
 
-test("Codex도 CONDITIONAL 해제 조건을 적게 한다(pr-reviewer M-3)", () => {
-  assert.match(
-    codex,
-    /어떤 조건을 충족해야 GO인지/,
-    "Codex에 조건 줄 요구가 없으면, 코어가 사용자 승인·끝 점검 항목으로 등록할 대상이 비어 버린다"
-  );
-});
-
 test("통과하면 회차 표시를 지운다(pr-reviewer M-4 · 스테일 숫자 차단)", () => {
   assert.match(
     core,
@@ -275,7 +252,7 @@ test("읽기 측: 양 플랫폼 pr-reviewer가 재리뷰 회차를 센다", () =
     assert.match(doc, /검토 대상 기능이 바뀌면 1차/,
       `${name}: 범위 규칙이 없다. 없으면 한 브랜치에 쌓인 다른 작업의 첫 리뷰에도 "3차" 경고가 붙는다`);
     assert.match(doc, /인라인으로 실행 중이면/,
-      `${name}: Codex 인라인 모드 계수 경로가 없다. 없으면 그 플랫폼에서 규칙이 영구히 1차다`);
+      `${name}: 인라인 실행 계수 경로가 없다. 없으면 그 경로에서 규칙이 영구히 1차다`);
     assert.match(doc, /알 수 없으면 새 것으로 보고 표시를 붙인다/,
       `${name}: 기본값 반전이 없다. 모를 때 침묵하면 규칙이 영영 안 켜진다`);
     // 코어가 쓰는 두 조각 중 "지난 회차 지적" 쪽은 읽는 규칙이 그 출처를 지목해야 배선이 닫힌다.
@@ -316,7 +293,6 @@ test("읽기 측: 회차 표시가 판정을 올리는 장치가 아니다(안�
 test("부기가 출력 형식 절 안에서 유일한 예외로 명시된다", () => {
   const segs = [
     ["pr-reviewer", slice(pr, "## 3. 최종 권고", "## 도구 제한", "pr-reviewer")],
-    ["codex pr-reviewer 절", slice(codexPr(), "## 3. 최종 권고", "변경 규모가 클 때", "codex 판정 절")],
   ];
   for (const [name, seg] of segs) {
     assert.match(seg, /예외/, `${name}: 판정 형식 절에 예외 명시가 없다`);

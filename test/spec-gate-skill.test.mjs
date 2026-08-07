@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 // 정확 워딩이 아니라 안전-핵심 문구만 잡는다(브리틀·무력 마커 회귀 방지).
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const skill = readFileSync(join(ROOT, "src", "skills", "spec-gate", "SKILL.md"), "utf8");
-const codexSkill = readFileSync(join(ROOT, "dist", "codex", "skills", "spec-gate", "SKILL.md"), "utf8");
 
 const ANCHORS = [
   "취향 결정 — AI 추천 없음",   // 추천답 취향 예외
@@ -21,12 +20,6 @@ const ANCHORS = [
 test("spec-gate 스킬에 P5 clarify식 보강 앵커가 존재(삭제 회귀 바닥)", () => {
   for (const a of ANCHORS) {
     assert.ok(skill.includes(a), `src spec-gate SKILL.md에 누락: ${a}`);
-  }
-});
-
-test("Codex 산출물에도 동일 앵커가 인라인됨(듀얼 플랫폼)", () => {
-  for (const a of ANCHORS) {
-    assert.ok(codexSkill.includes(a), `dist/codex spec-gate SKILL.md에 누락: ${a}`);
   }
 });
 
@@ -52,10 +45,6 @@ test("spec-gate에 '예시로 확인'(계산·규칙 오라클) 앵커 존재", 
   for (const a of EXAMPLE_ANCHORS) assert.ok(skill.includes(a), `src spec-gate SKILL.md 누락: ${a}`);
 });
 
-test("Codex 산출물에도 '예시로 확인' 앵커 인라인(듀얼 플랫폼)", () => {
-  for (const a of EXAMPLE_ANCHORS) assert.ok(codexSkill.includes(a), `dist/codex spec-gate SKILL.md 누락: ${a}`);
-});
-
 // 회고 4번(2026-07-30) 앵커 — 제품 판단 🙋에 타사 근거를 붙이는 규칙. 다음 다이어트에서 조용히
 // 사라지는 것을 막는 회귀 바닥이다(발동 증거는 아님). 실측 사고의 실제 원인이 "조사 부재"가 아니라
 // "가진 근거를 삭제 쪽 항목에 안 대봄"이었으므로 그 단서까지 함께 못박는다.
@@ -68,6 +57,3 @@ test("spec-gate에 '제품 판단은 타사 근거' 앵커 존재(회고 4번)",
   for (const a of VENDOR_ANCHORS) assert.ok(skill.includes(a), `src spec-gate SKILL.md 누락: ${a}`);
 });
 
-test("Codex 산출물에도 '제품 판단은 타사 근거' 앵커 인라인(듀얼 플랫폼)", () => {
-  for (const a of VENDOR_ANCHORS) assert.ok(codexSkill.includes(a), `dist/codex spec-gate SKILL.md 누락: ${a}`);
-});

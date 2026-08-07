@@ -1,5 +1,5 @@
-// chageun G7 secret-scan core — shared pure logic (Claude PostToolUse redaction + Claude/Codex Stop backstop).
-// Single source of truth for detection so both platforms stay identical. Values held in memory only; never logged/transmitted.
+// chageun G7 secret-scan core — shared pure logic (PostToolUse redaction + Stop backstop).
+// Single source of truth for detection so both channels stay identical. Values held in memory only; never logged/transmitted.
 "use strict";
 
 const SECRET_NAME_RE = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|AUTH|CREDENTIAL|PRIVATE|APIKEY/i;

@@ -128,16 +128,6 @@ test("REASONS 3키가 행동 지시형으로 존재", () => {
   }
 });
 
-test("Codex gate-agents.md: spawn 예시 read-only + 정직 3단 고지 유지(산문 잠금·강제 아님)", () => {
-  const p = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "codex", "gate-agents.md");
-  const g = readFileSync(p, "utf8");
-  assert.ok(g.includes('sandbox_mode="read-only"'), "spawn read-only 선언 부재");
-  assert.ok(g.includes("인라인 모드(기본)") && g.includes("기계 강제가 없다"), "인라인 모드 정직 고지 부재");
-});
-
-// ── v0.42(7번): git branch 는 읽기 형태만 ────────────────────────────────────
-// 실측 32건의 리뷰 차단 중 3건이 읽기 전용 branch 조회였다. 거부목록이 아니라 allowlist인 이유:
-// `git branch 새이름` 은 옵션이 하나도 없는 쓰기라 거부목록이 원천적으로 못 잡는다(plan-validator F-5).
 test("branch 읽기 형태는 통과 — 실측으로 막혔던 3건", () => {
   for (const cmd of [
     "git -C /repo branch --show-current",

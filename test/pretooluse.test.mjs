@@ -836,7 +836,7 @@ test("무인 tamper 가드(L1): 새 G7 훅 파일 변조 차단 · 읽기 허용
   const ub = (command) => unattendedBlock("Bash", { command }, {});
   assert.equal(ub("sed -i s/x/y/ .claude/hooks/posttooluse.js"), "u-protected-path", "PostToolUse 훅 변조 차단");
   assert.equal(ub("cp evil.js .claude/hooks/secret-scan-core.js"), "u-protected-path", "공유 core 변조 차단");
-  assert.equal(ub("echo x > ~/.claude/plugins/x/hooks/finish-work-codex.mjs"), "u-protected-path", "codex Stop 훅 변조 차단");
+  assert.equal(ub("echo x > ~/.claude/plugins/x/hooks/finish-work.js"), "u-protected-path", "Stop 훅 변조 차단");
   assert.equal(ub("cat .claude/hooks/posttooluse.js"), null, "읽기는 허용");
   assert.equal(ub("git checkout -b finish-work-feature"), null, "브랜치명 finish-work-*는 오탐 아님(.js/.mjs 앵커)");
   assert.equal(ub("git commit -m 'add posttooluse note'"), null, "커밋 메시지 언급은 오탐 아님");
