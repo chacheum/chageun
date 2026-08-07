@@ -395,6 +395,41 @@ test("리마인더: 수정 도구가 아니면 침묵", () => {
   assert.equal(planReminderNeeded(objs, "Bash", { command: "ls" }), false);
 });
 
+// v0.47.0 A: 파일 이름에 `plan`이 들었다는 이유만으로 계획서로 보던 판정을 좁힌다.
+// 실측(v0.46.0 세션): `src/agents/plan-validator.md`를 고칠 때마다 "새 계획서를 썼다"로 읽혀
+// 게이트 통과 기록(validated)이 지워지고 리마인더가 3회 이상 헛발동했다.
+test("계획서 경로 판정: 에이전트 정의 파일을 계획서로 오인하지 않는다", () => {
+  // 계획서 작성 → 게이트 실행 → 게이트 지적 반영하려 plan-validator.md 수정
+  const objs = [
+    TU("Write", { file_path: "docs/superpowers/plans/2026-08-07-x.md" }),
+    TU("Task", { subagent_type: "chageun:plan-validator" }),
+    TU("Edit", { file_path: "src/agents/plan-validator.md" }),
+  ];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), false,
+    "에이전트 정의 파일 편집이 '새 계획서 작성'으로 읽혀 게이트 통과 기록이 지워졌다");
+});
+test("계획서 경로 판정: 진짜 계획서는 여전히 잡는다", () => {
+  for (const p of [
+    "docs/superpowers/plans/2026-08-07-x.md",  // 표준 자리
+    "docs/plan.md",                            // 손으로 쓴 것
+    "docs/2026-08-07-migration-plan.md",       // -plan.md
+    "docs/migration_plan.md",                  // _plan.md
+    "docs/auth-migration.plan.md",             // .plan.md — plan-validator.md:31이 스스로 선언한 이름
+  ]) {
+    assert.equal(planReminderNeeded([TU("Write", { file_path: p })], "Edit", editCode), true,
+      `진짜 계획서를 놓쳤다: ${p}`);
+  }
+});
+// 화이트리스트 경계 잠금(S6의 `/tmp/` 선두 앵커 테스트와 같은 취지). 이게 없으면 다음 사람이
+// `(^|\/)plans\//`를 `plans\//`로 "단순화"해도 전부 초록이고, 그 순간 무관한 폴더가 계획서로 잡혀
+// 리마인더 헛발동이 되살아난다.
+test("계획서 경로 판정: 부분일치 폴더·유사 이름은 계획서가 아니다", () => {
+  for (const p of ["myplans/x.md", "replans/y.md", "docs/planning-notes.md", "docs/plan-for-x.md"]) {
+    assert.equal(planReminderNeeded([TU("Write", { file_path: p })], "Edit", editCode), false,
+      `계획서가 아닌 것을 계획서로 잡았다: ${p}`);
+  }
+});
+
 // ── routing 리마인더 판정(batch6 · 순수함수) ──────────────────────────────
 const spawnCI = { subagent_type: "chageun:code-implementer", prompt: "구현" };
 
@@ -612,6 +647,71 @@ test("S6 hasPrReviewer: 저장소 안 tmp/ 하위는 여전히 코드(선두 앵
     TU("Edit", { file_path: "src/hooks/pretooluse-core.js" }),
   ];
   assert.equal(hasPrReviewer(src), false, "저장소 코드 수정은 여전히 stale로 만든다");
+});
+
+// ── v0.47.0 B: 백그라운드 스폰 조인 ────────────────────────────────────────
+// 백그라운드(run_in_background) 에이전트의 결과 레코드엔 `agentType`이 아예 없다
+// (실측 키: isAsync·status·agentId·description·resolvedModel·prompt·outputFile).
+// 그래서 스폰 `tool_use.id` ↔ 결과 `tool_result.tool_use_id`를 조인해 타입을 얻는다.
+const BG_SPAWN = (id, type) => ({ message: { role: "assistant", content: [
+  { type: "tool_use", id, name: "Agent", input: { subagent_type: type } }] } });
+const BG_LAUNCHED = (tuid, agentId) => ({
+  message: { role: "user", content: [{ type: "tool_result", tool_use_id: tuid }] },
+  toolUseResult: { isAsync: true, status: "async_launched", agentId },
+});
+
+test("S7 hasPrReviewer: 백그라운드 스폰도 SendMessage 재검토로 신선도가 살아난다", () => {
+  const objs = [
+    BG_SPAWN("tu_1", "chageun:pr-reviewer"),
+    BG_LAUNCHED("tu_1", "a00dbb31873250b0e"),
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { to: "a00dbb31873250b0e", message: "고쳤어요, 재검토 부탁" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true,
+    "훅 안내문이 인정한다고 적은 SendMessage 재검토 경로가 백그라운드 스폰에서 죽어 있다");
+});
+
+// 이 음성 테스트는 **새 조인을 실제로 밟아야** 한다. 리뷰어와 비리뷰어를 같은 트랜스크립트에
+// 나란히 두어, 조인이 돌면서도 엉뚱한 타입을 안 붙이는지를 본다(비리뷰어 하나만 두면
+// 수정 전에도 통과해 새 코드를 한 줄도 안 밟는다).
+test("S7 hasPrReviewer: 조인이 돌아도 리뷰어 아닌 상대에겐 신선도가 안 열린다", () => {
+  const base = [
+    BG_SPAWN("tu_1", "chageun:pr-reviewer"), BG_LAUNCHED("tu_1", "aREVIEWER"),
+    BG_SPAWN("tu_2", "general-purpose"),     BG_LAUNCHED("tu_2", "aOTHER"),
+    BG_SPAWN("tu_3", ""),                    BG_LAUNCHED("tu_3", "aEMPTY"),
+    TU("Edit", { file_path: "src/app.js" }),
+  ];
+  const send = (to) => base.concat([TU("SendMessage", { to, message: "재검토" })]);
+  assert.equal(hasPrReviewer(send("aREVIEWER")), true,  "리뷰어에게 보낸 재검토가 인정 안 됨");
+  assert.equal(hasPrReviewer(send("aOTHER")),    false, "리뷰어 아닌 에이전트로 게이트가 열렸다");
+  assert.equal(hasPrReviewer(send("aEMPTY")),    false, "subagent_type 빈 값이 신선도를 열었다");
+});
+
+// 빈 타입이 앞선 정상 매핑을 덮으면 정당한 재검토가 다시 막힌다(옛 코드는 무조건 덮어썼다).
+test("S7 hasPrReviewer: 빈 agentType 레코드가 앞선 정상 매핑을 지우지 않는다", () => {
+  const objs = [
+    AGENT_DONE("a123", "chageun:pr-reviewer"),
+    { type: "user", toolUseResult: { agentId: "a123", agentType: "", status: "completed" } },
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { to: "a123", message: "재검토" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "빈 값이 정상 매핑을 지워 정당한 재검토가 막혔다");
+});
+
+// 한 엔트리에 결과가 여럿이면 조인하지 않는다 — 오결합이 틀리는 방향은 "리뷰어 아닌 에이전트가
+// 리뷰어로 승격"(게이트가 열림)이라 안전측 폴백(불인정)으로 떨어뜨린다.
+test("S7 hasPrReviewer: 한 묶음에 결과가 둘 이상이면 조인하지 않는다(안전측 폴백)", () => {
+  const objs = [
+    BG_SPAWN("tu_1", "chageun:pr-reviewer"),
+    BG_SPAWN("tu_2", "general-purpose"),
+    { message: { role: "user", content: [
+      { type: "tool_result", tool_use_id: "tu_1" },
+      { type: "tool_result", tool_use_id: "tu_2" },
+    ] }, toolUseResult: { isAsync: true, status: "async_launched", agentId: "aAMBIG" } },
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("SendMessage", { to: "aAMBIG", message: "재검토" }),
+  ];
+  assert.equal(hasPrReviewer(objs), false, "모호한 묶음에서 조인해 게이트가 열렸다");
 });
 
 // ── P3 push 감지 ──
