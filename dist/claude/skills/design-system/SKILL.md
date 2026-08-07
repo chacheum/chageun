@@ -228,7 +228,7 @@ chageun는 난장판을 **자동으로 통일해 주지 않는다**(어느 스�
 - 전체 감사: `node scripts/check-component-boundaries.cjs --all`
 - CI의 commit 간 검사: `node scripts/check-component-boundaries.cjs --range <base> <head>`
 - 이번 버전은 CI 배선을 자동 감지하거나 workflow를 자동 생성하지 않는다.
-- 편집 순간(Write, Edit, MultiEdit 직전)에 hard block하며 lint ignore·env로 우회되지 않는다. 커밋·CI 시점은 프로젝트 검사기(`check-component-boundaries.cjs`)가 함께 본다.
+- 편집 순간(Write, Edit, MultiEdit 직전)에 hard block한다. 색 채널의 탈출구(`design-lint-ignore`·`CHAGEUN_SKIP_DESIGN_LINT`)로는 우회되지 않는다. 다만 `DESIGN_COMPONENT_DOC`가 없는 경로를 가리키면 채널 자체가 꺼지므로, 커밋·CI 시점 검사기(`check-component-boundaries.cjs`)를 함께 물려 둔다.
 
 ---
 
