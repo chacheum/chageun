@@ -212,7 +212,7 @@ chageun는 난장판을 **자동으로 통일해 주지 않는다**(어느 스�
 
 > **check-design-violations의 범위:** Tailwind **색 클래스 채널**(`bg-blue-500`, `-[#hex]`, `-[rgb()/hsl()]`)만 본다. 인라인 `style={{color:'#..'}}`와 CSS 파일 안 hex는 못 잡으므로 별도 규칙이 필요하다. 오탐(문자열·URL에 우연히 `to-green-100` 등이 있는 경우)은 그 줄에 `design-lint-ignore` 주석으로 그 줄만 예외 처리한다. 전체 검사를 끄는 `CHAGEUN_SKIP_DESIGN_LINT`와는 다르다.
 
-> **색은 편집 시점에도 하드블록된다(v0.36+, Claude 전용):** `docs/design-system.md`가 있는 프로젝트에서 AI가 UI 파일(js/ts/jsx/tsx/vue/svelte/astro)에 새 raw 색을 넣으면 차근 PreToolUse 훅이 그 자리에서 막는다. 검출 규칙과 탈출구(`design-lint-ignore`, `lint-allow-colors`, `CHAGEUN_SKIP_DESIGN_LINT`)는 위 `.sh`와 같다. 기존 파일을 Write로 통째로 덮어쓰는 경우는 v1에서 막지 않으며, 커밋 시점 `.sh`가 담당한다. Codex는 PreToolUse 미지원이라 이 편집 시점 차단이 없다.
+> **색은 편집 시점에도 하드블록된다(v0.36+, Claude 전용):** `docs/design-system.md`가 있는 프로젝트에서 AI가 UI 파일(js/ts/jsx/tsx/vue/svelte/astro)에 새 raw 색을 넣으면 차근 PreToolUse 훅이 그 자리에서 막는다. 검출 규칙과 탈출구(`design-lint-ignore`, `lint-allow-colors`, `CHAGEUN_SKIP_DESIGN_LINT`)는 위 `.sh`와 같다. 기존 파일을 Write로 통째로 덮어쓰는 경우는 v1에서 막지 않으며, 커밋 시점 `.sh`가 담당한다.
 
 **원본 찾는 순서 (못 찾으면 빈 파일 만들지 말 것):**
 1. 이 스킬(이 SKILL.md)이 있는 디렉터리에서 `design-system.template.md`, `component-registry.template.json`, `component-boundary-core.cjs`, `check-component-boundaries.cjs`, `check-design-violations.sh`, `check-profile.sh`, `check-token-parity.sh`를 찾는다.
@@ -228,7 +228,7 @@ chageun는 난장판을 **자동으로 통일해 주지 않는다**(어느 스�
 - 전체 감사: `node scripts/check-component-boundaries.cjs --all`
 - CI의 commit 간 검사: `node scripts/check-component-boundaries.cjs --range <base> <head>`
 - 이번 버전은 CI 배선을 자동 감지하거나 workflow를 자동 생성하지 않는다.
-- Claude는 Write, Edit, MultiEdit 직전에 hard block한다. Codex에는 같은 편집 순간 hard block이 없으므로 프로젝트 검사기로 보완한다.
+- 편집 순간(Write, Edit, MultiEdit 직전)에 hard block하며 lint ignore·env로 우회되지 않는다. 커밋·CI 시점은 프로젝트 검사기(`check-component-boundaries.cjs`)가 함께 본다.
 
 ---
 

@@ -101,7 +101,7 @@ test("공용 컴포넌트 경계 검사 자산과 프로젝트 검사 안내를 
     "node scripts/check-component-boundaries.cjs",
     "--all",
     "--range <base> <head>",
-    "Codex",
+    "lint ignore·env로 우회되지 않는다",
     "편집 순간",
     "chageun-design-variant:<component-id>:<variant-id>",
     "기존 변형 사용",
