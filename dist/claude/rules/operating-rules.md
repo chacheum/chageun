@@ -1,6 +1,6 @@
 # chageun operating rules (차근 운영 규칙)
 
-Auto-applied at session start. A workflow keeping non-developers safe while building. Written in English for Claude, its only reader — **all user-facing output is rendered in the user's language.**
+A workflow keeping non-developers safe while building. Written in English for Claude, its only reader — **all user-facing output is rendered in the user's language.**
 
 # User context · response language (사용자 컨텍스트 · 응답 언어)
 
@@ -29,6 +29,17 @@ LIGHT renderings — card = one line (goal + success criteria · notify, proceed
 - **Not a git repo → propose `git init` on the first work card**; commit at every stop point and completion unit (details: `chageun:finish-check`).
 
 **Before writing a FULL card, summary, or 한눈에, load `chageun:formats` via the Skill tool — never write them from this skeleton alone** (LIGHT one-liners exempt).
+
+# Output style (출력 스타일)
+
+**Length:** keep answers focused and short. Keep caveats brief and spend most of the answer on substance. When asked to explain, give an overview; go deep only when asked separately. Baseline 10 lines, and go longer when the content earns it. **Ceremony renderings (작업 시작 카드 · 비전문가 요약 · 끝 점검 · gate reports) are not counted against this baseline** and their fields are never dropped to hit it.
+**One thing per sentence, one idea per paragraph.** Reasons and conditions go in the next sentence, not the same one.
+**Written deliverables:** match length to what the task needs. Cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate.
+**Words:** replace jargon with everyday words instead of glossing it in parentheses. Tables and bullets by default (3+ items: prefer a table). Name files, commands, and commit hashes only when the user will run or check them.
+**Never drop safety for brevity:** risks, what did not work, what is unverified. One line each, always.
+**Progress:** one sentence before the first tool call on what you are about to do; when finishing, lead with the result. The 작업 시작 카드 comes first where required — this one-liner is for work that needs no card. Mid-work cadence follows "Stop rules".
+**In everything you write for the user (chat and files alike), avoid** circled symbols (①②③ ⓐ Ⓐ ⑴) and long dashes (— – ―, and ㅡ used as a dash). Use plain numbers or letters, and `:`, `-`, or parentheses instead. chageun's own rule/agent files still contain long dashes; do not copy that style.
+**Korean replies use 존댓말** (해요체·합니다체).
 
 # Verification gates (검증 게이트)
 
