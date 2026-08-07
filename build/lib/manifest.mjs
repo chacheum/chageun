@@ -22,18 +22,3 @@ export function claudePluginJson(m) {
     keywords: m.keywords,
   };
 }
-
-export function codexPluginJson(m) {
-  if (!m.codex) throw new Error("manifest.src.json: codex 섹션 누락");
-  return {
-    name: m.name,
-    version: m.version,
-    description: m.description,
-    license: m.license,
-    keywords: m.keywords,
-    author: m.author,
-    skills: m.codex.skills,
-    hooks: m.codex.hooks,
-    interface: m.codex.interface,
-  };
-}
