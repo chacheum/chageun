@@ -8,9 +8,6 @@
   "dependencies": {
     "claude": [
       { "name": "superpowers", "marketplace": "claude-plugins-official", "version": "^6.0.0" }
-    ],
-    "codex": [
-      { "name": "superpowers", "marketplace": "openai/plugins", "version": "^6.0.0" }
     ]
   },
   "components": {
@@ -19,17 +16,5 @@
     "agents": ["plan-validator", "pr-reviewer", "code-implementer"],
     "hooks": ["activate.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js", "posttooluse.js", "secret-scan-core.js", "design-scan-core.js", "reap-dev-servers.js", "reap-dev-servers-core.js"],
     "assets": ["chageun-flow.png"]
-  },
-  "codex": {
-    "skills": "./skills/",
-    "skillsExclude": ["unattended-loop"],
-    "hooks": "./hooks/hooks-codex.json",
-    "interface": {
-      "displayName": "차근 (chageun)",
-      "shortDescription": "비개발자용 안전 워크플로우 — 작업카드·검증 게이트·실제 구동 검증",
-      "category": "Productivity",
-      "capabilities": ["Interactive", "Read", "Write"],
-      "developerName": "chacheum"
-    }
   }
 }
