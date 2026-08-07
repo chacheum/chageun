@@ -70,8 +70,10 @@ test("lockstep: core 등급표의 게이트 기본 모델 == 각 agent frontmatt
 // 위 테스트들은 **정적 frontmatter만** 본다. 그런데 Task/Agent 호출의 `model` 파라미터가 그걸 덮어쓴다 —
 // 실측: 한 세션이 plan-validator를 `model:"opus"`로 띄웠고(당시 frontmatter는 fable) **아무 층도 안 막았다**.
 // (v0.44.0에 게이트가 Opus로 돌아와 그 호출 자체는 이제 기본 동작이다. 지금 막을 강등은 sonnet·haiku 쪽.)
-// 근거 원본 = src/hooks/pretooluse.js:307 및 pretooluse-core.js의 gateModelBlock.
-// (이 주석은 v0.49.0 Codex 삭제 때 함께 날아갔다가 복원한 것이다 — Codex 미러 서술만 빼고 되살렸다.)
+// 근거 원본 = src/hooks/pretooluse.js의 `gateModelBlock` 호출부와 pretooluse-core.js의 같은 함수
+// (줄 번호 대신 심볼로 가리킨다 — 소스가 밀려도 안 어긋나게).
+// (v0.49.0 Codex 삭제 때 함께 날아간 것을 되살렸다. 원문에 소스 실측 세부를 덧붙인 형태이고,
+//  배치도 원문 자리(lockstep 테스트 위)가 아니라 gateModelBlock을 쓰는 이 블록 위로 옮겼다.)
 //
 // ⚠ 이 블록은 **손으로 케이스를 쓰지 않는다** — 기대값을 TIER 표에서 파생시킨다.
 // 왜: TOP_TIER 마이그레이션 때 리터럴을 손으로 갈아끼우면, 뒤집는 김에 진짜 강등 케이스까지
