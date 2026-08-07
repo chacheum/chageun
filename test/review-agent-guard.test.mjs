@@ -128,6 +128,13 @@ test("REASONS 3키가 행동 지시형으로 존재", () => {
   }
 });
 
+// ── v0.42(7번): git branch 는 읽기 형태만 ────────────────────────────────────
+// 실측 32건의 리뷰 차단 중 3건이 읽기 전용 branch 조회였다(`--show-current` 2 · `--contains` 1).
+// 거부목록이 아니라 **allowlist**인 이유: `git branch 새이름`은 옵션이 하나도 없는 쓰기라
+// 거부목록이 원천적으로 못 잡는다(plan-validator F-5). 근거 원본 = src/hooks/pretooluse-core.js의
+// `branchArgsAllowed`와 그 위 주석(줄 번호 대신 심볼로 가리킨다 — 소스가 밀려도 안 어긋나게).
+// (v0.49.0 Codex 삭제 때 함께 날아간 것을 되살렸다. 원문 3줄에 소스 실측 세부를 덧붙인 형태이지,
+//  원문에서 Codex 서술만 뺀 것이 아니다 — 원문엔 Codex 서술이 없었다. pr-reviewer low.)
 test("branch 읽기 형태는 통과 — 실측으로 막혔던 3건", () => {
   for (const cmd of [
     "git -C /repo branch --show-current",
