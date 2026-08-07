@@ -136,12 +136,23 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 // v0.43.1: `SendMessage`로 같은 게이트를 이어 불러 재검토한 것도 리뷰 흔적으로 인정한다.
 //   그 전엔 Task/Agent 스폰만 세서, 재검토를 했는데도 "리뷰 없음"으로 **정당한 push가 두 번 막혔다**
 //   (2026-08-02 v0.42.0·v0.42.2). SendMessage의 input엔 subagent_type이 없고 대상 id(`to`)만 있다.
-//   연결 고리: 에이전트 실행 결과 레코드의 **최상위** `toolUseResult`에 `agentId`+`agentType`이 같이 실린다
-//   (실측: 최근 세션의 SendMessage 10건 전부 이 경로로 매핑 성공).
+//   연결 고리 두 가지: (1) 앞에 두고 기다린 스폰은 결과 레코드의 **최상위** `toolUseResult`에
+//   `agentId`+`agentType`이 같이 실린다. (2) **백그라운드(run_in_background) 스폰의 결과엔
+//   `agentType`이 아예 없다**(실측 키: isAsync·status·agentId·description·resolvedModel·prompt·
+//   outputFile). 그래서 그 경우엔 스폰 `tool_use.id` ↔ 결과 `tool_result.tool_use_id`를 조인해 타입을
+//   얻는다(실측: 이 저장소 트랜스크립트에서 26/26 매칭). v0.46.0까지 (2)가 없어 **백그라운드 리뷰어에게
+//   SendMessage로 재검토를 받아도 push가 막혔다** — 바로 이 훅의 에러 문구가 "SendMessage 재검토도
+//   인정된다"고 안내하는 그 길이 죽어 있었다(리뷰 비용을 한 번 더 물림).
 //   **2패스인 이유**: run_in_background 에이전트는 완료 레코드가 SendMessage보다 뒤에 올 수 있어
-//   1패스면 그 건을 놓친다. 덤으로 "아직 안 끝난 리뷰는 맵에 없어 불인정"이라는 안전측 부수 속성이 생긴다.
+//   1패스면 그 건을 놓친다.
+//   ⚠ (2)를 열면서 "아직 안 끝난 리뷰는 맵에 없어 불인정"이던 **안전측 부수 속성은 사라졌다** —
+//   launch 레코드만으로 맵에 올라 미완료 리뷰도 인정된다. 새 사고 클래스는 아니다(아래 '남는 구멍'대로
+//   Task 스폰도 결과가 아닌 호출 시점 계상이라 대칭). 마지막 방어선은 push 직전 사람 승인(멈춤 규칙 2)이다.
+//   조인은 **결과가 정확히 1개인 엔트리에서만** 한다 — 여럿이면 어느 결과가 이 agentId의 것인지
+//   단정할 수 없고, 틀리는 방향이 "리뷰어 아닌 에이전트가 리뷰어로 승격"(게이트가 열림)이다.
 //   매핑 실패는 **불인정**(false 유지). 이름 문자열 휴리스틱(`to`에 "pr-reviewer"가 들어있으면 인정)은
 //   일부러 안 넣는다 — 게이트 통과 조건을 문자열로 열면 우회가 쉬워진다.
+//   `description`·`prompt` 내용 추정도 같은 이유로 금지(리뷰 안 거치고 뚫는 길이 된다).
 // 남는 구멍(정직 · plan-validator high 수용): Task 스폰은 리뷰 절차가 **항상** 돌지만 SendMessage는
 //   **배달만 보장**한다. 그래서 통보성 쪽지 한 통으로도 신선도가 되살아난다. 메시지 내용 검사는 일부러
 //   안 한다 — 실제로 막혔던 메시지가 "변한 게 없으면 APPROVE 유지로 한 줄 확답해줘"였고, 어휘 목록으로
@@ -150,12 +161,28 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 //   신선도가 복구된다. Task 스폰도 결과가 아닌 호출 시점 계상이라 대칭이다(pr-reviewer low).
 function hasPrReviewer(objs) {
   if (!Array.isArray(objs)) return false;
-  // 패스1: agentId → agentType 맵.
+  // 패스1: agentId → agentType 맵. 두 소스(위 주석 (1)·(2)).
   const agentTypeById = new Map();
+  const typeByToolUseId = new Map();
   for (const o of objs) {
+    const c = ((o && o.message) || o || {}).content;
+    if (Array.isArray(c)) for (const b of c) {
+      if (b && b.type === "tool_use" && AGENT_TOOLS_RE.test(String(b.name || "")) && b.id) {
+        typeByToolUseId.set(String(b.id), subagentOf(b.input)); // 키 목록은 형제 함수와 한 벌(사본 금지)
+      }
+    }
     const tur = o && o.toolUseResult;
     if (tur && typeof tur === "object" && tur.agentId) {
-      agentTypeById.set(String(tur.agentId), String(tur.agentType || ""));
+      let type = String(tur.agentType || "");
+      if (!type && Array.isArray(c)) {
+        const results = c.filter((b) => b && b.type === "tool_result" && b.tool_use_id);
+        // 정확히 1개일 때만 조인 — 모호하면 옛 동작(불인정=안전측)으로 떨어진다.
+        if (results.length === 1) type = typeByToolUseId.get(String(results[0].tool_use_id)) || "";
+      }
+      // 빈 값은 덮어쓰지 않는다(옛 코드는 무조건 set이라 빈 값이 앞선 정상 매핑을 지웠다).
+      // 지우면 정당한 재검토가 다시 막히는 방향이다. 실측으로는 차이가 없다(`agentType:""` 레코드 0건 ·
+      // 빈 값은 항상 필드 부재)지만, 런타임이 빈 문자열을 싣기 시작하는 날 갈리므로 잠가 둔다.
+      if (type) agentTypeById.set(String(tur.agentId), type);
     }
   }
   // 패스2: 리뷰 흔적과 코드 수정의 선후.
@@ -225,7 +252,26 @@ function isPush(toolName, toolInput) {
 // 차단이 아니라 리마인더 주입 판정. 넓은 감지보다 소음 회피 우선(스펙 🙋 합의: plan 파일명 휴리스틱).
 // 새 plan을 다시 쓰면 재무장(validated·codeEdited 리셋 — 새 plan은 새 검증 대상). 순수함수(fs 없음).
 const EDIT_TOOLS_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
-function isPlanDocPath(p) { const s = String(p || ""); return /\.md$/i.test(s) && /plan/i.test(s); }
+// v0.47.0: `.md` 이면서 (a) `plans/` 디렉토리 안이거나 (b) basename이 `plan.md`이거나 구분자
+//   하나 뒤에 `plan.md`가 오는 형태(`-plan.md`·`_plan.md`·`.plan.md`)일 때만 계획서로 본다.
+//   `plan-*.md` **접두는 일부러 뺀다** — 그게 `src/agents/plan-validator.md`를 잡던 바로 그 패턴이고,
+//   걸리면 아래 `planSeen=true, validated=false` 재무장이 돌아 **게이트를 이미 통과한 기록이 지워진다**
+//   (실측 v0.46.0 세션: 한 세션에 3회 이상 헛발동).
+//   구분자에 점(`.`)이 든 이유: `plan-validator.md:31`이 계획서 이름으로 `**/*.plan.md`를 스스로
+//   선언한다. 접두형 오탐은 이걸로 안 되살아난다 — `plan-validator.md`는 `plan` **뒤에** 글자가 붙는
+//   형태라 `[-_.]plan\.md$`에 걸릴 수 없다(실행 확인: src·dist 사본 둘 다 false).
+//   거부목록("source 디렉토리는 제외")이 아니라 화이트리스트인 이유 = 거부목록은 새 경로가 생길 때마다 뚫린다.
+//   좁히는 방향의 잔여 위험(정직): (a) `docs/plan-for-x.md` 같은 **접두형**은 안 잡힌다(위 이유로 의도)
+//   (b) `plans/` 판정이 슬래시만 봐서 네이티브 윈도우의 `docs\plans\x.md`는 디렉토리 규칙에 안 걸린다
+//   (형제 함수 `isCodeTarget`의 `docs/`·`SCRATCH_ROOT_RE`가 같은 제약을 공유 — 구분자 정규화는 한 번에
+//   묶어야 표류가 안 생겨 후속으로 미룸). 놓쳐도 소프트 리마인더 1회를 못 띄울 뿐이고(차단 아님)
+//   게이트 요구 자체는 코어 규칙이 계속 한다.
+function isPlanDocPath(p) {
+  const s = String(p || "");
+  if (!/\.md$/i.test(s)) return false;
+  if (/(^|\/)plans\//i.test(s)) return true;
+  return /(^|\/)(plan|[^/]*[-_.]plan)\.md$/i.test(s);
+}
 // v0.43.1: 어느 저장소 diff에도 못 들어가는 임시·스크래치 위치는 코드가 아니다 —
 // 실측(honclwd 최근 트랜스크립트 12개): 코드로 계상된 편집 192건 중 43건(22%)이 저장소 밖 스크래치라
 // 저장소를 안 건드렸는데 리뷰가 헛되이 stale이 됐다.
@@ -237,7 +283,9 @@ function isPlanDocPath(p) { const s = String(p || ""); return /\.md$/i.test(s) &
 // 남는 오탐(정직): `~/.bashrc` 같은 홈 설정파일은 여전히 코드로 계상된다 — 과차단이라 안전측으로 수용.
 //   "cwd 하위만 코드"로 뒤집지 않는 이유: 워크트리 작업(다른 저장소를 고치고 그쪽을 push)에서
 //   진짜 리뷰 대상이 면제되는 구멍이 생긴다.
-// 주의(부수효과): 이 함수는 hasPrReviewer 말고 planReminderNeeded(P1 소프트 리마인더)도 쓴다.
+// 주의(부수효과): `isCodeTarget`은 hasPrReviewer 말고 planReminderNeeded(P1 소프트 리마인더)도 쓴다.
+//   (위 `isPlanDocPath`가 아니라 **아래** 함수 이야기다 — 붙어 있어 오독한 전례가 있다.
+//    `isPlanDocPath`의 호출자는 planReminderNeeded 하나뿐이고 push 게이트는 안 쓴다.)
 const SCRATCH_ROOT_RE = /^\/(?:var\/)?tmp\//;
 function isScratchPath(s) {
   return SCRATCH_ROOT_RE.test(s) || s.indexOf("/.cache/claude-tmp/") !== -1;
