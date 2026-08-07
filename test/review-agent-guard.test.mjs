@@ -128,6 +128,11 @@ test("REASONS 3키가 행동 지시형으로 존재", () => {
   }
 });
 
+// ── v0.42(7번): git branch 는 읽기 형태만 ────────────────────────────────────
+// 실측 32건의 리뷰 차단 중 3건이 읽기 전용 branch 조회였다(`--show-current` 2 · `--contains` 1).
+// 거부목록이 아니라 **allowlist**인 이유: `git branch 새이름`은 옵션이 하나도 없는 쓰기라
+// 거부목록이 원천적으로 못 잡는다(plan-validator F-5). 근거 원본 = src/hooks/pretooluse-core.js:513~518.
+// (이 주석은 v0.49.0 Codex 삭제 때 함께 날아갔다가 복원한 것이다 — 이 근거는 Claude에도 그대로 해당한다.)
 test("branch 읽기 형태는 통과 — 실측으로 막혔던 3건", () => {
   for (const cmd of [
     "git -C /repo branch --show-current",
