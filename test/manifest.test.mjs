@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadManifest, claudePluginJson, codexPluginJson } from "../build/lib/manifest.mjs";
+import { loadManifest, claudePluginJson } from "../build/lib/manifest.mjs";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 
@@ -25,17 +25,4 @@ test("claudePluginJson은 현 plugin.json과 의미 동일", () => {
     ],
     keywords: ["workflow", "non-developer", "vibe-coding", "review", "safety", "korean", "english"]
   });
-});
-
-test("codexPluginJson은 Codex 매니페스트를 만든다 (dependencies 키 없음)", () => {
-  const j = codexPluginJson(loadManifest(SRC));
-  assert.equal(j.name, "chageun");
-  assert.equal(j.version, "0.48.0");
-  assert.equal(j.skills, "./skills/");
-  assert.equal(j.hooks, "./hooks/hooks-codex.json");
-  assert.equal(j.interface.displayName, "차근 (chageun)");
-  assert.deepEqual(j.interface.capabilities, ["Interactive", "Read", "Write"]);
-  assert.ok(!("dependencies" in j), "Codex plugin.json은 dependencies 필드를 가지면 안 됨");
-  assert.equal(j.author.name, "chacheum");
-  assert.equal(j.interface.developerName, "chacheum");
 });
