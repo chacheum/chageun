@@ -33,7 +33,7 @@ test("훅 seed 한국어 라벨이 규칙에 존재(영어화 후 소실 금지)
   for (const s of HOOK_SEEDS) assert.ok(RULES.includes(s), `누락: ${s}`);
 });
 
-test("스킬이 참조하는 코어 절 한국어 제목이 병기로 존재", () => {
+test("스킬이 참조하는 코어 절 제목 + 소실 방지 앵커가 존재", () => {
   for (const s of SECTION_LABELS) assert.ok(RULES.includes(s), `누락: ${s}`);
 });
 
