@@ -3,8 +3,8 @@
 // 얇은 그물이지 만능 아님 — 확실히 파괴적인 경우만 차단(오탐 회피). 매치 시 exit 2 + stderr 사유.
 // 예외·불확실은 안전 통과(exit 0). 외부 호출 없음. 개인/회사 정보 없음.
 // 순수 패턴 판정은 core, 부수효과(env 탈출구·transcript 읽기)는 이 래퍼에 둔다.
-// NOTE: Codex에도 PreToolUse 훅이 있다(hooks/pretooluse-codex.mjs — 판정 코어는 공유). 다만 이 래퍼에만
-// 있는 것들(agent_type 분기·transcript 리마인더·디자인 색 백스톱)은 Claude 전용이다.
+// NOTE: 순수 판정은 pretooluse-core.js가 갖고, 이 래퍼에만 있는 것들(agent_type 분기·transcript
+// 리마인더·디자인 색 백스톱)은 부수효과가 필요해 여기 둔다.
 
 const fs = require("fs");
 const path = require("path");
@@ -337,7 +337,7 @@ process.stdin.on("end", () => {
     //    생긴 색 토큰만(브라운필드 오탐 방지). Write는 신규 파일일 때만 검사(기존 파일 통짜 덮어쓰기는 v1 미차단
     //    = 정직한 열린 구멍 — old를 안 읽어 added 판정 불가). exit 2는 stderr 채널이라 §4 stdout 리마인더와
     //    충돌 없음(블록 시 리마인더 도달 전 종료). 무인·유인 모두 발동(색은 안전-park 사유는 아니나 회복
-    //    가능+watchdog 바운드). Codex 미러 없음(이 백스톱은 이 래퍼에만 배선 — v1 Claude 전용). 자체 try/catch로 격리.
+    //    가능+watchdog 바운드). 이 백스톱은 이 래퍼에만 배선. 자체 try/catch로 격리.
     if (EDIT_RE.test(String(name || "")) && isDesignScanTarget(ti.file_path || ti.notebook_path)
         && process.env.CHAGEUN_SKIP_DESIGN_LINT !== "1") {
       try {
@@ -394,8 +394,7 @@ process.stdin.on("end", () => {
 
     // 4.7) 디자인 레지스트리 조회 리마인더(soft, Claude 전용): UI 파일 첫 수정인데 이번 세션에
     //    design-system 레지스트리 조회 흔적이 없으면 1회 주입. P1이 이미 주입했으면 침묵(JSON 단일 write).
-    //    파싱 전 isUiTarget으로 걸러 비UI 편집은 전체 파싱 안 함(비용). Codex 미러 없음(PreToolUse
-    //    미지원, v1 Claude 전용). 자체 try/catch로 격리(무인 fail-closed로 안 샘).
+    //    파싱 전 isUiTarget으로 걸러 비UI 편집은 전체 파싱 안 함(비용). 자체 try/catch로 격리(무인 fail-closed로 안 샘).
     if (!reminderEmitted && EDIT_RE.test(String(name || "")) && isUiTarget(ti.file_path || ti.notebook_path)) {
       try {
         const objs = readTranscriptIfMentions(input.transcript_path, "");

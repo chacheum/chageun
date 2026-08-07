@@ -3,7 +3,7 @@
 // in a hook there's no git staged yet (staged mode passes empty = silent worst case) and --all is
 // an unbounded tree scan (10s timeout). So detection here reads ONLY tool_input content/new_string
 // (no tree scan). docs/design-system.md existence gates it; its front-matter lint-allow-colors gives
-// the palette exceptions. Claude-only (Codex lacks PreToolUse). P3(soft reminder)와 별개 채널 = 기계 강제층.
+// the palette exceptions. P3(soft reminder)와 별개 채널 = 기계 강제층.
 "use strict";
 const fs = require("fs");
 const path = require("path");
