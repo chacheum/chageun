@@ -41,11 +41,11 @@ test("GCP credentials·private_key 감지 → 거부", () => {
 });
 
 import { spawnSync, execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 test("런처 --check: 샌드박스 미설정이면 거부(exit 1, claude 미실행)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "launch-"));
+  const dir = tmpDir("launch-");
   const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
   // .chageun/unattended.json 없음 → preflight 거부
   const r = spawnSync("bash", [script, "--check"], { cwd: dir, encoding: "utf8" });
@@ -54,7 +54,7 @@ test("런처 --check: 샌드박스 미설정이면 거부(exit 1, claude 미실�
 });
 
 test("런처 go: 시동 산출물(task.md/criteria.md) 없으면 거부(무인 미시작)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "launch-go-"));
+  const dir = tmpDir("launch-go-");
   const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
   // preflight는 통과시키되(unattended.json 최소) task.md·criteria.md는 없음
   mkdirSync(join(dir, ".chageun"), { recursive: true });
@@ -68,7 +68,7 @@ test("런처 go: 시동 산출물(task.md/criteria.md) 없으면 거부(무인 �
 });
 
 test("런처 go: 옛 task/criteria가 남아도 신선 표식(setup-ready) 없으면 거부(stale 재사용 차단)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "launch-stale-"));
+  const dir = tmpDir("launch-stale-");
   const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
   mkdirSync(join(dir, ".chageun"), { recursive: true });
   writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
@@ -82,7 +82,7 @@ test("런처 go: 옛 task/criteria가 남아도 신선 표식(setup-ready) 없�
 });
 
 test("런처 go: 시작 시 clone의 runtime.json 리셋(claude stub로 exec 지점 도달 확인)", () => {
-  const repo = mkdtempSync(join(tmpdir(), "launch-reset-"));
+  const repo = tmpDir("launch-reset-");
   const git = (args) => execFileSync("git", args, { cwd: repo });
   git(["init", "-q"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
   writeFileSync(join(repo, "README.md"), "hi");
@@ -108,7 +108,7 @@ test("런처 go: 시작 시 clone의 runtime.json 리셋(claude stub로 exec 지
 });
 
 test("런처 go: 격리 clone 생성 + origin 제거 + claude --strict-mcp-config로 기동", () => {
-  const repo = mkdtempSync(join(tmpdir(), "isolate-repo-"));
+  const repo = tmpDir("isolate-repo-");
   // 본체를 git 저장소로 만들고 커밋 하나 + github origin 리모트를 단다(제거되는지 볼 대상).
   const git = (args) => execFileSync("git", args, { cwd: repo });
   git(["init", "-q"]);
@@ -146,7 +146,7 @@ test("런처 go: 격리 clone 생성 + origin 제거 + claude --strict-mcp-confi
 });
 
 test("런처 go: 커밋 안 된 변경(WIP) 있으면 거부(clone은 커밋본만 복사 → 무인이 WIP 못 봄)", () => {
-  const repo = mkdtempSync(join(tmpdir(), "launch-dirty-"));
+  const repo = tmpDir("launch-dirty-");
   const git = (args) => execFileSync("git", args, { cwd: repo });
   git(["init", "-q"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
   writeFileSync(join(repo, "README.md"), "hi");
@@ -167,7 +167,7 @@ test("런처 go: 커밋 안 된 변경(WIP) 있으면 거부(clone은 커밋본�
 });
 
 test("런처 go: git 저장소가 아니면 친절히 거부(영문 fatal 절벽 방지)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "launch-nogit-"));
+  const dir = tmpDir("launch-nogit-");
   mkdirSync(join(dir, ".chageun"), { recursive: true });
   writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
   writeFileSync(join(dir, ".chageun", "task.md"), "t");

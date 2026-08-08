@@ -4,8 +4,8 @@ import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const require = createRequire(import.meta.url);
 const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush, approvedDesignVariant } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
@@ -458,7 +458,7 @@ test("routing 리마인더: 다른 스킬 로드는 로드로 안 침(routing만
 // routing wiring: 실제 프로세스 — 차단 아님(exit 0) + additionalContext 주입
 test("routing 리마인더 wiring: 미로드 상태 code-implementer 스폰 시 additionalContext 출력", () => {
   const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
-  const dir = mkdtempSync(join(tmpdir(), "routing-"));
+  const dir = tmpDir("routing-");
   const tpath = join(dir, "t.jsonl");
   writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "GO 받았습니다" }] } }) + "\n");
   const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
@@ -474,7 +474,7 @@ test("routing 리마인더 wiring: 미로드 상태 code-implementer 스폰 시 
 // wiring: 실제 프로세스로 stdout JSON(additionalContext) 확인 — 차단 아님(exit 0)
 test("리마인더 wiring: transcript에 plan만 있으면 Edit 시 additionalContext 출력", () => {
   const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
-  const dir = mkdtempSync(join(tmpdir(), "remind-"));
+  const dir = tmpDir("remind-");
   const tpath = join(dir, "t.jsonl");
   writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "tool_use", name: "Write", input: { file_path: "docs/x-plan.md" } }] } }) + "\n");
   const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
@@ -508,7 +508,7 @@ test("designRegistryReminder: 비UI 파일(.ts 로직)·비EDIT은 → false", (
 // wiring: UI 편집 + 조회 없음 → design 리마인더 주입(차단 아님)
 test("design 리마인더 wiring: UI 첫 수정 + 조회 없음 → additionalContext 주입", () => {
   const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
-  const dir = mkdtempSync(join(tmpdir(), "design-"));
+  const dir = tmpDir("design-");
   const tpath = join(dir, "t.jsonl");
   writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "작업 시작" }] } }) + "\n");
   const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
@@ -524,7 +524,7 @@ test("design 리마인더 wiring: UI 첫 수정 + 조회 없음 → additionalCo
 // wiring: P1·P3 동시 성립 → JSON 정확히 1개(P1 우선, JSON 안 깨짐)
 test("리마인더 wiring: P1·P3 동시 성립 시 JSON 1개(P1 우선·상호배타)", () => {
   const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
-  const dir = mkdtempSync(join(tmpdir(), "both-"));
+  const dir = tmpDir("both-");
   const tpath = join(dir, "t.jsonl");
   // plan 문서 작성(P1 조건) + 조회 흔적 없음(P3 조건)
   writeFileSync(tpath, JSON.stringify({ message: { role: "assistant", content: [{ type: "tool_use", name: "Write", input: { file_path: "docs/x-plan.md" } }] } }) + "\n");
@@ -746,7 +746,7 @@ test("isPush: git push 변형 감지 · 비push는 침묵 · 부분문자열 한
 // P3 push 게이트 wiring: 실제 프로세스로 "git push가 리뷰 없이/stale이면 차단, fresh면 통과" 실증
 test("push 게이트 wiring: 리뷰 없음·stale → exit 2 / fresh·SKIP env → 통과", () => {
   const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
-  const dir = mkdtempSync(join(tmpdir(), "pushgate-"));
+  const dir = tmpDir("pushgate-");
   const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
   let n = 0;
   const T = (lines) => { const p = join(dir, `t${n++}.jsonl`); writeFileSync(p, lines.map((o) => JSON.stringify(o)).join("\n") + "\n"); return p; };
@@ -848,7 +848,7 @@ test("무인 tamper 가드(L1): 새 G7 훅 파일 변조 차단 · 읽기 허용
 const HOOK_P4 = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
 // docs/design-system.md를 가진 임시 프로젝트를 만들고 훅을 spawn한다. front은 lint-allow-colors 선언.
 function withDesignProject(front, fn) {
-  const dir = mkdtempSync(join(tmpdir(), "p4-"));
+  const dir = tmpDir("p4-");
   mkdirSync(join(dir, "docs"), { recursive: true });
   writeFileSync(join(dir, "docs", "design-system.md"), (front || "---\nname: x\n---\n") + "\n본문");
   const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
@@ -860,7 +860,7 @@ const runP4 = (dir, env, tool_input, tool_name = "Edit", transcript_path) =>
   });
 
 test("P4 게이트: docs/design-system.md 없으면 색 있어도 통과(미채택 프로젝트 침묵)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "p4-nodoc-"));
+  const dir = tmpDir("p4-nodoc-");
   const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
   const r = runP4(dir, env, { file_path: "web/App.tsx", old_string: "", new_string: 'className="bg-blue-500"' });
   rmSync(dir, { recursive: true, force: true });
@@ -998,7 +998,7 @@ test("변형 승인: 실제 AskUserQuestion 기록의 정확한 두 번째 선�
 
 const HOOK_COMPONENT = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
 function componentProject({ sourceVariants = "default", source = "export const UserList = () => <article />;" } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "component-hook-"));
+  const dir = tmpDir("component-hook-");
   mkdirSync(join(dir, "docs"), { recursive: true });
   mkdirSync(join(dir, "src", "components"), { recursive: true });
   writeFileSync(join(dir, "docs", "design-system.md"), `---
@@ -1089,7 +1089,7 @@ test("component 경계 wiring: 등록 조립·legacy 유지·미채택 프로젝
   rmSync(dir, { recursive: true, force: true });
   assert.equal(legacy.status, 0, legacy.stderr);
 
-  const plain = mkdtempSync(join(tmpdir(), "component-hook-none-"));
+  const plain = tmpDir("component-hook-none-");
   const none = componentHook(plain, "Write", { file_path: "src/app/users/page.tsx", content: "export default () => <button />;" });
   rmSync(plain, { recursive: true, force: true });
   assert.equal(none.status, 0, none.stderr);
@@ -1102,7 +1102,7 @@ test("component 경계 wiring: 채택 프로젝트의 잘못된 편집 입력만
   assert.equal(blocked.status, 2, blocked.stderr);
   assert.match(blocked.stderr, /edit-input-invalid/);
 
-  const plain = mkdtempSync(join(tmpdir(), "component-hook-none-"));
+  const plain = tmpDir("component-hook-none-");
   const passed = componentHook(plain, "Write", { file_path: 12345, content: "x" });
   rmSync(plain, { recursive: true, force: true });
   assert.equal(passed.status, 0, passed.stderr);

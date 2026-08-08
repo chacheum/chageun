@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
 // 부모 env의 CHAGEUN_* 전부 제거(케이스별로 주입).
@@ -13,7 +13,7 @@ for (const k of Object.keys(BASE)) { if (k.startsWith("CHAGEUN_")) delete BASE[k
 
 // 임시 작업트리에 유효 통과표를 심고 cwd·env를 맞춰 훅을 spawn. token=null이면 통과표 없음(게이트 테스트용).
 function runIn(input, env, opts = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "unatt-"));
+  const dir = tmpDir("unatt-");
   mkdirSync(join(dir, ".chageun"), { recursive: true });
   const nonce = opts.nonce === undefined ? "abc123" : opts.nonce;
   if (opts.writeToken !== false) writeFileSync(join(dir, ".chageun", "token"), JSON.stringify({ nonce }));
@@ -79,7 +79,7 @@ test("무인 게이트: .chageun/STOP 있으면 모든 도구 park", () => {
   assert.match(r.stderr, /정지/);
 });
 test("STOP/통과표는 CHAGEUN_ROOT에 고정 — cwd가 딴 폴더여도 확실히 멈춘다", () => {
-  const root = mkdtempSync(join(tmpdir(), "root-"));
+  const root = tmpDir("root-");
   mkdirSync(join(root, ".chageun"), { recursive: true });
   writeFileSync(join(root, ".chageun", "token"), JSON.stringify({ nonce: "n1" }));
   const sub = join(root, "deep", "sub");
@@ -97,7 +97,7 @@ test("STOP/통과표는 CHAGEUN_ROOT에 고정 — cwd가 딴 폴더여도 확�
 });
 
 test("STOP: CHAGEUN_ROOT 없으면 상위 폴더로 .chageun을 찾아 멈춘다(find-up 안전망)", () => {
-  const root = mkdtempSync(join(tmpdir(), "root2-"));
+  const root = tmpDir("root2-");
   mkdirSync(join(root, ".chageun"), { recursive: true });
   writeFileSync(join(root, ".chageun", "token"), JSON.stringify({ nonce: "n2" }));
   writeFileSync(join(root, ".chageun", "STOP"), "");
