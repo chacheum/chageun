@@ -251,6 +251,58 @@ test("detectUserCorrections: tool-result user turns ignored", () => {
   assert.deepEqual(detectUserCorrections([A("x"), UResult()], "s3"), []);
 });
 
+// ── v0.52.0: 3회 연속 0건이던 원인 봉합 ────────────────────────────────────────
+// 실측(2026-08-08): 이 탐지기를 실제 트랜스크립트에 돌리니 사람 발화 69건이 **전부**
+// `objs[i-1]` 이 assistant 가 아니라는 이유로 탈락했다(정규식 실행 0회). 트랜스크립트가
+// assistant 와 사용자 답장 사이에 장부 레코드를 끼워 넣기 때문이다
+// (queue-operation 26 · system 22 · bridge-session 13 · file-history-snapshot 8 …).
+const Book = (t) => ({ type: t });
+
+test("detectUserCorrections: 장부 레코드가 끼어도 지적을 잡는다(3회 연속 0건의 원인)", () => {
+  const objs = [A("이렇게 했습니다"), Book("queue-operation"), Book("bridge-session"),
+                Book("file-history-snapshot"), U("그거 말고 다른 걸로 해주세요")];
+  const c = detectUserCorrections(objs, "s1");
+  assert.equal(c.length, 1);
+  assert.match(c[0].phrase, /말고/);
+});
+
+// 앞항목 조건을 풀면 사람이 안 친 `user` 레코드가 전부 후보가 된다. 목록은 기억이 아니라
+// 최근 5개 트랜스크립트 286건 전수 집계에서 나왔다(압축 요약 32 · 스킬 로딩 20 ·
+// caveat 10 · 끼어들기 표식 8 · task-notification 다수 · command-name 다수).
+test("detectUserCorrections: 사람이 안 친 user 레코드는 안 잡는다", () => {
+  const meta = (t) => ({ type: "user", isMeta: true, message: { role: "user", content: [{ type: "text", text: t }] } });
+  for (const rec of [
+    U("<task-notification>\n작업 끝남. 아니요 말고</task-notification>"),
+    U("<command-name>/retrospect</command-name> 말고"),
+    U("<local-command-stdout>Set model 말고</local-command-stdout>"),
+    U("This session is being continued from a previous conversation. 말고 다시 해"),
+    U("[Request interrupted by user] 말고"),
+    meta("말고 다시 해"),                       // 스킬 로딩·훅 되돌림 등 하네스 주입
+  ]) assert.deepEqual(detectUserCorrections([A("x"), rec], "s4"), [], JSON.stringify(rec).slice(0, 60));
+});
+
+// 사람 말 **뒤에** 덧붙은 안내문이 길이를 부풀려 진짜 교정이 200자 상한에 걸리는 것을 막는다
+// (실측 이 표본 0건 · 원리상 가능해 예방).
+test("detectUserCorrections: 사람 말 뒤에 덧붙은 안내문은 길이 계산에서 빠진다", () => {
+  const human = "그거 말고 다른 걸로";
+  const tail = "<system-reminder>" + "x".repeat(400) + "</system-reminder>";
+  const c = detectUserCorrections([A("x"), U(human + "\n" + tail)], "s5");
+  assert.equal(c.length, 1);
+  assert.ok(!c[0].phrase.includes("system-reminder"), "안내문이 인용에 섞이면 안 됨");
+});
+
+test("detectUserCorrections: 세션 첫 발화(앞에 assistant 없음)는 안 잡는다", () => {
+  assert.deepEqual(detectUserCorrections([Book("queue-operation"), U("그거 말고")], "s6"), []);
+});
+
+// 사람이 태그 이름을 대화에서 실제로 타이핑한다(이번 세션에만 `system-reminder` 17회).
+// 닫는 태그 없이 끝까지 지우는 가지를 넣으면 그 지점부터 사람 말이 통째로 잘린다.
+test("detectUserCorrections: 태그 이름을 타이핑해도 뒷말이 안 잘린다", () => {
+  const c = detectUserCorrections([A("x"), U("아니 <task-notification 처리 말고 다른 걸로")], "s7");
+  assert.equal(c.length, 1);
+  assert.match(c[0].phrase, /말고/);
+});
+
 import { detectNearMisses, driftSignal } from "../src/skills/retrospect/retrospect-scan.mjs";
 // Real shapes (Task-0 spike, docs/…-retrospect-spike.md): BOTH hook blocks land as type:"user" entries.
 const Deny = (reason) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", is_error: true, content: "PreToolUse:Bash hook error: [node pretooluse.js]: " + reason }] } });
