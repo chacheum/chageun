@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildClaude } from "../build/adapters/claude.mjs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 
 test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
-  const out = join(mkdtempSync(join(tmpdir(), "bc-")), "claude");
+  const out = join(tmpDir("bc-"), "claude");
   buildClaude(SRC, out);
   assert.ok(existsSync(join(out, ".claude-plugin/plugin.json")));
   assert.ok(existsSync(join(out, ".claude-plugin/marketplace.json")));

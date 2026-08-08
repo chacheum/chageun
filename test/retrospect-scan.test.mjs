@@ -1,18 +1,18 @@
 // test/retrospect-scan.test.mjs — retrospect-scan.mjs is ESM, so import it (do NOT createRequire a .mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { transcriptDir, resolveTranscriptDir, listSessionFiles, parseSession,
          MAX_SESSIONS, MAX_FILE_BYTES, MAX_BYTES } from "../src/skills/retrospect/retrospect-scan.mjs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 test("transcriptDir: encodes cwd like Claude Code (slashes → dashes)", () => {
   const d = transcriptDir("/home/u/projects/honclwd");
   assert.ok(d.endsWith("/.claude/projects/-home-u-projects-honclwd"), d);
 });
 test("resolveTranscriptDir: encoded dir present → returns it directly (no glob needed) (FIX 2)", () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), "rs-home-"));
+  const tmpHome = tmpDir("rs-home-");
   const targetCwd = "/home/u/projects/honclwd";
   const encoded = join(tmpHome, ".claude", "projects", targetCwd.replace(/[^A-Za-z0-9]/g, "-"));
   mkdirSync(encoded, { recursive: true });
@@ -25,7 +25,7 @@ test("resolveTranscriptDir: encoded dir present → returns it directly (no glob
   }
 });
 test("resolveTranscriptDir: encoded dir absent → globs sibling dirs, matches by transcript cwd field (FIX 2 fallback)", () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), "rs-home2-"));
+  const tmpHome = tmpDir("rs-home2-");
   const projectsRoot = join(tmpHome, ".claude", "projects");
   const targetCwd = "/home/u/projects/weird.path";
   const siblingDir = join(projectsRoot, "-mismatched-encoded-name");
@@ -40,7 +40,7 @@ test("resolveTranscriptDir: encoded dir absent → globs sibling dirs, matches b
   }
 });
 test("resolveTranscriptDir: no candidate matches anywhere → falls back to the encoded path (FIX 2 fail-safe)", () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), "rs-home3-"));
+  const tmpHome = tmpDir("rs-home3-");
   const projectsRoot = join(tmpHome, ".claude", "projects");
   const targetCwd = "/home/u/projects/never-matched";
   const siblingDir = join(projectsRoot, "-some-other-project");
@@ -56,7 +56,7 @@ test("resolveTranscriptDir: no candidate matches anywhere → falls back to the 
   }
 });
 test("listSessionFiles: newest-first, sinceMtime filter, maxSessions cap", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-"));
+  const dir = tmpDir("rs-");
   for (const [name, t] of [["a.jsonl", 1000], ["b.jsonl", 2000], ["c.jsonl", 3000]]) {
     const p = join(dir, name); writeFileSync(p, "{}\n"); utimesSync(p, t, t);
   }
@@ -72,7 +72,7 @@ test("listSessionFiles: missing dir → [] (fail-safe)", () => {
   assert.deepEqual(listSessionFiles("/nonexistent-xyz-123", {}), []);
 });
 test("listSessionFiles: maxBytes cap stops adding files once the budget is exceeded (FIX 5)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-bytes-"));
+  const dir = tmpDir("rs-bytes-");
   const mk = (name, bytes, t) => {
     const p = join(dir, name);
     writeFileSync(p, "x".repeat(bytes));
@@ -102,7 +102,7 @@ test("caps: at the exact boundary the total budget still does not fire (order + 
   // pinning the total back to a flat number. The property that actually matters lives in the check order
   // and the strict `>` in listSessionFiles: flipping either would push a boundary session into "budget",
   // a reason that should be unreachable at the default constants. This pins that behaviour cheaply.
-  const dir = mkdtempSync(join(tmpdir(), "rs-boundary-"));
+  const dir = tmpDir("rs-boundary-");
   for (let i = 0; i < 4; i++) {
     const p = join(dir, `f${i}.jsonl`); writeFileSync(p, "x".repeat(100)); utimesSync(p, 1000 + i, 1000 + i);
   }
@@ -113,7 +113,7 @@ test("caps: at the exact boundary the total budget still does not fire (order + 
     "the leftover is refused by the session cap — 'budget' must not fire at the boundary");
 });
 test("listSessionFiles: one huge file no longer starves the rest (per-file cap)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-filecap-"));
+  const dir = tmpDir("rs-filecap-");
   const mk = (name, bytes, t) => {
     const p = join(dir, name); writeFileSync(p, "x".repeat(bytes)); utimesSync(p, t, t);
   };
@@ -132,7 +132,7 @@ test("listSessionFiles: one huge file no longer starves the rest (per-file cap)"
   assert.deepEqual(before.map(f => f.path.split("/").pop()), ["huge.jsonl", "a.jsonl"]);
 });
 test("listSessionFiles: every drop is recorded with a reason (no silent truncation)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-skipreport-"));
+  const dir = tmpDir("rs-skipreport-");
   const mk = (name, bytes, t) => {
     const p = join(dir, name); writeFileSync(p, "x".repeat(bytes)); utimesSync(p, t, t);
   };
@@ -146,8 +146,8 @@ test("listSessionFiles: every drop is recorded with a reason (no silent truncati
   assert.equal(reasons["c.jsonl"], "session-cap", "session cap keeps recording instead of breaking out");
 });
 test("scan: meta reports coverage and skipped sessions", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-meta-"));
-  const cwd = mkdtempSync(join(tmpdir(), "rs-meta-cwd-"));
+  const dir = tmpDir("rs-meta-");
+  const cwd = tmpDir("rs-meta-cwd-");
   const line = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } }) + "\n";
   const p1 = join(dir, "small.jsonl"); writeFileSync(p1, line); utimesSync(p1, 1000, 1000);
   const p2 = join(dir, "huge.jsonl"); writeFileSync(p2, line + "x".repeat(6 * 1024 * 1024)); utimesSync(p2, 2000, 2000);
@@ -165,8 +165,8 @@ test("scan: meta reports coverage and skipped sessions", () => {
 // v0.42(8번): 상한 초과 세션에서도 안전훅 차단(near-miss)은 건져낸다. 통째 스킵의 근거는
 // gate-gap(세션 전체 상태 의존)에만 참이고, near-miss는 레코드 단위 독립 판정이라 부분 판독이 안전하다.
 test("scan: 상한 초과 세션에서도 near-miss는 건져낸다(v0.42 부분 판독)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-part-"));
-  const cwd = mkdtempSync(join(tmpdir(), "rs-part-cwd-"));
+  const dir = tmpDir("rs-part-");
+  const cwd = tmpDir("rs-part-cwd-");
   const deny = JSON.stringify({ type: "user", message: { role: "user", content: [
     { type: "tool_result", is_error: true, content: 'PreToolUse:Bash hook error: 차단: 리뷰 에이전트의 Bash는' }] } }) + "\n";
   const filler = JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "x".repeat(200) }] } }) + "\n";
@@ -186,14 +186,14 @@ test("scan: 상한 초과 세션에서도 near-miss는 건져낸다(v0.42 부분
   assert.ok(!res.findings.some((f) => f.type === "gate-gap"), "gate-gap은 초과 파일에서 안 돌린다(가짜 구멍 방지)");
 });
 test("parseSession: parses jsonl, skips malformed lines", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-"));
+  const dir = tmpDir("rs-");
   const p = join(dir, "s.jsonl");
   writeFileSync(p, '{"type":"user"}\nNOT JSON\n{"type":"assistant"}\n\n');
   const objs = parseSession(p);
   assert.deepEqual(objs.map(o => o.type), ["user", "assistant"]);
 });
 test("parseSession: skips bare null/scalar valid-JSON lines, keeps real objects (FIX 4 fail-safe)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-null-"));
+  const dir = tmpDir("rs-null-");
   const p = join(dir, "n.jsonl");
   writeFileSync(
     p,
@@ -331,7 +331,7 @@ test("detectNearMisses: normal turn → none", () => {
   assert.deepEqual(detectNearMisses([A("완료했습니다")], "s4"), []);
 });
 test("driftSignal: no feature-spec → null", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-drift-"));
+  const dir = tmpDir("rs-drift-");
   assert.equal(driftSignal(dir), null, "no feature-spec → no drift claim");
 });
 
@@ -341,7 +341,7 @@ import { rmSync } from "node:fs";
 function fakeProject() {
   // build a fake transcript dir the scanner will find via transcriptDir(cwd) — so use a real cwd whose
   // encoded dir we create under a temp HOME is impractical; instead test scan() against an explicit dir override.
-  const cwd = mkdtempSync(join(tmpdir(), "rsproj-"));
+  const cwd = tmpDir("rsproj-");
   mkdirSync(join(cwd, ".env-holder"), { recursive: true });
   writeFileSync(join(cwd, ".env"), "API_KEY=sk-secret12345678\n");
   return cwd;
@@ -349,7 +349,7 @@ function fakeProject() {
 
 test("scan(dir override): aggregates by (type,key) with count + masks secret evidence", () => {
   const cwd = fakeProject();
-  const sessDir = mkdtempSync(join(tmpdir(), "rssess-"));
+  const sessDir = tmpDir("rssess-");
   const line = (o) => JSON.stringify(o) + "\n";
   const asst = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
   const usr = (t) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: t }] } });
@@ -366,8 +366,8 @@ test("scan(dir override): aggregates by (type,key) with count + masks secret evi
   assert.ok(!asJson.includes("sk-secret12345678"), "secret value masked in ALL evidence (correction snippet)");
 });
 test("scan: also masks a high-entropy PASTED token not present in .env (C2)", () => {
-  const cwd = mkdtempSync(join(tmpdir(), "rsproj-nopasted-"));
-  const sessDir = mkdtempSync(join(tmpdir(), "rssess-nopasted-"));
+  const cwd = tmpDir("rsproj-nopasted-");
+  const sessDir = tmpDir("rssess-nopasted-");
   const line = (o) => JSON.stringify(o) + "\n";
   const asst = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
   const usr = (t) => ({ type: "user", message: { role: "user", content: [{ type: "text", text: t }] } });
@@ -381,8 +381,8 @@ test("isDue: a session too big to scan still counts as work done (cap must not m
   // Regression for the pr-reviewer medium on v0.39.0: isDue calls listSessionFiles with defaults, so the
   // new per-file cap silently applied there too. A project made of long sessions would then sit at
   // NOT_DUE forever and never surface the coverage report — the same silent gap, moved to the trigger.
-  const dir = mkdtempSync(join(tmpdir(), "rs-due-big-"));
-  const cwd = mkdtempSync(join(tmpdir(), "rs-due-big-cwd-"));
+  const dir = tmpDir("rs-due-big-");
+  const cwd = tmpDir("rs-due-big-cwd-");
   const line = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } }) + "\n";
   const p = join(dir, "big.jsonl");
   writeFileSync(p, line + "x".repeat(5 * 1024 * 1024)); // over the 4MB per-file cap
@@ -391,13 +391,13 @@ test("isDue: a session too big to scan still counts as work done (cap must not m
     "oversized-but-real session counts toward due without being parsed");
 });
 test("marker + isDue: below threshold → not due; above → due", () => {
-  const cwd = mkdtempSync(join(tmpdir(), "rsmark-"));
+  const cwd = tmpDir("rsmark-");
   // lastRunAt must be recent — an old lastRunAt would trip isDue's separate age-based OR-branch
   // (>= minDays since last run AND >= 1 fresh session) regardless of minSessions, defeating this
   // test's purpose of isolating the session-count threshold behavior.
   writeMarker(cwd, { lastRunAt: new Date().toISOString(), lastRunNewestMtime: 5000 });
   assert.deepEqual(readMarker(cwd).lastRunNewestMtime, 5000);
-  const sessDir = mkdtempSync(join(tmpdir(), "rsdue-"));
+  const sessDir = tmpDir("rsdue-");
   // C6: isDue only counts sessions with real user/assistant text — use non-hollow fixtures here (hollow
   // case is covered separately below) so this test exercises the threshold-crossing logic, not C6 itself.
   const real = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "실제 세션 내용" }] } }) + "\n";
@@ -406,8 +406,8 @@ test("marker + isDue: below threshold → not due; above → due", () => {
   assert.equal(isDue(cwd, { transcriptDirOverride: sessDir, minSessions: 50 }), false);
 });
 test("isDue: metadata-only hollow sessions do NOT count toward the threshold (C6)", () => {
-  const cwd = mkdtempSync(join(tmpdir(), "rsmark-hollow-"));
-  const sessDir = mkdtempSync(join(tmpdir(), "rsdue-hollow-"));
+  const cwd = tmpDir("rsmark-hollow-");
+  const sessDir = tmpDir("rsdue-hollow-");
   // 6 hollow files (only metadata types, 0 real user/assistant text lines) — must NOT trip minSessions:5.
   const hollow = JSON.stringify({ type: "system" }) + "\n" + JSON.stringify({ type: "file-history-snapshot" }) + "\n";
   for (let i = 0; i < 6; i++) { const p = join(sessDir, `h${i}.jsonl`); writeFileSync(p, hollow); utimesSync(p, 7000 + i, 7000 + i); }
@@ -415,7 +415,7 @@ test("isDue: metadata-only hollow sessions do NOT count toward the threshold (C6
 });
 test("scan: masks the `rule` field too, not just evidence/phrase (FIX 3)", () => {
   const cwd = fakeProject(); // .env holds API_KEY=sk-secret12345678
-  const sessDir = mkdtempSync(join(tmpdir(), "rssess-rule-"));
+  const sessDir = tmpDir("rssess-rule-");
   const line = (o) => JSON.stringify(o) + "\n";
   // the deny reason (which detectNearMisses extracts into `rule`) itself quotes the .env secret.
   writeFileSync(
@@ -429,8 +429,8 @@ test("scan: masks the `rule` field too, not just evidence/phrase (FIX 3)", () =>
   assert.ok(!JSON.stringify(findings).includes("sk-secret12345678"), "secret absent from findings JSON entirely");
 });
 test("scan: a session file with a bare null line does not throw and the real line still processes (FIX 4)", () => {
-  const cwd = mkdtempSync(join(tmpdir(), "rsproj-nullline-"));
-  const sessDir = mkdtempSync(join(tmpdir(), "rssess-nullline-"));
+  const cwd = tmpDir("rsproj-nullline-");
+  const sessDir = tmpDir("rssess-nullline-");
   const line = (o) => JSON.stringify(o) + "\n";
   const asst = (t) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: t }] } });
   writeFileSync(join(sessDir, "s1.jsonl"), "null\n" + line(asst("다 됐습니다. 자가점검 ✅✅")));
@@ -458,8 +458,8 @@ function freshSessionLine(i) {
 }
 
 test("--due CLI (C5): DUE — real subprocess, real resolveTranscriptDir(cwd) under a temp HOME", () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), "rs-due-home-"));
-  const cwd = mkdtempSync(join(tmpdir(), "rs-due-cwd-"));
+  const tmpHome = tmpDir("rs-due-home-");
+  const cwd = tmpDir("rs-due-cwd-");
   const encoded = cwd.replace(/[^A-Za-z0-9]/g, "-");
   const transcriptDirReal = join(tmpHome, ".claude", "projects", encoded);
   mkdirSync(transcriptDirReal, { recursive: true });
@@ -477,8 +477,8 @@ test("--due CLI (C5): DUE — real subprocess, real resolveTranscriptDir(cwd) un
 });
 
 test("--due CLI (C5): NOT_DUE — marker already covers all fresh sessions", () => {
-  const tmpHome = mkdtempSync(join(tmpdir(), "rs-notdue-home-"));
-  const cwd = mkdtempSync(join(tmpdir(), "rs-notdue-cwd-"));
+  const tmpHome = tmpDir("rs-notdue-home-");
+  const cwd = tmpDir("rs-notdue-cwd-");
   const encoded = cwd.replace(/[^A-Za-z0-9]/g, "-");
   const transcriptDirReal = join(tmpHome, ".claude", "projects", encoded);
   mkdirSync(transcriptDirReal, { recursive: true });
@@ -520,7 +520,7 @@ test("retrospect SKILL.md에 마커 갱신 눈확인 절차 존재(회고 9번)"
 import { listAgentFiles, MAX_AGENT_FILES, MAX_AGENT_BYTES, AGENT_SIGNAL_RE } from "../src/skills/retrospect/retrospect-scan.mjs";
 
 function mkAgentFixture(files) {
-  const dir = mkdtempSync(join(tmpdir(), "rs-agent-"));
+  const dir = tmpDir("rs-agent-");
   for (const [session, name, body, size] of files) {
     const sub = join(dir, session, "subagents");
     mkdirSync(sub, { recursive: true });
@@ -590,7 +590,7 @@ test("선별식은 near-miss 탐지기가 보는 것의 상위집합이다(조�
 // 워크플로우 층(`subagents/workflows/<wf>/agent-*.jsonl`)은 한 겹 더 들어간다 — 실측 honclwd 456개 중
 // **217개(48%)가 이 층**이었고, 1단계만 읽던 첫 구현이 그만큼을 조용히 빠뜨렸다(고치려던 것과 같은 종류의 누락).
 test("listAgentFiles: subagents/ 아래 중첩(workflows/<wf>/)까지 재귀로 수집한다", () => {
-  const dir = mkdtempSync(join(tmpdir(), "rs-agent-nested-"));
+  const dir = tmpDir("rs-agent-nested-");
   const flat = join(dir, "sessA", "subagents");
   const nested = join(dir, "sessA", "subagents", "workflows", "wf_abc123");
   mkdirSync(nested, { recursive: true });
@@ -606,8 +606,8 @@ test("listAgentFiles: subagents/ 아래 중첩(workflows/<wf>/)까지 재귀로 
 // 단위 테스트만 있으면 배선이 끊겨도 초록이라, 엔드투엔드로 한 번 통과시킨다(pr-reviewer medium).
 test("scan(): 게이트 층 near-miss가 layer:'gate'로 findings에 실리고 커버리지가 따로 보고된다", async () => {
   const { scan } = await import("../src/skills/retrospect/retrospect-scan.mjs");
-  const dir = mkdtempSync(join(tmpdir(), "rs-scan-gate-"));
-  const cwd = mkdtempSync(join(tmpdir(), "rs-cwd-"));           // 마커 없음 → 첫 실행(sinceMtime=0)
+  const dir = tmpDir("rs-scan-gate-");
+  const cwd = tmpDir("rs-cwd-");           // 마커 없음 → 첫 실행(sinceMtime=0)
   writeFileSync(join(dir, "sess1.jsonl"),
     JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "작업 시작" }] } }) + "\n");
   const sub = join(dir, "sess1", "subagents");
@@ -631,8 +631,8 @@ test("scan(): 게이트 층 near-miss가 layer:'gate'로 findings에 실리고 �
 
 test("scan(): 게이트 층 마커는 부모 마커와 분리돼 업그레이드 첫 실행에 과거분을 따라잡는다", async () => {
   const { scan, writeMarker } = await import("../src/skills/retrospect/retrospect-scan.mjs");
-  const dir = mkdtempSync(join(tmpdir(), "rs-scan-marker-"));
-  const cwd = mkdtempSync(join(tmpdir(), "rs-cwd2-"));
+  const dir = tmpDir("rs-scan-marker-");
+  const cwd = tmpDir("rs-cwd2-");
   const sub = join(dir, "sessX", "subagents");
   mkdirSync(sub, { recursive: true });
   writeFileSync(join(sub, "agent-old.jsonl"),

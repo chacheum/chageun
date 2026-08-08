@@ -1,16 +1,16 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildClaude } from "../build/adapters/claude.mjs";
 import { listTree } from "../build/lib/fsutil.mjs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 let TMP;
 before(() => {
-  TMP = mkdtempSync(join(tmpdir(), "distchk-"));
+  TMP = tmpDir("distchk-");
   buildClaude(join(ROOT, "src"), join(TMP, "claude"));
 });
 

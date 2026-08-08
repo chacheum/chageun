@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpDir } from "./support-tmpdir.mjs";
 const require = createRequire(import.meta.url);
 const { decide } = require("../src/hooks/posttooluse.js");
 
 function tmpEnv(line) {
-  const d = mkdtempSync(join(tmpdir(), "g7p-"));
+  const d = tmpDir("g7p-");
   writeFileSync(join(d, ".env"), line + "\n");
   return d;
 }
@@ -27,7 +27,7 @@ test("no secret in output → passthrough null", () => {
   assert.equal(decide({ cwd, tool_response:{ content:"nothing sensitive" } }), null);
 });
 test("no .env → passthrough null", () => {
-  assert.equal(decide({ cwd: mkdtempSync(join(tmpdir(),"g7p-")), tool_response:{content:"x"} }), null);
+  assert.equal(decide({ cwd: tmpDir("g7p-"), tool_response:{content:"x"} }), null);
 });
 test("malformed / missing tool_response → null", () => {
   assert.equal(decide({ cwd:"/nonexistent-xyz", tool_response:null }), null);

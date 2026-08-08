@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 // 찍어낼 검사기(.sh)를 실제로 실행해 동작을 검증한다.
 // (golden 테스트는 파일 바이트 정합만 봐서 스크립트 런타임 버그를 못 잡음 — 이 테스트가 그 구멍을 메움.)
@@ -19,7 +19,7 @@ function run(script, args = [], { env = {}, cwd } = {}) {
   return { code: r.status, out: (r.stdout || "") + (r.stderr || "") };
 }
 function mkproj() {
-  const dir = mkdtempSync(join(tmpdir(), "ds-"));
+  const dir = tmpDir("ds-");
   mkdirSync(join(dir, "src"));
   mkdirSync(join(dir, "docs"));
   return dir;
@@ -165,7 +165,7 @@ function projectFile(dir, path, content) {
 }
 
 function boundaryFixture() {
-  const dir = mkdtempSync(join(tmpdir(), "component-boundary-"));
+  const dir = tmpDir("component-boundary-");
   git(dir, "init", "--quiet");
   git(dir, "config", "user.email", "test@example.com");
   git(dir, "config", "user.name", "Test");
@@ -320,7 +320,7 @@ test("component boundaries: 최종 snapshot의 source 없는 registry 항목은 
 });
 
 test("component boundaries: 디자인 시스템을 채택하지 않은 프로젝트는 통과한다", () => {
-  const dir = mkdtempSync(join(tmpdir(), "component-boundary-none-"));
+  const dir = tmpDir("component-boundary-none-");
   git(dir, "init", "--quiet");
   git(dir, "config", "user.email", "test@example.com");
   git(dir, "config", "user.name", "Test");
