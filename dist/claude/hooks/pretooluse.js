@@ -316,6 +316,9 @@ process.stdin.on("end", () => {
       if (gm && (UNATTENDED || process.env.CHAGEUN_ALLOW_GATE_MODEL !== "1")) return deny(gm, false);
     }
 
+    // stdout JSON 은 이 훅에서 **한 번만** 쓴다. §1.6 진단과 §4~4.6 리마인더가 이 깃발을 공유한다.
+    let reminderEmitted = false;
+
     // 1.6) 계획 규모 가드(v0.53.0). plan-validator.md 의 같은 축은 **보고**만 하고 안 멈춰서
     //   실측 사고를 못 막았다(4,020줄 계획 · 10회 넘는 재검증 · 나흘간 코드 0줄).
     //   탈출구를 환경변수로 안 둔 이유: 그건 세션 도중 못 켜서 오차단 시 회복이 세션 재시작뿐이다
@@ -324,7 +327,7 @@ process.stdin.on("end", () => {
     //   ⚠ 자체 try/catch 를 둔다. 바깥 catch(stdin 'end' 핸들러 끝)는 유인 모드에서 **아무 말 없이
     //     exit 0** 이라, 판정에 버그가 들어가면 가드가 꺼진 줄 모른 채 몇 주가 지난다
     //     (pr-reviewer 1회차 medium). 여기서는 통과시키되 stderr 한 줄로 꺼졌음을 남긴다.
-    //   크기·회차 **둘 다** 판정한다 — 하나만 보면 크기 승인 하나가 회차 상한까지 함께 연다.
+    //   v1은 **크기 한 축만** 본다(회차 축은 2차 작업 — 이유는 pretooluse-core.js planScaleBlock 주석).
     {
       // ⚠ try 는 이 절 **전체**를 감싼다. 3회차까지는 planScaleBlock 호출만 감쌌는데, 그 아래
       //   승인 확인·차단문 조립에서 던지면 파일 맨 끝 바깥 catch 로 가 유인 모드에서 **아무 말 없이
@@ -376,8 +379,20 @@ process.stdin.on("end", () => {
         // 무인은 이 파일의 관례대로 **fail-closed** — 판정 불확실 = park(바깥 catch와 같은 원칙).
         //   사람이 없는 자리에서 "큰 계획은 무조건 멈춤"이 조용히 꺼지면 안 된다(2회차 medium).
         if (UNATTENDED) return deny("u-error", true);
-        process.stderr.write("[chageun] 계획 규모 가드가 판정에 실패해 이번 호출은 통과시킵니다: "
-          + (e && e.message ? e.message : e) + "\n");
+        // ⚠ 유인 모드는 exit 0 으로 통과시킨다. 그런데 이 훅 계약에서 **stderr 가 Claude 에게 가는 길은
+        //   exit 2 뿐**이라(이 파일 deny 주석), stderr 한 줄만 남기면 "가드가 꺼졌다"는 사실이
+        //   아무에게도 안 닿는다 — 이 절이 막으려던 상태 그대로다(5회차 medium). 리마인더와 같은
+        //   stdout 통로로 보낸다. stderr 는 사람이 훅을 직접 돌릴 때를 위해 함께 남긴다.
+        const msg = "[chageun] 계획 규모 가드가 판정에 실패해 이번 호출은 통과시킵니다: "
+          + (e && e.message ? e.message : e);
+        process.stderr.write(msg + "\n");
+        try {
+          process.stdout.write(JSON.stringify({ hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            additionalContext: msg + " — 큰 계획서가 검사 없이 통과했을 수 있습니다. 사용자에게 알리세요.",
+          } }));
+          reminderEmitted = true;
+        } catch (_) { /* 진단 실패가 차단 사유가 되지는 않는다 */ }
       }
     }
 
@@ -442,7 +457,6 @@ process.stdin.on("end", () => {
     // 4) P1 리마인더(soft): plan 문서를 쓰고 plan-validator 없이 첫 코드 수정 시작 →
     //    차단 없이 리마인더 한 줄 주입(additionalContext). 자체 try/catch — 리마인더는 어떤
     //    경우에도 차단·park 사유가 되지 않는다(무인 fail-closed catch로 새지 않게).
-    let reminderEmitted = false;
     if (EDIT_RE.test(String(name || ""))) {
       try {
         const objs = readTranscriptIfMentions(input.transcript_path, "plan");
@@ -480,7 +494,7 @@ process.stdin.on("end", () => {
     //    스킬 미로드 → 리마인더 1회 주입. P1과 동일하게 자체 try/catch로 격리(예외가 무인
     //    fail-closed catch로 새어 park가 되지 않게 — plan-validator medium 반영). needle 조기
     //    탈출은 못 쓴다(부재가 신호) — Agent 스폰은 드물어 전체 파싱 비용 수용.
-    if (/^(Task|Agent)$/.test(String(name || ""))) {
+    if (!reminderEmitted && /^(Task|Agent)$/.test(String(name || ""))) {
       try {
         const objs = readTranscriptIfMentions(input.transcript_path, "");
         if (objs && routingReminderNeeded(objs, name, ti)) {
