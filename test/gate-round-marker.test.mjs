@@ -161,8 +161,49 @@ test("통과하면 회차 표시를 지운다(pr-reviewer M-4 · 스테일 숫�
     /clear it once the plan reaches GO/,
     "리셋 규칙이 없으면 GO 난 계획서를 이어 쓸 때 남은 옛 숫자가 새 작업의 첫 검증을 N차로 만들고, " +
       "'모르면 붙인다'와 겹쳐 없는 루프에 표시와 finding이 붙는다. " +
-      "'통과'가 아니라 GO여야 한다. 코어 :42가 CONDITIONAL을 멈춤으로 정의하므로 " +
+      "'통과'가 아니라 GO여야 한다. 코어 '게이트 판정 ↔ 멈춤' 절이 CONDITIONAL을 멈춤으로 정의하므로 " +
       "CONDITIONAL을 통과로 읽고 지우면 그 계획의 회차 세기가 영영 꺼진다(되살릴 백스톱 없음)"
+  );
+});
+
+// v0.55.0 CONDITIONAL 출구. 이 세 문장이 없으면 판정을 받고 게이트를 다시 돌리는 루프가 되살아난다
+// (실측: 한 계획이 CONDITIONAL 7회 · 착수 0회 · 나흘 중 사흘이 blocker 0). 문장 자체는 어떤 코드도
+// 안 켜므로 테스트로 잠그지 않으면 다음 코어 다이어트에 통째로 빠져도 전부 초록이다(v0.42.0과 같은 양식).
+test("CONDITIONAL 출구가 코어에 못박혀 있다(재검증은 답이 아니다)", () => {
+  assert.match(
+    core,
+    /Re-validating a plan is not an answer to a verdict/,
+    "이 문장이 빠지면 CONDITIONAL을 받고 게이트를 다시 돌리는 것이 기본 행동으로 돌아간다"
+  );
+  assert.match(
+    core,
+    /BLOCK\/REQUEST CHANGES fixes \*\*are\*\* re-reviewed before PR/,
+    "코드 쪽 예외가 빠지면 위 문장이 코드 재리뷰까지 금지로 읽혀, 훅의 gate-skip 하드 차단과 " +
+      "정면으로 부딪히고 유일한 탈출구가 '게이트를 끈 세션으로 다시 시작'이 된다"
+  );
+});
+
+test("CONDITIONAL 출구의 받는 쪽이 finish-check에 있다(반쪽 배선 금지)", () => {
+  assert.match(
+    read("src/skills/finish-check/SKILL.md"),
+    /게이트가 CONDITIONAL로 단 조건은 성공 기준과 같은 표에 항목으로 올려/,
+    "쓰는 쪽(코어·plan-validator)만 둘이고 읽는 쪽이 없으면, 승인까지 받은 조건이 아무 표에도 " +
+      "안 올라 '끝 점검 통과'로 조용히 닫힌다"
+  );
+});
+
+test("plan-validator가 CONDITIONAL 정의의 판정 공백을 막는다", () => {
+  assert.match(
+    pv,
+    /끝 점검으로 확인할 수 없는 high도 CONDITIONAL로 낸다/,
+    "이 줄이 없으면 blocker 0인데 끝 점검으로 못 재는 high가 세 판정 어디에도 안 들어가 " +
+      "NO-GO로 밀리고, 그 계획이 재검증 루프로 되돌아간다"
+  );
+  assert.match(
+    pv,
+    /문서를 여러 권으로 나누라고 하지 마라/,
+    "이 금지가 빠지면 '쪼개라' 처방이 다시 문서 분권으로 읽히고, 실측 사고처럼 권 사이가 " +
+      "어긋나는 새 blocker가 나 회차가 늘어난다"
   );
 });
 

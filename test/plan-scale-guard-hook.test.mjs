@@ -31,7 +31,7 @@ const gateCall = (prompt) => ({
 test("큰 계획이면 exit 2 로 막고 승인 키를 화면에 찍는다", () => {
   const r = runHook(gateCall("계획서: docs/plans/big.md"));
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /계획서가 너무 큽니다/);
+  assert.match(r.stderr, /차단: 계획서가 [\d,]+줄을 넘습니다/);   // 문턱 숫자가 바뀌어도 견디게 자릿수만 잡는다
   assert.match(r.stderr, /\[chageun-big-plan:big\.md:4k\]/);
 });
 
@@ -130,7 +130,7 @@ test("한글 폴더 이름이 앞에 와도 검사 대상이다", () => {
   writeFileSync(join(DIR, "프로젝트문서/plans/한글계획.md"), "a\n".repeat(4020));
   const r = runHook(gateCall("계획서: 프로젝트문서/plans/한글계획.md 검증"));
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /계획서가 너무 큽니다/);
+  assert.match(r.stderr, /차단: 계획서가 [\d,]+줄을 넘습니다/);   // 문턱 숫자가 바뀌어도 견디게 자릿수만 잡는다
 });
 
 // 3회차 medium: "벗겨서 절대경로가 되면 버린다" 규칙이 굵게 쓴 절대경로를 통째로 놓쳤다.
@@ -140,7 +140,7 @@ test("굵게 표시한 절대경로도 검사 대상이다", () => {
   const r = runHook({ tool_name: "Task", cwd: DIR,
     tool_input: { subagent_type: "plan-validator", prompt: `계획서: **${abs}** 를 검증해줘` } });
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /계획서가 너무 큽니다/);
+  assert.match(r.stderr, /차단: 계획서가 [\d,]+줄을 넘습니다/);   // 문턱 숫자가 바뀌어도 견디게 자릿수만 잡는다
 });
 
 test("사용자가 두 번째를 안 눌렀으면 형식 오류라고 말하지 않는다", () => {
