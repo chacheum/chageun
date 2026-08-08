@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const require = createRequire(import.meta.url);
 const { shouldBlock, shouldBlockNoEvidence, shouldBlockSkillGap, assistantTextSinceLastUser, assistantTurnSegments, alreadyBounced, leakBlockReason } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js"));
@@ -196,7 +196,7 @@ test("formats 갭: '비전문가 요약' 언급만(필드 어휘 2개 미만)이
 });
 
 // ── G7 Stop 백스톱: .env 시크릿 값이 최종답에 인용되면 차단(값 빼고 이름/존재만) ──
-function envCwd(line) { const d = mkdtempSync(join(tmpdir(), "g7fw-")); writeFileSync(join(d, ".env"), line + "\n"); return d; }
+function envCwd(line) { const d = tmpDir("g7fw-"); writeFileSync(join(d, ".env"), line + "\n"); return d; }
 
 test("assistantTextSinceLastUser: tool-result-only user 건너뜀 + latestOnly=최종 메시지만(F7·F1)", () => {
   const objs = [U("real"), A("first"), UResult(), A("second")];
@@ -235,7 +235,7 @@ test("G7 백스톱 (d): 재작성에서 값 재인용하면 여전히 차단(H3)
 });
 
 test("G7 백스톱: .env 없으면 null(fail-open) · 빈 objs null", () => {
-  const cwd = mkdtempSync(join(tmpdir(), "g7fw-"));
+  const cwd = tmpDir("g7fw-");
   assert.equal(leakBlockReason([U("x"), A("sk-secret12345678")], cwd, false), null, "cwd에 .env 없음 → no-op");
   assert.equal(leakBlockReason([], envCwd("API_KEY=sk-secret12345678"), false), null, "빈 대화");
 });
@@ -246,7 +246,7 @@ test("G7 백스톱: .env 없으면 null(fail-open) · 빈 objs null", () => {
 import { execFileSync } from "node:child_process";
 const HOOK_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "finish-work.js");
 function runHook(objs, { stopHookActive = false } = {}) {
-  const cwd = mkdtempSync(join(tmpdir(), "fwrun-"));
+  const cwd = tmpDir("fwrun-");
   const tpath = join(cwd, "t.jsonl");
   writeFileSync(tpath, objs.map((o) => JSON.stringify(o)).join("\n") + "\n");
   const out = execFileSync(process.execPath, [HOOK_PATH], {

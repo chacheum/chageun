@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { tmpDir } from "./support-tmpdir.mjs";
 const require = createRequire(import.meta.url);
 const { isSecret, parseEnv, collectSecrets, redact, findLeaks } = require("../src/hooks/secret-scan-core.js");
 
@@ -47,7 +47,7 @@ test("parseEnv: export, quotes, first =, comments, CRLF", () => {
 });
 
 test("collectSecrets: depth-2 glob, example excluded, node_modules skipped", () => {
-  const d = mkdtempSync(join(tmpdir(), "g7-"));
+  const d = tmpDir("g7-");
   writeFileSync(join(d, ".env"), "API_KEY=sk-root12345678\nPORT=3000\n");
   writeFileSync(join(d, ".env.example"), "API_KEY=your-key-here-xxxxx\n");
   mkdirSync(join(d, "apps", "web"), { recursive: true });

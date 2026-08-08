@@ -4,10 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
 // 부모의 CHAGEUN_* 를 씻는다 — 무인 플래그가 켜진 셸에서 결과가 달라지면 안 된다
@@ -17,7 +17,7 @@ const runHook = (payload, extraEnv) => spawnSync(process.execPath, [HOOK], {
   input: JSON.stringify(payload), encoding: "utf8", env: { ...CLEAN, ...(extraEnv || {}) },
 });
 
-const DIR = mkdtempSync(join(tmpdir(), "chageun-plan-"));
+const DIR = tmpDir("chageun-plan-");
 mkdirSync(join(DIR, "docs", "plans"), { recursive: true });
 writeFileSync(join(DIR, "docs/plans/big.md"), "a\n".repeat(4020));
 writeFileSync(join(DIR, "docs/plans/small.md"), "b\n".repeat(1785));
