@@ -159,8 +159,22 @@ test("사용자가 두 번째를 안 눌렀으면 형식 오류라고 말하지 
 });
 
 // 회차 축은 **만들지 않기로 확정됐다**(2026-08-09) — 실측에서 회차 수가 잘 끝난 작업과 안 끝난
-//   작업을 못 갈랐다(8회·11회까지 가고도 제대로 나간 계획이 있다). 회차 표기가 있어도 크기만으로
-//   판정해야 한다. 사유 전문 = docs/plans/2026-08-08-plan-rounds-guard-plan.md 머리.
+//   작업을 못 갈랐다. 8회·11회차에서**야** blocker 0 에 처음 닿고 **그 회차에 실제 결함을 잡은**
+//   계획들이 있어, 문턱을 더 높여도 늦은 회차의 생산적인 검증을 함께 막는다. 회차 표기가 있어도
+//   크기만으로 판정해야 한다. 사유 전문 = docs/plans/2026-08-08-plan-rounds-guard-plan.md 머리
+//   (docs/ 는 공개 저장소에 안 올라가는 비공개 문서다).
 test("회차 표기가 있어도 크기가 상한 아래면 통과한다", () => {
-  assert.equal(runHook(gateCall("재검증 회차: 9\n계획서: docs/plans/small.md")).status, 0);
+  const r = runHook(gateCall("재검증 회차: 9\n계획서: docs/plans/small.md"));
+  assert.equal(r.status, 0);
+  // exit code 만 보면 "막지는 않고 경고만 하는" 회차 축이 들어와도 초록이다.
+  assert.doesNotMatch(r.stderr, /회차/);
+});
+
+// 기각된 1차안은 회차를 **계획서 머리**에서 읽었다. 프롬프트 표기만 검사하면 그 갈래가 되살아나도
+//   테스트가 안 잡는다.
+test("계획서 머리에 회차 표기가 있어도 크기만으로 판정한다", () => {
+  writeFileSync(join(DIR, "docs/plans/marked.md"), "재검증 회차: 9\n" + "b\n".repeat(1785));
+  const r = runHook(gateCall("계획서: docs/plans/marked.md"));
+  assert.equal(r.status, 0);
+  assert.doesNotMatch(r.stderr, /회차/);
 });

@@ -327,7 +327,8 @@ process.stdin.on("end", () => {
     //   ⚠ 자체 try/catch 를 둔다. 바깥 catch(stdin 'end' 핸들러 끝)는 유인 모드에서 **아무 말 없이
     //     exit 0** 이라, 판정에 버그가 들어가면 가드가 꺼진 줄 모른 채 몇 주가 지난다
     //     (pr-reviewer 1회차 medium). 여기서는 통과시키되 stderr 한 줄로 꺼졌음을 남긴다.
-    //   v1은 **크기 한 축만** 본다(회차 축은 2차 작업 — 이유는 pretooluse-core.js planScaleBlock 주석).
+    //   **크기 한 축만** 본다. 회차 축은 만들지 않기로 확정됐다(2026-08-09 · 되살릴 계획 없음 —
+    //   사유는 pretooluse-core.js planScaleBlock 주석).
     {
       // ⚠ try 는 이 절 **전체**를 감싼다. 3회차까지는 planScaleBlock 호출만 감쌌는데, 그 아래
       //   승인 확인·차단문 조립에서 던지면 파일 맨 끝 바깥 catch 로 가 유인 모드에서 **아무 말 없이
