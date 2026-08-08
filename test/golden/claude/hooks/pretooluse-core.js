@@ -358,11 +358,12 @@ function bigPlanKey(rel, lines) {
 // 반환: { key, detail } 또는 null. detail = 승인 키(래퍼가 사유문 뒤에 붙인다).
 // 코어 순수 계약(`:1`)을 지키려고 파일 읽기는 **주입받는다** — 없으면 판정하지 않는다.
 // ⚑ 이 가드는 **크기 한 축만** 잰다. "같은 계획을 N회째 재검증" 축은 **만들지 않기로 확정됐다**
-//   (2026-08-09 사용자 결정 · 되살릴 계획 없음). 실측 218개 트랜스크립트·83세션에서 **회차 수가
-//   잘 끝난 작업과 안 끝난 작업을 못 갈랐다** — 8회·11회차에서**야** blocker 0 에 처음 닿고 그
-//   회차에 실제 결함을 잡은 계획들이 있다. 즉 문턱을 어디에 둬도 늦은 회차의 생산적인 검증을 함께
-//   막는다. (크기는 갈랐다: 성공 최대 2,560줄 · 실패 4,020줄.) 앞선 두 번의 문턱 설계는 측정
-//   스크립트가 `planPathsInPrompt` 대신 느슨한 정규식을 써서 만든 **없는 빈 구간** 위에 있었다.
+//   (2026-08-09 사용자 결정 · 되살릴 계획 없음). 실측 218개 트랜스크립트·83세션에서 **회차 수에는
+//   문턱을 걸 자리가 없었다** — 분포에 빈 구간이 없고, 8회·11회차에서**야** blocker 0 에 처음 닿고
+//   그 회차에 실제 결함을 잡은 계획들이 있다. 즉 어디에 걸어도 늦은 회차의 생산적인 검증을 함께
+//   막는다(문턱 8 이면 4건 중 2건이 멀쩡한 작업이었다). 크기 축은 갈랐다 — 근거는 위 PLAN_MAX_LINES
+//   주석. 앞선 두 번의 문턱 설계는 측정 스크립트가 `planPathsInPrompt` 대신 느슨한 정규식을 써서
+//   만든 **없는 빈 구간** 위에 있었다.
 function planScaleBlock(toolName, toolInput, opts) {
   if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
   if (gateOf(subagentOf(toolInput)) !== "plan-validator") return null;
@@ -388,7 +389,7 @@ function planScaleBlock(toolName, toolInput, opts) {
   // 배열로 돌려준다 — 축이 늘어도 래퍼의 승인 루프가 **축마다** 따로 확인하게(승인 하나가
   //   다른 축까지 함께 열리지 않게 · v0.53.0 pr-reviewer 1회차 medium).
   //   ⚠ 지금은 원소가 1개뿐이라 래퍼의 for/continue 가 비어 보인다. **정리 대상이 아니다** —
-   //   축을 되살릴 때 그 루프가 방어선이다(펴서 hits[0] 로 쓰면 1회차 결함이 되살아난다).
+   //   축이 늘 때(형제 파일 합산 등) 그 루프가 방어선이다(펴서 hits[0] 로 쓰면 1회차 결함이 되살아난다).
   return [{ key: "plan-size", detail: bigPlanKey(big.rel, big.lines),
             measured: big.rel + "(" + big.lines + "줄)" }];
 }
