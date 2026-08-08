@@ -54,7 +54,7 @@ test("readFile 미주입이면 판정하지 않는다(코어 순수 계약)", ()
 
 test("잰 파일과 줄수를 함께 돌려준다(오차단을 바로 알아보게)", () => {
   // 4,020 (4021 아님) — 개행으로 끝나는 파일의 끝 빈 조각은 안 센다(4회차 low).
-  assert.equal(call("docs/plans/big.md").measured, "docs/plans/big.md(4020줄)");
+  assert.equal(call("docs/plans/big.md").measured, "잰 파일 docs/plans/big.md(4020줄)");
 });
 
 test("승인 키에 측정값이 들어가 범위가 생긴다", () => {
@@ -76,7 +76,7 @@ test("승인 버킷 경계: 위로만 열리고 아래로는 안 새어 나간�
 //   기계가 계속 보증하고 있었다(pr-reviewer 2차 medium).
 //   지금 상태를 사실대로 잠근다. 문턱을 3,700 이상으로 올리면 이 테스트가 빨개져서
 //   "그 결정을 했다"는 것을 그 자리에서 상기시킨다 — 그게 이 테스트의 값이다.
-test("알려진 성공 최대(3,651줄)가 현행 문턱에 걸린다 — 문턱 상향은 사용자 결정 대기", () => {
+test("알려진 성공 최대(3,651줄)가 현행 문턱에 걸린다", () => {
   assert.ok(
     PLAN_MAX_LINES < 3651,
     "문턱을 3,651 이상으로 올렸다면 이 테스트를 지우지 말고 사실에 맞게 고쳐라 — " +
@@ -173,10 +173,20 @@ test("지난 회차 지적도 프롬프트에서 찾으라고 적혀 있다", ()
 // ---- 문턱 숫자가 차단문과 상수에서 어긋나지 않게 (3회차 low) ----
 // 문구에 "3,000줄"을 손으로 적어 뒀다. 상수만 바꾸면 문구가 조용히 거짓말을 한다.
 // 문구는 **세 벌**이다(사람·서브에이전트·무인). 한 벌만 재면 나머지 둘이 조용히 거짓말한다.
+// ⚠ 사람용 갈래만 `includes` 로는 못 잡는다(3회차 medium). 그 문구엔 이제 문턱(3,000) 말고
+//   **알려진 성공 구간 상단(3,700)** 도 들어 있어서, 문턱을 3,700 으로 올리면 뒤 숫자 덕분에
+//   `includes` 가 그냥 통과한다. 서브에이전트·무인 두 벌만 빨개지고, 그 둘을 고쳐 초록으로
+//   만든 순간 **사람이 보는 첫 문장만 "3,000줄을 넘습니다"인 채로 남는다.**
+//   그래서 사람용은 첫 문장을 정확히 본다.
 test("차단문 세 벌의 문턱 숫자가 상수와 같다", () => {
   const size = core.PLAN_MAX_LINES.toLocaleString("en-US");
+  assert.match(
+    core.reasonFor("plan-size"),
+    new RegExp("^차단: 계획서가 " + size + "줄을 넘습니다"),
+    `사람용 plan-size 첫 문장의 문턱이 ${size} 이 아니다 — 다른 숫자(성공 구간 상단 등)가 ` +
+      "문구 어딘가에 있어도 이 검사는 통과하지 않는다"
+  );
   for (const [label, text] of [
-    ["사람", core.reasonFor("plan-size")],
     ["서브에이전트", core.reasonFor("plan-size", true)],
     ["무인", core.reasonForUnattended("plan-size")],
   ]) assert.ok(text.includes(size), `${label} plan-size 문구에 ${size} 이 없다`);
