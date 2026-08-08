@@ -981,8 +981,9 @@ function variantApproval({ question = VARIANT_QUESTION, options = VARIANT_OPTION
 }
 
 test("변형 승인: 실제 AskUserQuestion 기록의 정확한 두 번째 선택만 인정한다", () => {
+  // wellFormed: v0.53.0에 추가. "형식이 틀렸다"와 "형식은 맞는데 안 눌렀다(거절 포함)"를 가르는 칸.
   assert.deepEqual(approvedDesignVariant(variantApproval(), "modal", "side-panel"), {
-    approved: true, toolUseId: "toolu_123",
+    approved: true, toolUseId: "toolu_123", wellFormed: true,
   });
   for (const record of [
     variantApproval({ question: "다른 질문 [chageun-design-variant:modal:side-panel] extra [chageun-design-variant:modal:side-panel]" }),
