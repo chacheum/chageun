@@ -151,6 +151,31 @@ test("한글 폴더 이름이 앞에 와도 검사 대상이다", () => {
   assert.match(r.stderr, /계획서가 너무 큽니다/);
 });
 
+// 3회차 medium: "벗겨서 절대경로가 되면 버린다" 규칙이 굵게 쓴 절대경로를 통째로 놓쳤다.
+//   한글 경로와 이 경로가 **동시에** 잡혀야 한다 — 한쪽을 고치다 다른 쪽을 깨뜨린 게 이 결함의 이력이다.
+test("굵게 표시한 절대경로도 검사 대상이다", () => {
+  const abs = join(DIR, "docs/plans/big.md");
+  const r = runHook({ tool_name: "Task", cwd: DIR,
+    tool_input: { subagent_type: "plan-validator", prompt: `계획서: **${abs}** 를 검증해줘` } });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /계획서가 너무 큽니다/);
+});
+
+test("사용자가 두 번째를 안 눌렀으면 형식 오류라고 말하지 않는다", () => {
+  const key = "[chageun-big-plan:big.md:4k]";
+  const question = `계획이 큽니다 ${key}`;
+  // 형식은 완벽한데 응답이 없다(= 거절했거나 아직 안 답함).
+  const records = [{ message: { content: [{ type: "tool_use", id: "t1", name: "AskUserQuestion",
+    input: { questions: [{ question, multiSelect: false,
+      options: [{ label: "쪼갠다" }, { label: "이 크기로 진행" }] }] } }] } }];
+  const tp = join(DIR, "unanswered.jsonl");
+  writeFileSync(tp, records.map((o) => JSON.stringify(o)).join("\n"));
+  const r = runHook({ ...gateCall("계획서: docs/plans/big.md"), transcript_path: tp });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /두 번째 선택지가 눌리지 않았습니다/);
+  assert.doesNotMatch(r.stderr, /형식이 안 맞아 인정되지 않았습니다/);
+});
+
 test("회차 차단은 회차를 읽은 출처를 찍는다", () => {
   const r = runHook(gateCall("재검증 회차: 6\n계획서: docs/plans/small.md"));
   assert.equal(r.status, 2);

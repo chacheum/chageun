@@ -55,18 +55,25 @@ const REASONS = {
     "아래 대괄호 키를 **그대로** 넣고, 선택지 2개 중 **두 번째**를 승인으로 두면 됩니다. " +
     "키는 이 메시지 끝 `(위반: ...)` 뒤에 있습니다 — **대괄호까지 통째로** 복사하세요.\n" +
     "**승인 질문의 형식 요건(하나라도 어긋나면 인정되지 않습니다):** (1) 그 호출에 질문은 **이것 하나만** " +
-    "— 다른 질문과 묶지 마세요 (2) 선택지는 **정확히 2개** (3) 사용자가 **두 번째 선택지를 눌러야** 합니다 " +
-    "— 직접 입력한 답은 승인이 아닙니다 (4) 키는 질문 본문에 **한 번만**(이 메시지 전문을 붙여넣으면 두 번 들어갑니다).\n" +
-    "⚠ **계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다**(코어: 게이트에 대상 경로를 항상 넘긴다).",
+    "— 다른 질문과 묶지 마세요 (2) `multiSelect`는 **false**(복수 선택 금지) (3) 선택지는 **정확히 2개** " +
+    "(4) 사용자가 **두 번째 선택지를 눌러야** 합니다 — 직접 입력한 답은 승인이 아닙니다 " +
+    "(5) 키는 질문 본문에 **한 번만**(이 메시지 전문을 붙여넣으면 두 번 들어갑니다).\n" +
+    "승인 키에는 잰 줄수가 천 단위로 들어갑니다 — **본문을 덜어 천 단위가 바뀌면 승인을 다시 받아야 합니다**" +
+    "(4,021줄 승인은 3,100줄에 안 통합니다. 같은 차단문이 또 떠도 편집이 반영 안 된 게 아닙니다).\n" +
+    "잰 파일은 프롬프트에 적힌 계획서 후보 중 **가장 큰 것**입니다 — 이번 검증 대상이 아니라 " +
+    "참고로 언급한 옛 계획서라면, 그 경로를 프롬프트에서 빼고 다시 부르세요.\n" +
+    "⚠ **검증 대상 계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다**(코어: 게이트에 대상 경로를 항상 넘긴다).",
   "plan-rounds":
     "차단: 같은 계획을 5회째 재검증하고 있습니다. 계획이 커서 볼수록 새 지적이 나오는 상태입니다.\n" +
     "두 길 중 하나를 사용자에게 물어 고르세요: (1) 남은 조건을 끝 점검 항목으로 등록하고 구현 착수, " +
     "(2) 일을 쪼개서 앞부분만 다시 계획.\n" +
     "**막는 지적(blocker)이 0이면 코어 규칙상 (1)이 기본입니다** — 조건부 통과는 승인 한 번으로 진행합니다.\n" +
-    "**이 회차 표기가 끝난 옛 작업 것이면 계획서 머리에서 지우고 다시 부르세요**(승인 없이 풀립니다). " +
+    "회차를 어디서 읽었는지는 이 메시지 끝 `출처`에 있습니다 — **`계획서 머리`면 그 파일 앞부분을, " +
+    "`호출 프롬프트`면 프롬프트의 회차 줄을** 고치세요(엉뚱한 곳을 열지 않도록).\n" +
+    "**이 회차 표기가 끝난 옛 작업 것이면 지우고 다시 부르세요**(승인 없이 풀립니다). " +
     "코어 규칙은 GO 나면 마커를 지우게 돼 있지만 기계 확인이 없어 남아 있을 수 있습니다. " +
-    "⚠ **끝난 작업이 아닌데 지우는 것은 우회이며 규칙 위반입니다** — 이 세션의 실제 호출 기록도 함께 세므로 " +
-    "지워도 대개 다시 걸립니다.\n" +
+    "⚠ **끝난 작업이 아닌데 지우는 것은 우회이며 규칙 위반입니다** — 이 축은 자기신고라 " +
+    "지우면 실제로 통과됩니다. 그래서 지우는 것은 규칙으로만 막혀 있습니다.\n" +
     "한 번 더 검증해야 하면 아래 대괄호 키로 승인을 받으세요(넣는 법은 계획 크기 차단과 같습니다).\n" +
     "⚠ **계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다.**",
   "force-push": "차단: `git push --force`는 남의 커밋을 덮어써 되돌리기 어렵습니다. 필요하면 `--force-with-lease`를 쓰세요(안전 강제 push).",
@@ -333,19 +340,24 @@ const PLAN_PATH_RE = /(?:^|[\s"'`(\[<:])([^\s"'`)\]<>:]+\.md)\b/gi;
 //   파일을 못 읽어 가드가 조용히 꺼진다(v0.53.0 pr-reviewer 2회차 medium — 1회차에 고친
 //   실패 모드가 그 수정 때문에 다른 입력에서 재발했다).
 //   그래서 **원본과 벗긴 것을 둘 다 후보로 넣는다** — 읽히는 쪽이 쓰인다.
+//   **잘못 벗겨진 후보를 걸러내려 하지 않는다.** 3회차에 "벗겨서 절대경로가 됐으면 버린다"는
+//   규칙을 뒀다가 `**/home/.../plan.md`(굵게 쓴 절대경로)를 통째로 놓쳤다. 최종 심판은 파일 읽기라,
+//   틀린 후보는 읽기 실패로 알아서 탈락한다 — 미리 거르면 이득 없이 구멍만 는다.
 const PLAN_PATH_LEAD_JUNK = /^[^\w/.~]+/;
-const PLAN_PATH_MAX = 20;  // 상한은 넉넉히 — 앞에 참고 계획서가 여럿 오면 정작 대상이 밀린다
+// 후보 상한. 한 매치가 후보를 최대 2개(원본·벗긴 것) 만들므로 실제로 커버하는 **경로 수는 그 절반**이다.
+const PLAN_PATH_MAX = 20;
 function planPathsInPrompt(text) {
   const out = [];
   const s = String(text || "");
-  const push = (p) => { if (p && isPlanDocPath(p) && out.indexOf(p) === -1) out.push(p); };
+  const push = (p) => {
+    if (out.length >= PLAN_PATH_MAX) return;   // 루프 조건만으로는 한 바퀴에 2개가 들어가 상한을 넘는다
+    if (p && isPlanDocPath(p) && out.indexOf(p) === -1) out.push(p);
+  };
   let m;
   PLAN_PATH_RE.lastIndex = 0;
   while ((m = PLAN_PATH_RE.exec(s)) && out.length < PLAN_PATH_MAX) {
     push(m[1]);
-    const stripped = m[1].replace(PLAN_PATH_LEAD_JUNK, "");
-    // 벗겼더니 절대경로가 됐으면 버린다 — 앞이 잘려 나간 신호다(한글 폴더명 등).
-    if (stripped !== m[1] && !(stripped.charAt(0) === "/" && m[1].charAt(0) !== "/")) push(stripped);
+    push(m[1].replace(PLAN_PATH_LEAD_JUNK, ""));
   }
   return out;
 }
@@ -362,29 +374,12 @@ function bigPlanKey(rel, reasonKey, value) {
 
 // 반환: { key, detail } 또는 null. detail = 승인 키(래퍼가 사유문 뒤에 붙인다).
 // 코어 순수 계약(`:1`)을 지키려고 파일 읽기는 **주입받는다** — 없으면 판정하지 않는다.
-// 트랜스크립트에서 **같은 계획서를 대상으로 한 지난 plan-validator 호출 수**를 센다.
-//   회차를 자기신고(`재검증 회차: N`)에만 기대면 두 방향으로 무너진다:
-//   (a) 아무도 안 적으면 영영 안 켜지고(실측: 계획서 머리 표기 19회 중 0회),
-//   (b) 적힌 걸 지우면 그냥 통과한다. 검사받는 쪽이 자기 응시 횟수를 적는 구조였다
-//   (v0.53.0 pr-reviewer 2회차 medium). 기계 계수를 **바닥값**으로 깔고 자기신고와 큰 쪽을 쓴다
-//   (자기신고가 더 크면 그건 이전 세션까지 포함한 값일 수 있으므로 존중한다).
-// 한계(정직): 트랜스크립트는 세션 단위라 **세션이 바뀌면 0부터 다시 센다.** 그 자리를 자기신고가 메운다.
-function priorGateRounds(transcript, planBase) {
-  if (!Array.isArray(transcript) || !planBase) return 0;
-  let n = 0;
-  for (const record of transcript) {
-    const content = ((record && (record.message || record)).content) || [];
-    if (!Array.isArray(content)) continue;
-    for (const b of content) {
-      if (!b || b.type !== "tool_use" || !AGENT_TOOLS_RE.test(String(b.name || ""))) continue;
-      if (gateOf(subagentOf(b.input)) !== "plan-validator") continue;
-      const prompt = String((b.input && b.input.prompt) || "");
-      if (planPathsInPrompt(prompt).some((p) => p.split("/").pop() === planBase)) n++;
-    }
-  }
-  return n;
-}
-
+// ⚑ 한계(2차 작업으로 미룸): 회차는 **자기신고**다 — 호출 프롬프트나 계획서 머리의
+//   `재검증 회차: N`을 읽는다. 안 적으면 이 축이 안 켜지고, 적힌 걸 지우면 통과한다.
+//   3회차에 트랜스크립트로 직접 세는 계수기를 넣었다가 **되돌렸다**: 훅에 막힌 호출까지 회차로 세어
+//   "검증을 한 번도 안 받은 계획"을 5회째로 차단했고(high), 계수를 먹이려고 모든 도구 호출에서
+//   트랜스크립트를 통째로 파싱해 긴 세션에서 훅이 죽을 수 있었다(high). 둘 다 계수기 하나에서 나왔다.
+//   기계 계수는 `planReminderNeeded`의 is_error 제외 로직을 헬퍼로 공유하는 별도 작업으로 뺀다.
 function planScaleBlock(toolName, toolInput, opts) {
   if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
   if (gateOf(subagentOf(toolInput)) !== "plan-validator") return null;
@@ -410,11 +405,6 @@ function planScaleBlock(toolName, toolInput, opts) {
     if (fm && (+fm[1] || 0) > round) { round = +fm[1] || 0; roundFrom = rel + " 머리"; }
   }
   if (!big) return null;            // 하나도 못 읽으면 막지 않는다
-
-  // 기계 계수(이 세션에서 같은 계획서로 게이트를 부른 횟수) + 이번 호출 = 이번이 몇 회째인가.
-  //   자기신고보다 크면 이쪽을 쓴다 — 마커를 안 적거나 지워도 회차 축이 살아 있게.
-  const machine = priorGateRounds(opts && opts.transcript, String(big.rel).split("/").pop()) + 1;
-  if (machine > round) { round = machine; roundFrom = "이 세션의 게이트 호출 기록"; }
 
   // **둘을 각각 돌려준다.** 하나만 돌려주면 승인 하나가 다른 축까지 함께 연다 — 실측 사고에서
   //   "이 크기로 진행" 승인 뒤 재검증 10회가 아무 저항 없이 굴러간 것이 정확히 그 모양이다
@@ -902,7 +892,9 @@ function gateModelBlock(toolName, toolInput) {
 // 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
 // 질문 문구는 사용자 언어가 달라도 되며, 보이는 키와 두 번째 선택이라는 구조만 고정한다.
 // v0.53.0: 계획 규모 가드도 같은 승인 방식을 쓴다. 키만 다르므로 **본문을 공유 헬퍼로 뽑았다**
-//   (사본을 늘리면 한쪽만 고쳐져 조용히 갈라진다 — 이 파일이 `:697`에 이미 그 경고를 적어 뒀다).
+//   (사본을 늘리면 한쪽만 고쳐져 조용히 갈라진다 — `typeByToolUseId` 자리에 같은 경고가 이미 있다).
+//   ⚠ 위치는 줄번호가 아니라 **이름·문구**로 가리킨다. 줄번호는 위에 몇 줄만 끼어도 거짓이 된다
+//   (3회차 low: 새로 쓴 주석 3곳의 줄번호가 전부 다른 코드를 가리키고 있었다).
 //   `approvedDesignVariant` 의 시그니처·동작은 그대로다.
 function approvedByAskKey(transcript, key) {
   const blocks = [];
@@ -921,18 +913,22 @@ function approvedByAskKey(transcript, key) {
     if (!question || question.multiSelect !== false || !Array.isArray(question.options) || question.options.length !== 2
       || typeof question.question !== "string" || typeof question.options[1]?.label !== "string") continue;
     if (question.question.split(key).length - 1 !== 1) continue;
+    // break 하지 않는다 = **마지막** 질문만 본다. 같은 키로 한 번 더 물어놓고 답을 안 받으면
+    //   앞서 받아 둔 승인이 무효가 된다(기존 컴포넌트 승인에서 물려받은 동작 · 3회차 low로 수용).
     ask = { index, id: String(block.id), question: question.question, secondLabel: question.options[1].label };
   }
-  if (!ask) return { approved: false, toolUseId: null };
+  // wellFormed: 형식이 맞는 질문을 찾았는가. 차단문이 "형식 오류"와 "사용자가 안 눌렀다(거절 포함)"를
+  //   갈라 말하는 데 쓴다 — 거절을 형식 오류로 안내하면 모델이 같은 질문을 다시 띄운다(3회차 medium).
+  if (!ask) return { approved: false, toolUseId: null, wellFormed: false };
   const answer = `${JSON.stringify(ask.question)}=${JSON.stringify(ask.secondLabel)}`;
   for (let index = ask.index + 1; index < blocks.length; index += 1) {
     const block = blocks[index];
     if (block && block.type === "tool_result" && String(block.tool_use_id || "") === ask.id
       && !block.is_error && typeof block.content === "string" && block.content.includes(answer)) {
-      return { approved: true, toolUseId: ask.id };
+      return { approved: true, toolUseId: ask.id, wellFormed: true };
     }
   }
-  return { approved: false, toolUseId: null };
+  return { approved: false, toolUseId: null, wellFormed: true };
 }
 
 function approvedDesignVariant(transcript, componentId, variantId) {
@@ -941,7 +937,7 @@ function approvedDesignVariant(transcript, componentId, variantId) {
 
 // 큰 계획 진행 승인. 키는 `bigPlanKey()` 가 만들어 차단 사유문에 그대로 찍는다 —
 //   모델이 짐작해 쓰면 안 맞는다. env 탈출구를 안 쓰는 이유는 그게 세션 도중 못 켜지기 때문이다
-//   (`:54`·`:94` 가 같은 사실을 이미 못박아 뒀다).
+//   (REASONS["deploy"]·REASONS["gate-skip"] 문구가 같은 사실을 이미 못박아 뒀다).
 function approvedBigPlan(transcript, key) {
   return approvedByAskKey(transcript, String(key || ""));
 }
@@ -994,4 +990,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, priorGateRounds, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, PLAN_MAX_ROUNDS, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, PLAN_MAX_ROUNDS, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
