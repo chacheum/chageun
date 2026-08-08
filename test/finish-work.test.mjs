@@ -178,6 +178,26 @@ test("formats 갭: FULL 비전문가 요약 + formats 미로드 → 차단", () 
   const objs = [U("기능 만들어줘"), A(FULL_SUMMARY)];
   assert.equal(shouldBlockSkillGap(objs), "formats");
 });
+
+// v0.54.0 pr-reviewer 1차 high: 요약을 짧게 만들면서 라벨을 `한 것`·`왜`·`⚠ 위험`으로 줄였더니
+//   이 훅의 판정어가 하나만 걸려(2개 필요) **백스톱이 조용히 꺼졌다.** 그런데 위 fixture 는 옛
+//   라벨이라 434개가 전부 초록이었다 — 검사가 바뀌기 전 모양만 보고 있었다.
+//   그래서 **v0.54.0 양식 그대로 쓴 요약**을 하나 더 먹인다. 라벨을 다시 줄이면 이게 빨개진다.
+const V054_SUMMARY = [
+  "**비전문가 요약**",
+  "- **무엇을 했는가**",
+  "  1. 로그인 폼을 만들었습니다.",
+  "  2. 오류 문구를 다듬었습니다.",
+  "- **왜 이렇게 결정했는가**: 표준 방식이라 나중에 바꾸기 쉽습니다.",
+  "- **⚠ 잘못되면**: 비밀번호 규칙이 약하면 계정이 뚫립니다.",
+  "",
+  "**▶ 다음에 확인할 것**",
+  "1. 직접 로그인해 보세요.",
+].join("\n");
+
+test("formats 갭: v0.54.0 짧은 양식 요약도 FULL 요약으로 잡힌다", () => {
+  assert.equal(shouldBlockSkillGap([U("기능 만들어줘"), A(V054_SUMMARY)]), "formats");
+});
 test("formats 갭: chageun:formats 로드 후엔 통과", () => {
   const objs = [U("기능 만들어줘"), ASkill("chageun:formats"), UResult(), A(FULL_SUMMARY)];
   assert.equal(shouldBlockSkillGap(objs), null);
