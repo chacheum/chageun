@@ -47,3 +47,15 @@ test("스킬 로드 강제 포인터 5문장 유지(Skill tool + 스킬 ID)", ()
     assert.ok(re.test(RULES), `포인터 누락: ${id}`);
   }
 });
+
+// v0.54.0 pr-reviewer 2차 medium: 요약 라벨을 줄였다가 finish-work 훅의 요약 감지를 꺼뜨린 사고가
+//   났는데, 그때 434개가 전부 초록이었다. 훅 fixture 는 테스트 안 하드코딩 문자열이라 **문서를
+//   안 읽는다** — 문서 라벨을 다시 줄여도 그 테스트는 통과한다. 그래서 문서 자체를 앵커한다.
+test("formats 스킬의 요약 양식이 정본 라벨 다섯 개를 쓴다", () => {
+  const p = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "skills", "formats", "SKILL.md");
+  const md = readFileSync(p, "utf8");
+  for (const label of ["무엇을 했는가", "왜 이렇게 결정했는가", "잘되면", "잘못되면", "다음에 확인할 것"]) {
+    assert.ok(md.includes(label),
+      `formats 양식에 정본 라벨 "${label}" 이 없다 — 라벨을 줄이면 finish-work 훅이 요약을 못 알아본다`);
+  }
+});
