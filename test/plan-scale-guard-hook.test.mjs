@@ -93,6 +93,18 @@ test("무인 모드는 승인 통로를 무시하고 park 한다", () => {
   assert.match(r.stderr, /무인 차단/);
 });
 
+// 5회차 medium: `humanCanApprove = !UNATTENDED && !IS_SUBAGENT` 의 서브에이전트 갈래에 테스트가
+//   하나도 없었다. 두 조건이 AND 라 **무인 테스트는 이 값을 어느 쪽으로 바꿔도 통과한다** — 즉
+//   누가 `!IS_SUBAGENT` 를 지워도 432개가 전부 초록이고, 2회차 high(켤 수 없는 스위치를 안내)가
+//   조용히 되살아난다.
+test("서브에이전트에는 사람만 쓸 수 있는 승인 키·형식 안내를 안 붙인다", () => {
+  const r = runHook({ ...gateCall("계획서: docs/plans/big.md"), agent_type: "chageun:code-implementer" });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /서브에이전트는 이 승인을 받을 수 없습니다/);
+  assert.doesNotMatch(r.stderr, /\[chageun-big-plan:/);
+  assert.doesNotMatch(r.stderr, /형식 요건/);
+});
+
 test("게이트가 아닌 에이전트 호출은 안 막는다", () => {
   const r = runHook({ tool_name: "Task", cwd: DIR,
     tool_input: { subagent_type: "general-purpose", prompt: "계획서: docs/plans/big.md" } });
