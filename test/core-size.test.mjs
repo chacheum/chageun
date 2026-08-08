@@ -115,7 +115,12 @@ function normBytes(p) {
 // 세는 법 = `git log -G'^const CEILING_BYTES' -- test/core-size.test.mjs` + 각 커밋의 값 출력.
 // 바이트도 `git ls-tree -l <커밋> -- src/rules/operating-rules.md` 로 잰다 — **손으로 세지 않는다.**
 // 회수 후보(LIGHT/FULL 통합)는 그 두 줄이 커져 502B → 약 690B 다.
-const CEILING_BYTES = 20585;
+// (+12, 20585 → 20597) pr-reviewer 2차 low: 위 문장을 다시 짜면서 `report conditions **to the user**,
+// get approval` 의 "to the user" 를 중복이라 걷어냈는데, 뒤의 "goes to the user" 와 **다른 행동**이다
+// (앞=조건을 사용자에게 보고하고 그 승인을 받는다 · 뒤=아무도 안 정하는 루프를 사용자에게 올린다).
+// 멈춤 규칙에서 승인 주체가 빠진 것이라 코어 원칙("짧게가 안전 정보를 지우라는 뜻이 아니다")대로 되돌린다.
+// 이 12B 는 상쇄 없이 순증이다 — 이번 회차의 회수분(-97)이 이미 다 쓰였다.
+const CEILING_BYTES = 20597;
 // 밴드 폭. 선언을 여기 두는 이유 = 위 상한 테스트의 실패 메시지가 이 값을 참조하는데,
 // 그 메시지는 콜백 실행마다 평가되므로 선언이 아래 있으면 러너의 실행 시점 규약에 의존하게 된다.
 const BAND_BYTES = 64;

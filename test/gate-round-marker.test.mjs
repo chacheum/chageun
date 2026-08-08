@@ -225,8 +225,11 @@ test("판정 리터럴 소비처가 그대로다(괄호 부기가 기존 배선�
   assert.match(core, /plan-validator \*\*NO-GO\/CONDITIONAL\*\*/, "코어 멈춤 배선의 앵커가 깨졌다");
   assert.match(
     read("src/skills/unattended-loop/SKILL.md"),
-    /NO-GO면 \*\*park\*\*/,
-    "무인 정지선 리터럴이 깨졌다 — 여기가 풀리면 사람 없이 도는 루프가 안 멈춘다"
+    /\*\*NO-GO 또는 CONDITIONAL이면 park\*\*/,
+    "무인 정지선 리터럴이 깨졌다 — 여기가 풀리면 사람 없이 도는 루프가 안 멈춘다. " +
+      "**CONDITIONAL 도 반드시 열거해야 한다**: v0.55.0이 판정 공백을 닫으면서 blocker 없는 high를 " +
+      "전부 CONDITIONAL 로 보내는데, 그 출구는 '사용자에게 올리기'이고 무인 모드엔 그 사람이 없다. " +
+      "일반 규칙이 멈추라 해도 열거에 없으면 안 걸린다는 것을 v0.42.0에서 이미 겪었다(2,941회 중 0회)"
   );
 });
 
