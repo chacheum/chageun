@@ -53,7 +53,8 @@ const REASONS = {
     "**개정 로그·`재검증 회차` 머리는 지우지 말고 본문을 덜어냅니다**(회차 계수의 출처입니다).\n" +
     "이 크기로 가야 하면 AskUserQuestion 으로 사용자에게 위험을 알리고 승인을 받으세요 — 질문 본문에 " +
     "아래 대괄호 키를 **그대로** 넣고, 선택지 2개 중 **두 번째**를 승인으로 두면 됩니다. " +
-    "(키는 이 메시지 끝 `(위반: ...)` 안에 있습니다. 그 라벨은 형식일 뿐이니 대괄호 안만 쓰세요.)\n" +
+    "(키는 이 메시지 끝 `(위반: ...)` 안에 있습니다. 그 라벨은 형식일 뿐이니 대괄호 안만 쓰세요.) " +
+    "⚠ 키는 질문 본문에 **한 번만** 넣으세요 — 이 메시지 전문을 붙여넣으면 키가 두 번 들어가 승인이 인정되지 않습니다.\n" +
     "⚠ **계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다**(코어: 게이트에 대상 경로를 항상 넘긴다).",
   "plan-rounds":
     "차단: 같은 계획을 5회째 재검증하고 있습니다. 계획이 커서 볼수록 새 지적이 나오는 상태입니다.\n" +
@@ -285,6 +286,9 @@ const EDIT_TOOLS_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
 //   (형제 함수 `isCodeTarget`의 `docs/`·`SCRATCH_ROOT_RE`가 같은 제약을 공유 — 구분자 정규화는 한 번에
 //   묶어야 표류가 안 생겨 후속으로 미룸). 놓쳐도 소프트 리마인더 1회를 못 띄울 뿐이고(차단 아님)
 //   게이트 요구 자체는 코어 규칙이 계속 한다.
+// ⚠ v0.53.0부터 이 술어의 호출자는 하나가 아니다 — `planPathsInPrompt`(계획 규모 **하드 차단**)도
+//   쓴다. 위 '놓쳐도 리마인더 1회를 못 띄울 뿐'은 그쪽엔 해당하지 않는다: 놓치면 차단이 안 걸린다
+//   (조용한 미차단). 이 술어를 좁히는 방향으로 손대면 가드가 꺼지는 쪽으로 샌다.
 function isPlanDocPath(p) {
   const s = String(p || "");
   if (!/\.md$/i.test(s)) return false;
@@ -315,12 +319,20 @@ const PLAN_HEAD_LINES = 20;
 //   콜론도 경계다 — `계획서:docs/plans/big.md`(공백 없음)에서 한글 라벨이 경로에 붙는다.
 //   경로 안의 콜론은 이 환경(WSL·POSIX)에서 안 쓰이므로 배제해도 안전하다.
 const PLAN_PATH_RE = /(?:^|[\s"'`(\[<:])([^\s"'`)\]<>:]+\.md)\b/gi;
+// 경계 문자 목록은 닫힌 열거라 목록 밖 장식(`@경로`·`**경로**`)이 붙으면 후보가 어긋나고,
+//   파일을 못 읽어 **가드가 조용히 꺼진다**(v0.53.0 pr-reviewer 1회차 medium). 그래서 후보를
+//   만든 뒤 앞쪽 비경로 문자를 한 번 벗긴다. `./`·`~/`·`/`는 경로 머리라 남긴다.
+const PLAN_PATH_LEAD_JUNK = /^[^\w/.~]+/;
+const PLAN_PATH_MAX = 5;   // 상한 없으면 프롬프트가 계획서를 잔뜩 언급할 때 다 읽는다
 function planPathsInPrompt(text) {
   const out = [];
   const s = String(text || "");
   let m;
   PLAN_PATH_RE.lastIndex = 0;
-  while ((m = PLAN_PATH_RE.exec(s))) if (isPlanDocPath(m[1]) && out.indexOf(m[1]) === -1) out.push(m[1]);
+  while ((m = PLAN_PATH_RE.exec(s)) && out.length < PLAN_PATH_MAX) {
+    const cand = m[1].replace(PLAN_PATH_LEAD_JUNK, "");
+    if (cand && isPlanDocPath(cand) && out.indexOf(cand) === -1) out.push(cand);
+  }
   return out;
 }
 
@@ -361,11 +373,16 @@ function planScaleBlock(toolName, toolInput, opts) {
   }
   if (!big) return null;            // 하나도 못 읽으면 막지 않는다
 
-  // **크기를 회차보다 먼저 본다** — 크기가 원인이고 회차는 증상이다. 회차를 먼저 반환하면
-  //   "한 번 더 검증" 승인 하나가 크기 경고까지 함께 열어버린다.
-  if (big.lines > PLAN_MAX_LINES) return { key: "plan-size", detail: bigPlanKey(big.rel, "plan-size", big.lines) };
-  if (round >= PLAN_MAX_ROUNDS) return { key: "plan-rounds", detail: bigPlanKey(big.rel, "plan-rounds", round) };
-  return null;
+  // **둘을 각각 돌려준다.** 하나만 돌려주면 승인 하나가 다른 축까지 함께 연다 — 실측 사고에서
+  //   "이 크기로 진행" 승인 뒤 재검증 10회가 아무 저항 없이 굴러간 것이 정확히 그 모양이다
+  //   (v0.53.0 pr-reviewer 1회차 medium). 순서는 크기 먼저 — 크기가 원인이고 회차는 증상이다.
+  const hits = [];
+  const measured = big.rel + "(" + big.lines + "줄)";
+  if (big.lines > PLAN_MAX_LINES)
+    hits.push({ key: "plan-size", detail: bigPlanKey(big.rel, "plan-size", big.lines), measured });
+  if (round >= PLAN_MAX_ROUNDS)
+    hits.push({ key: "plan-rounds", detail: bigPlanKey(big.rel, "plan-rounds", round), measured });
+  return hits.length ? hits : null;
 }
 // v0.43.1: 어느 저장소 diff에도 못 들어가는 임시·스크래치 위치는 코드가 아니다 —
 // 실측(honclwd 최근 트랜스크립트 12개): 코드로 계상된 편집 192건 중 43건(22%)이 저장소 밖 스크래치라
@@ -380,7 +397,7 @@ function planScaleBlock(toolName, toolInput, opts) {
 //   진짜 리뷰 대상이 면제되는 구멍이 생긴다.
 // 주의(부수효과): `isCodeTarget`은 hasPrReviewer 말고 planReminderNeeded(P1 소프트 리마인더)도 쓴다.
 //   (위 `isPlanDocPath`가 아니라 **아래** 함수 이야기다 — 붙어 있어 오독한 전례가 있다.
-//    `isPlanDocPath`의 호출자는 planReminderNeeded 하나뿐이고 push 게이트는 안 쓴다.)
+//     `isPlanDocPath`의 호출자는 planReminderNeeded 와 planPathsInPrompt(v0.53.0 하드 차단) 둘이고 push 게이트는 안 쓴다.)
 const SCRATCH_ROOT_RE = /^\/(?:var\/)?tmp\//;
 function isScratchPath(s) {
   return SCRATCH_ROOT_RE.test(s) || s.indexOf("/.cache/claude-tmp/") !== -1;
@@ -398,6 +415,17 @@ function planReminderNeeded(objs, toolName, toolInput) {
   const ti = toolInput || {};
   if (!isCodeTarget(ti.file_path || ti.notebook_path)) return false;
   if (!Array.isArray(objs)) return false;
+  // v0.53.0: 훅에 **차단된** plan-validator 호출도 tool_use 로는 남는다. 결과를 안 보면 그 호출이
+  //   "게이트 거쳤음"으로 계상되어, 검증을 한 번도 못 받은 계획이 리마인더 없이 구현으로 들어간다
+  //   (pr-reviewer 1회차 high). 그래서 is_error 결과가 붙은 호출 id 를 먼저 모아 제외한다.
+  const erroredIds = new Set();
+  for (const o of objs) {
+    const mm = (o && o.message) || o; const cc = mm && mm.content;
+    if (!Array.isArray(cc)) continue;
+    for (const b of cc) {
+      if (b && b.type === "tool_result" && b.is_error && b.tool_use_id) erroredIds.add(String(b.tool_use_id));
+    }
+  }
   let planSeen = false, validated = false, codeEdited = false;
   for (const o of objs) {
     const m = (o && o.message) || o; const c = m && m.content;
@@ -411,7 +439,7 @@ function planReminderNeeded(objs, toolName, toolInput) {
         else if (planSeen && isCodeTarget(p)) codeEdited = true;
       } else if (/^(Task|Agent)$/.test(nm)) {
         const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
-        if (planSeen && /plan-validator/.test(sub)) validated = true;
+        if (planSeen && /plan-validator/.test(sub) && !erroredIds.has(String(b.id || ""))) validated = true;
       }
     }
   }

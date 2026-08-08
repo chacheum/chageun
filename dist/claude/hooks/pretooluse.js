@@ -320,20 +320,31 @@ process.stdin.on("end", () => {
     //   탈출구를 환경변수로 안 둔 이유: 그건 세션 도중 못 켜서 오차단 시 회복이 세션 재시작뿐이다
     //   (`pretooluse-core.js:54`·`:94` 가 같은 사실을 이미 못박아 뒀다).
     //   무인 모드는 승인 통로를 무시한다(사람이 승인할 수 없는 자리 · 실패 모드는 park).
-    //   ⚠ try/catch 로 감싸지 않는다 — 판정 오류를 조용히 삼키면 가드가 꺼진 줄 모른다.
-    //   파일 읽기 실패는 planScaleBlock 안에서 후보 단위로 걸러진다.
+    //   ⚠ 자체 try/catch 를 둔다. 바깥 catch(`function main` 끝)는 유인 모드에서 **아무 말 없이
+    //     exit 0** 이라, 판정에 버그가 들어가면 가드가 꺼진 줄 모른 채 몇 주가 지난다
+    //     (pr-reviewer 1회차 medium). 여기서는 통과시키되 stderr 한 줄로 꺼졌음을 남긴다.
+    //   크기·회차 **둘 다** 판정한다 — 하나만 보면 크기 승인 하나가 회차 상한까지 함께 연다.
     {
-      const cwdBase = input.cwd || process.cwd();
-      const ps = planScaleBlock(name, ti, {
-        readFile: (rel) => fs.readFileSync(path.resolve(cwdBase, rel), "utf8"),
-      });
-      if (ps) {
-        let ok = false;
-        if (!UNATTENDED) {
-          const approvals = readTranscriptIfMentions(input.transcript_path, "chageun-big-plan:") || [];
-          ok = approvedBigPlan(approvals, ps.detail).approved;
+      let hits = null;
+      try {
+        const cwdBase = input.cwd || process.cwd();
+        hits = planScaleBlock(name, ti, {
+          readFile: (rel) => fs.readFileSync(path.resolve(cwdBase, rel), "utf8"),
+        });
+      } catch (e) {
+        process.stderr.write("[chageun] 계획 규모 가드가 판정에 실패해 이번 호출은 통과시킵니다: "
+          + (e && e.message ? e.message : e) + "\n");
+        hits = null;
+      }
+      if (hits && hits.length) {
+        const approvals = UNATTENDED
+          ? [] : (readTranscriptIfMentions(input.transcript_path, "chageun-big-plan:") || []);
+        for (const hit of hits) {
+          const ok = !UNATTENDED && approvedBigPlan(approvals, hit.detail).approved;
+          // 무인은 승인 통로를 무시하므로 쓸 수 없는 키를 붙이지 않는다(오독 방지).
+          if (!ok) return deny(hit.key, UNATTENDED,
+            UNATTENDED ? "잰 파일 " + hit.measured : hit.detail + " · 잰 파일 " + hit.measured);
         }
-        if (!ok) return deny(ps.key, UNATTENDED, ps.detail);
       }
     }
 

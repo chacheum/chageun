@@ -12,8 +12,10 @@ const F = {
   "docs/plans/2026-08-01-홈캘린더-보기개선-1차.md": "c\n".repeat(4000),
 };
 const opts = { readFile: (rel) => { if (!(rel in F)) throw new Error("ENOENT"); return F[rel]; } };
-const call = (prompt, sub = "chageun:plan-validator") =>
+// planScaleBlock 은 히트 **배열**을 돌려준다(크기·회차를 각각 승인받게 하려고).
+const hits = (prompt, sub = "chageun:plan-validator") =>
   planScaleBlock("Task", { subagent_type: sub, prompt }, opts);
+const call = (prompt, sub) => { const h = hits(prompt, sub); return h ? h[0] : null; };
 
 test("한글 이름 계획서도 경로로 잡힌다", () => {
   assert.deepEqual(planPathsInPrompt("계획서: docs/plans/2026-08-01-홈캘린더-보기개선-1차.md 검증해줘"),
@@ -61,8 +63,13 @@ test("회차는 파일 앞 20줄만 본다(본문 인용에 자기 차단 안 �
   assert.equal(planScaleBlock("Task", { subagent_type: "plan-validator", prompt: "docs/plans/q.md" },
     { readFile: (r) => f[r] }), null);
 });
-test("크기를 회차보다 먼저 본다(승인 하나가 두 위험을 열지 않게)", () => {
-  assert.equal(call("재검증 회차: 9\ndocs/plans/big.md").key, "plan-size");
+// 크기 승인 하나가 회차 상한까지 열면 안 된다 — 둘 다 돌려주고 각각 승인받게 한다.
+test("크기와 회차가 둘 다 걸리면 둘 다 돌려준다(크기 먼저)", () => {
+  const h = hits("재검증 회차: 9\ndocs/plans/big.md");
+  assert.deepEqual(h.map((x) => x.key), ["plan-size", "plan-rounds"]);
+});
+test("잰 파일과 줄수를 함께 돌려준다(오차단을 바로 알아보게)", () => {
+  assert.equal(call("docs/plans/big.md").measured, "docs/plans/big.md(4021줄)");
 });
 
 test("승인 키에 측정값이 들어가 범위가 생긴다", () => {
@@ -136,3 +143,28 @@ test("회차를 양쪽에서 읽으라고 적혀 있다", () => {
   assert.match(PV(), /계획서 머리와 호출 프롬프트 양쪽에서 읽는다/);
 });
 test("새 점검 항목이 있다", () => { assert.match(PV(), /실행하면 바로 아는 값/); });
+
+// ---- 차단된 게이트 호출을 "검증함"으로 치지 않는다 (pr-reviewer 1회차 high) ----
+const planEdit = () => ({ message: { content: [{ type: "tool_use", id: "e1", name: "Write",
+  input: { file_path: "docs/plans/x.md" } }] } });
+const gateSpawn = (id) => ({ message: { content: [{ type: "tool_use", id, name: "Task",
+  input: { subagent_type: "chageun:plan-validator", prompt: "docs/plans/x.md" } }] } });
+const gateResult = (id, isError) => ({ message: { content: [{ type: "tool_result",
+  tool_use_id: id, is_error: isError, content: isError ? "차단" : "GO" }] } });
+
+test("정상적으로 돌아간 게이트는 검증으로 친다(리마인더 안 뜸)", () => {
+  const objs = [planEdit(), gateSpawn("g1"), gateResult("g1", false)];
+  assert.equal(core.planReminderNeeded(objs, "Write", { file_path: "src/a.ts" }), false);
+});
+test("훅에 막힌 게이트 호출은 검증으로 안 친다(리마인더가 살아난다)", () => {
+  const objs = [planEdit(), gateSpawn("g1"), gateResult("g1", true)];
+  assert.equal(core.planReminderNeeded(objs, "Write", { file_path: "src/a.ts" }), true);
+});
+test("막힌 뒤 다시 불러 성공하면 검증으로 친다", () => {
+  const objs = [planEdit(), gateSpawn("g1"), gateResult("g1", true), gateSpawn("g2"), gateResult("g2", false)];
+  assert.equal(core.planReminderNeeded(objs, "Write", { file_path: "src/a.ts" }), false);
+});
+
+test("지난 회차 지적도 프롬프트에서 찾으라고 적혀 있다", () => {
+  assert.match(PV(), /지난 회차 지적은 계획서 머리 또는 호출 프롬프트의/);
+});
