@@ -169,33 +169,31 @@ test("지난 회차 지적도 프롬프트에서 찾으라고 적혀 있다", ()
   assert.match(PV(), /지난 회차 지적은 계획서 머리 또는 호출 프롬프트의/);
 });
 
-// ---- 기계 회차 계수 (pr-reviewer 2회차 medium: 자기신고만 믿으면 안 켜지거나 지우면 통과) ----
-const gateCallRec = (base) => ({ message: { content: [{ type: "tool_use", id: "x", name: "Task",
-  input: { subagent_type: "chageun:plan-validator", prompt: `계획서: docs/plans/${base}` } }] } });
-
-test("같은 계획서로 부른 지난 게이트 호출을 센다", () => {
-  const t = [gateCallRec("big.md"), gateCallRec("big.md"), gateCallRec("other-plan.md")];
-  assert.equal(core.priorGateRounds(t, "big.md"), 2);
-  assert.equal(core.priorGateRounds(t, "other-plan.md"), 1);
-  assert.equal(core.priorGateRounds(t, "none.md"), 0);
+// ---- 문턱 숫자가 차단문과 상수에서 어긋나지 않게 (3회차 low) ----
+// 문구에 "3,000줄"·"5회째"를 손으로 적어 뒀다. 상수만 바꾸면 문구가 조용히 거짓말을 한다.
+test("차단문의 숫자가 상수와 같다", () => {
+  const size = core.reasonFor("plan-size");
+  const rounds = core.reasonFor("plan-rounds");
+  assert.ok(size.includes(core.PLAN_MAX_LINES.toLocaleString("en-US")),
+    `plan-size 문구에 ${core.PLAN_MAX_LINES} 이 없다`);
+  assert.ok(rounds.includes(`${core.PLAN_MAX_ROUNDS}회째`),
+    `plan-rounds 문구에 ${core.PLAN_MAX_ROUNDS}회째 가 없다`);
 });
 
-test("마커를 안 적어도 5회째면 막힌다(자기신고 없이)", () => {
-  const t = Array.from({ length: 4 }, () => gateCallRec("small.md"));
-  const h = planScaleBlock("Task", { subagent_type: "plan-validator", prompt: "계획서: docs/plans/small.md" },
-    { ...opts, transcript: t });
-  assert.equal(h[0].key, "plan-rounds");
-  assert.match(h[0].measured, /출처 이 세션의 게이트 호출 기록/);
+// ---- 경로 후보를 미리 거르지 않는다 (3회차 medium: 굵게 쓴 절대경로를 통째로 놓쳤다) ----
+test("굵게 표시한 절대경로도 후보에 들어간다", () => {
+  const found = core.planPathsInPrompt("계획서: **/home/me/proj/docs/plans/big.md** 를 검증");
+  assert.ok(found.includes("/home/me/proj/docs/plans/big.md"),
+    `벗긴 절대경로가 후보에 없다: ${JSON.stringify(found)}`);
 });
 
-test("4회째까지는 통과한다", () => {
-  const t = Array.from({ length: 3 }, () => gateCallRec("small.md"));
-  assert.equal(planScaleBlock("Task", { subagent_type: "plan-validator", prompt: "계획서: docs/plans/small.md" },
-    { ...opts, transcript: t }), null);
+test("한글 폴더가 앞에 와도 원본이 후보에 남는다", () => {
+  const found = core.planPathsInPrompt("계획서: 한글폴더/plans/개편계획.md");
+  assert.ok(found.includes("한글폴더/plans/개편계획.md"),
+    `원본 경로가 후보에 없다: ${JSON.stringify(found)}`);
 });
 
-test("자기신고가 더 크면 그쪽을 쓴다(이전 세션 포함 값 존중)", () => {
-  const h = planScaleBlock("Task", { subagent_type: "plan-validator",
-    prompt: "재검증 회차: 8\n계획서: docs/plans/small.md" }, { ...opts, transcript: [] });
-  assert.match(h[0].measured, /회차 8/);
+test("후보 상한을 넘기지 않는다", () => {
+  const many = Array.from({ length: 40 }, (_, i) => `**docs/plans/p${i}.md**`).join(" ");
+  assert.ok(core.planPathsInPrompt(many).length <= 20);
 });

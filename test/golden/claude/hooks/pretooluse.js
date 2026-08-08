@@ -8,6 +8,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, approvedDesignVariant, planScaleBlock, approvedBigPlan } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
@@ -318,7 +319,7 @@ process.stdin.on("end", () => {
     // 1.6) 계획 규모 가드(v0.53.0). plan-validator.md 의 같은 축은 **보고**만 하고 안 멈춰서
     //   실측 사고를 못 막았다(4,020줄 계획 · 10회 넘는 재검증 · 나흘간 코드 0줄).
     //   탈출구를 환경변수로 안 둔 이유: 그건 세션 도중 못 켜서 오차단 시 회복이 세션 재시작뿐이다
-    //   (`pretooluse-core.js:54`·`:94` 가 같은 사실을 이미 못박아 뒀다).
+    //   (pretooluse-core.js 의 REASONS["deploy"]·REASONS["gate-skip"] 문구가 같은 사실을 이미 못박아 뒀다).
     //   무인 모드는 승인 통로를 무시한다(사람이 승인할 수 없는 자리 · 실패 모드는 park).
     //   ⚠ 자체 try/catch 를 둔다. 바깥 catch(stdin 'end' 핸들러 끝)는 유인 모드에서 **아무 말 없이
     //     exit 0** 이라, 판정에 버그가 들어가면 가드가 꺼진 줄 모른 채 몇 주가 지난다
@@ -326,14 +327,18 @@ process.stdin.on("end", () => {
     //   크기·회차 **둘 다** 판정한다 — 하나만 보면 크기 승인 하나가 회차 상한까지 함께 연다.
     {
       let hits = null;
-      // 승인 확인용으로 어차피 읽는 트랜스크립트를 앞으로 당겨 **기계 회차 계수**에도 쓴다
-      //   (회차를 자기신고에만 기대면 안 적으면 안 켜지고 지우면 통과한다).
-      const planTranscript = readTranscriptIfMentions(input.transcript_path, "plan-validator") || [];
+      // ⚠ 트랜스크립트는 여기서 **읽지 않는다.** 3회차에 기계 회차 계수를 먹이려고 이 자리에서
+      //   무조건 읽었는데, §1.6은 모든 도구 호출에서 도는 자리라 `git status` 한 번에도 세션 기록
+      //   전체(수천 레코드)를 파싱했다. needle 조기 탈출은 "plan-validator"가 차근 세션에 늘 있어
+      //   안 걸린다. 긴 세션에서 훅 timeout 을 넘기면 **하드 차단 전부가 조용히 꺼진다**.
+      //   승인 확인용 읽기는 아래에서 **차단이 실제로 걸렸을 때만** 한다.
       try {
         const cwdBase = input.cwd || process.cwd();
         hits = planScaleBlock(name, ti, {
-          readFile: (rel) => fs.readFileSync(path.resolve(cwdBase, rel), "utf8"),
-          transcript: planTranscript,
+          // `~/…` 는 셸이 아니라 우리가 편다 — path.resolve 는 `<cwd>/~/…` 로 만들어 읽기가 실패하고,
+          //   실패는 후보 탈락이라 **가드가 조용히 꺼진다**(3회차 low · 한글 경로와 같은 실패 종류).
+          readFile: (rel) => fs.readFileSync(
+            /^~\//.test(rel) ? path.join(os.homedir(), rel.slice(2)) : path.resolve(cwdBase, rel), "utf8"),
         });
       } catch (e) {
         // 무인은 이 파일의 관례대로 **fail-closed** — 판정 불확실 = park(바깥 catch와 같은 원칙).
@@ -347,19 +352,24 @@ process.stdin.on("end", () => {
         const approvals = UNATTENDED
           ? [] : (readTranscriptIfMentions(input.transcript_path, "chageun-big-plan:") || []);
         for (const hit of hits) {
-          const ok = !UNATTENDED && approvedBigPlan(approvals, hit.detail).approved;
-          if (ok) continue;
-          // 승인 질문은 **있었는데** 형식이 안 맞아 인정 못 한 경우를 구분해 알려준다.
-          //   같은 차단문만 다시 내면 무엇이 틀렸는지 알 길이 없어 같은 실패를 반복한다(2회차 high).
+          const verdict = UNATTENDED ? { approved: false } : approvedBigPlan(approvals, hit.detail);
+          if (verdict.approved) continue;
+          // 승인 질문은 **있었는데** 인정 못 한 경우를 구분해 알려준다. 같은 차단문만 다시 내면
+          //   무엇이 틀렸는지 알 길이 없어 같은 실패를 반복한다(2회차 high).
+          //   ⚠ "형식 오류"와 "사용자가 안 눌렀다"를 갈라야 한다 — 사용자가 첫 번째(거절)를 눌렀는데
+          //   형식 오류라고 안내하면 모델이 같은 질문을 다시 띄운다. 사람의 "아니오"가 기계 오류로
+          //   포장돼 재촉으로 바뀐다(3회차 medium).
           const tried = !UNATTENDED && approvals.some((r) => {
             const c2 = ((r && (r.message || r)).content) || [];
             return Array.isArray(c2) && c2.some((b) => b && b.type === "tool_use"
               && b.name === "AskUserQuestion" && JSON.stringify(b.input || {}).includes(hit.detail));
           });
-          const why = tried
-            ? " ⚠ 이 키가 든 승인 질문은 찾았지만 **형식이 안 맞아 인정되지 않았습니다** —"
-              + " 질문 1개 · 선택지 2개 · 사용자가 두 번째를 **클릭**(직접 입력 아님)을 확인하세요."
-            : "";
+          const why = !tried ? ""
+            : verdict.wellFormed
+              ? " ⚠ 이 키가 든 승인 질문은 형식이 맞는데 **두 번째 선택지가 눌리지 않았습니다** —"
+                + " 사용자가 거절했거나 아직 답하지 않은 것입니다. **거절이면 다시 묻지 말고 일을 쪼개세요.**"
+              : " ⚠ 이 키가 든 승인 질문은 찾았지만 **형식이 안 맞아 인정되지 않았습니다** —"
+                + " 위 형식 요건 5가지를 확인하세요.";
           // 무인은 승인 통로를 무시하므로 쓸 수 없는 키를 붙이지 않는다(오독 방지).
           return deny(hit.key, UNATTENDED,
             UNATTENDED ? hit.measured : hit.detail + " · " + hit.measured + why);
