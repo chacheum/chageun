@@ -231,16 +231,72 @@ function userText(o) {
   }
   return "";
 }
+// v0.52.0. Harness blocks the harness APPENDS to a human turn. Stripping them (not the whole record)
+// closes both directions at once: an unstripped notice would be a new false positive, and one appended
+// AFTER human text inflates length so a real correction silently dies on the 200-char cap (measured 0 in
+// this corpus, possible in principle). 🛑 NO unclosed-tag alternative (`<tag>[\s\S]*`): unclosed harness
+// blocks are 0 in this corpus (zero gain), while users DO type these tag names in chat (17× in one
+// session) — that branch would cut a human sentence from the tag onward, creating the very
+// under-detection it was meant to prevent. 🛑 has /g, so use .replace() only, never .test()
+// (lastIndex would alternate); .replace() resets lastIndex.
+const HARNESS_BLOCK_RE =
+  /<(system-reminder|local-command-[a-z]+|command-name|command-message|command-args|task-notification|user-prompt-submit-hook)\b[\s\S]*?<\/\1>/gi;
+// Whole records that are not human typing. The compaction summary carries isMeta:false, so it needs its
+// own anchor. The trailing catch-all requires a HYPHEN: every harness tag observed leading a user record
+// has one (task-notification 45 · local-command-caveat 10 · command-name 10 · local-command-stdout 8 ·
+// system-reminder 2), so `<div>`/`<p>` questions survive. `[\s>]` tolerates attributes — HARNESS_BLOCK_RE
+// allows anything after `\b`, so requiring `>` here would leave the catch-all the weaker of the two.
+// ⚠ Known gap: a human turn opening with a hyphenated custom element (`<user-avatar> 이거 말고 …`) is
+// dropped. 0 in this corpus, but chageun also ships in frontend projects.
+const NON_HUMAN_USER_RE =
+  /^\s*(?:This session is being continued from a previous|\[Request interrupted by user|Caveat: The messages below|<[a-z]+(?:-[a-z]+)+[\s>])/i;
+
+// The human characters of a user record, or "" if there are none.
+// ⚠ Order premise: NON_HUMAN_USER_RE is applied to the RAW text, so a record STARTING with a harness tag
+// is dropped whole even if human text follows. Safe today — the harness appends after human text, and the
+// 2 leading `<system-reminder>` records are all isMeta with a single line and nothing following. This
+// rides on harness behaviour; if it ever prepends, human turns vanish silently.
+function humanText(o) {
+  if (o.isMeta) return "";                          // harness-injected (skill load, hook feedback, …)
+  const raw = userText(o);
+  if (raw === null || !raw) return "";              // tool_result-only = not a real user message
+  if (NON_HUMAN_USER_RE.test(raw)) return "";
+  return raw.replace(HARNESS_BLOCK_RE, " ").trim();
+}
+// The retrospect budget is a TIME limit, not memory (feature-spec F-23). Walking back re-cleans the same
+// records, and a compaction summary is ~14k chars — so cache per object.
+const _humanCache = new WeakMap();
+function humanTextCached(o) {
+  if (_humanCache.has(o)) return _humanCache.get(o);
+  const v = humanText(o);
+  _humanCache.set(o, v);
+  return v;
+}
+// Transcripts interleave bookkeeping records BETWEEN an assistant message and the user's reply
+// (queue-operation · bridge-session · file-history-snapshot · system · attachment — the list in the C6
+// comment below). Reading objs[i-1] directly made "previous is assistant" hold for 1 of 69 measured human
+// turns, so this detector NEVER reached its regex — the cause of three consecutive 0-finding retrospects.
+// Records with no human characters (tool results, skill loads) are skipped too: otherwise a record that
+// userText() calls "not a user message" would still count as `user` here, splitting the verdict inside
+// one file.
+function prevConversationRole(objs, i) {
+  for (let k = i - 1; k >= 0; k--) {
+    const r = objs[k].type || (objs[k].message && objs[k].message.role);
+    if (r === "assistant") return "assistant";
+    if (r === "user" && humanTextCached(objs[k])) return "user";
+  }
+  return null;
+}
+
 function detectUserCorrections(objs, sessionId) {
   const out = [];
   for (let i = 1; i < objs.length; i++) {
     const o = objs[i];
     const role = o.type || (o.message && o.message.role);
     if (role !== "user") continue;
-    const t = userText(o);
+    const t = humanTextCached(o);
     if (!t) continue;
-    const prevRole = objs[i - 1].type || (objs[i - 1].message && objs[i - 1].message.role);
-    if (prevRole !== "assistant") continue;         // only reactions to assistant output
+    if (prevConversationRole(objs, i) !== "assistant") continue;   // only reactions to assistant output
     if (t.length > 200) continue;                    // long = new task, not a terse correction
     if (CORRECTION_RE.test(t)) out.push({ type: "user-correction", phrase: t.slice(0, 160), sessionId, evidence: t.slice(0, 160) });
   }
@@ -496,6 +552,7 @@ function isDue(cwd, opts = {}) {
 export {
   transcriptDir, resolveTranscriptDir, listSessionFiles, listAgentFiles, parseSession,
   detectGateGaps, detectUserCorrections, detectNearMisses, driftSignal,
+  humanText, prevConversationRole,  // exported so §2.4 staged counting uses the REAL functions, not a copy
   scan, readMarker, writeMarker, isDue,
   MAX_SESSIONS, MAX_FILE_BYTES, MAX_BYTES, // exported so the cap-ordering invariant is testable
   MAX_AGENT_FILES, MAX_AGENT_BYTES, AGENT_SIGNAL_RE,
