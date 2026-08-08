@@ -45,6 +45,25 @@ function destructiveSql(text) {
 }
 
 const REASONS = {
+  "plan-size":
+    "차단: 계획서가 너무 큽니다(3,000줄 초과). 이 크기는 게이트도 사람도 다 못 봅니다 — " +
+    "실측에서 4,020줄 계획이 10회 넘게 재검증되며 나흘간 코드가 한 줄도 안 나갔습니다.\n" +
+    "**문서를 쪼개지 마세요**(그 방식은 이미 실패했고 두 문서가 서로 어긋나는 새 문제를 만들었습니다). " +
+    "**일을 쪼개세요** — 앞쪽 작업 몇 개만 남기고 나머지는 다음 계획으로 미룬 뒤 다시 부르세요. " +
+    "**개정 로그·`재검증 회차` 머리는 지우지 말고 본문을 덜어냅니다**(회차 계수의 출처입니다).\n" +
+    "이 크기로 가야 하면 AskUserQuestion 으로 사용자에게 위험을 알리고 승인을 받으세요 — 질문 본문에 " +
+    "아래 대괄호 키를 **그대로** 넣고, 선택지 2개 중 **두 번째**를 승인으로 두면 됩니다. " +
+    "(키는 이 메시지 끝 `(위반: ...)` 안에 있습니다. 그 라벨은 형식일 뿐이니 대괄호 안만 쓰세요.)\n" +
+    "⚠ **계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다**(코어: 게이트에 대상 경로를 항상 넘긴다).",
+  "plan-rounds":
+    "차단: 같은 계획을 5회째 재검증하고 있습니다. 계획이 커서 볼수록 새 지적이 나오는 상태입니다.\n" +
+    "두 길 중 하나를 사용자에게 물어 고르세요: (1) 남은 조건을 끝 점검 항목으로 등록하고 구현 착수, " +
+    "(2) 일을 쪼개서 앞부분만 다시 계획.\n" +
+    "**막는 지적(blocker)이 0이면 코어 규칙상 (1)이 기본입니다** — 조건부 통과는 승인 한 번으로 진행합니다.\n" +
+    "**이 회차 표기가 끝난 옛 작업 것이면 계획서 머리에서 지우고 다시 부르세요**(승인 없이 풀립니다). " +
+    "코어 규칙은 GO 나면 마커를 지우게 돼 있지만 기계 확인이 없어 남아 있을 수 있습니다.\n" +
+    "한 번 더 검증해야 하면 아래 대괄호 키로 승인을 받으세요(넣는 법은 계획 크기 차단과 같습니다).\n" +
+    "⚠ **계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다.**",
   "force-push": "차단: `git push --force`는 남의 커밋을 덮어써 되돌리기 어렵습니다. 필요하면 `--force-with-lease`를 쓰세요(안전 강제 push).",
   "rm-recursive": "차단: 루트/홈/현재 트리 전체를 지우는 `rm -rf`는 되돌릴 수 없습니다. 지울 대상 경로를 구체적으로 좁히세요.",
   "sql-destructive": "차단: DROP/TRUNCATE 같은 파괴적 스키마 명령입니다. 운영 데이터라면 되돌릴 수 없으니, 테스트 환경인지·백업이 있는지 먼저 확인하세요.",
@@ -271,6 +290,82 @@ function isPlanDocPath(p) {
   if (!/\.md$/i.test(s)) return false;
   if (/(^|\/)plans\//i.test(s)) return true;
   return /(^|\/)(plan|[^/]*[-_.]plan)\.md$/i.test(s);
+}
+
+// v0.53.0 계획 규모 가드(기계 채널). plan-validator.md 의 같은 축 문구는 **보고**만 하고 안 멈춰서
+//   실측 사고를 못 막았다: 4,020줄 계획이 10회 넘게 재검증되며 나흘간 코드가 0줄 나갔다.
+// **기준선 근거(실측)**: 잘 끝난 계획 최대 2,560줄 · 실패 건 4,020줄. plan-validator 의 400줄은
+//   계획서 12개 중 10개에 걸려 **항상 울리는 경보**라 무시됐다. 그래서 400은 보고 문턱으로 두고
+//   진행을 실제로 막는 문턱만 여기 3,000으로 따로 둔다(두 숫자가 다른 것은 의도다).
+// **v1은 파일 하나만 잰다.** 형제 합산은 접두 계산이 폴더 전체를 한 묶음으로 뭉개는 사고를 냈고
+//   (1회차 게이트가 잡음), 실패 건은 합산 없이도 걸리므로 2차로 미뤘다.
+//   ⚠ 남는 구멍: 계획을 각 3,000줄 아래 여러 권으로 쪼개면 통과한다.
+const PLAN_MAX_LINES = 3000;
+const PLAN_MAX_ROUNDS = 5;
+const PLAN_ROUND_RE = /재검증\s*회차\s*[:：]\s*(\d+)/;
+const PLAN_HEAD_LINES = 20;
+
+// 경로 문자 클래스를 **뒤집어** 쓴다 — `[\w./-]` 의 `\w` 는 한글을 포함하지 않아
+//   `…-홈캘린더-보기개선-1차.md` 가 통째로 안 잡혔다(사용자 계획 폴더 10개 중 4개가 한글 이름).
+// **왼쪽 앵커 필수** — 없으면 `[계획서](docs/plans/big.md)` 가 `(docs/plans/big.md` 로,
+//   `계획서:docs/plans/big.md`(공백 없음)가 통째로 잡힌다. 둘 다 isPlanDocPath 를 통과한 뒤
+//   파일을 못 읽어 **가드가 조용히 꺼진다**(3회차 게이트가 잡음).
+// 지목 정규식(`계획서:` 뒤 첫 경로)은 쓰지 않는다 — 경로 안 `plans/` 의 `plan` 에도 붙어 앞이 잘린다.
+//   후보를 하나 고르지도 않는다: 읽히는 것을 전부 재서 가장 큰 것으로 판정한다(planScaleBlock).
+//   콜론도 경계다 — `계획서:docs/plans/big.md`(공백 없음)에서 한글 라벨이 경로에 붙는다.
+//   경로 안의 콜론은 이 환경(WSL·POSIX)에서 안 쓰이므로 배제해도 안전하다.
+const PLAN_PATH_RE = /(?:^|[\s"'`(\[<:])([^\s"'`)\]<>:]+\.md)\b/gi;
+function planPathsInPrompt(text) {
+  const out = [];
+  const s = String(text || "");
+  let m;
+  PLAN_PATH_RE.lastIndex = 0;
+  while ((m = PLAN_PATH_RE.exec(s))) if (isPlanDocPath(m[1]) && out.indexOf(m[1]) === -1) out.push(m[1]);
+  return out;
+}
+
+// 승인 키. **훅이 만들어 사유문에 그대로 찍는다** — 모델이 짐작해 쓰면 안 맞는다.
+// 측정값을 버킷으로 넣어 유효 범위를 준다: 4천줄 승인이 9천줄까지 열어주지 않는다.
+// 경로가 아니라 **파일 이름**으로 만든다 — 같은 계획을 절대경로로도 상대경로로도 부르는데
+//   경로 문자열을 키에 쓰면 표기만 바뀌어도 승인이 무효가 된다.
+function bigPlanKey(rel, key, value) {
+  const base = String(rel).split("/").pop();
+  const bucket = key === "plan-rounds" ? "r" + value : Math.floor(value / 1000) + "k";
+  return "[chageun-big-plan:" + base + ":" + bucket + "]";
+}
+
+// 반환: { key, detail } 또는 null. detail = 승인 키(래퍼가 사유문 뒤에 붙인다).
+// 코어 순수 계약(`:1`)을 지키려고 파일 읽기는 **주입받는다** — 없으면 판정하지 않는다.
+function planScaleBlock(toolName, toolInput, opts) {
+  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
+  if (gateOf(subagentOf(toolInput)) !== "plan-validator") return null;
+  const readFile = opts && opts.readFile;
+  if (typeof readFile !== "function") return null;
+
+  const prompt = String((toolInput && toolInput.prompt) || "");
+  const cands = planPathsInPrompt(prompt);
+  if (!cands.length) return null;   // 경로 미기재 = fail-open(사유문이 우회를 못박는다)
+
+  let big = null;
+  const pm = prompt.match(PLAN_ROUND_RE);
+  let round = pm ? +pm[1] || 0 : 0;
+  for (const rel of cands) {
+    let txt;
+    try { txt = readFile(rel); } catch (_) { continue; }
+    if (typeof txt !== "string") continue;
+    const lines = txt.split("\n");
+    if (!big || lines.length > big.lines) big = { rel, lines: lines.length };
+    // 파일 쪽 회차는 **앞 20줄만** 본다. 전체를 보면 회차 표기를 본문에 인용한 계획서가 자기 차단된다.
+    const fm = lines.slice(0, PLAN_HEAD_LINES).join("\n").match(PLAN_ROUND_RE);
+    if (fm) round = Math.max(round, +fm[1] || 0);
+  }
+  if (!big) return null;            // 하나도 못 읽으면 막지 않는다
+
+  // **크기를 회차보다 먼저 본다** — 크기가 원인이고 회차는 증상이다. 회차를 먼저 반환하면
+  //   "한 번 더 검증" 승인 하나가 크기 경고까지 함께 열어버린다.
+  if (big.lines > PLAN_MAX_LINES) return { key: "plan-size", detail: bigPlanKey(big.rel, "plan-size", big.lines) };
+  if (round >= PLAN_MAX_ROUNDS) return { key: "plan-rounds", detail: bigPlanKey(big.rel, "plan-rounds", round) };
+  return null;
 }
 // v0.43.1: 어느 저장소 diff에도 못 들어가는 임시·스크래치 위치는 코드가 아니다 —
 // 실측(honclwd 최근 트랜스크립트 12개): 코드로 계상된 편집 192건 중 43건(22%)이 저장소 밖 스크래치라
@@ -732,8 +827,10 @@ function gateModelBlock(toolName, toolInput) {
 
 // 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
 // 질문 문구는 사용자 언어가 달라도 되며, 보이는 키와 두 번째 선택이라는 구조만 고정한다.
-function approvedDesignVariant(transcript, componentId, variantId) {
-  const key = `[chageun-design-variant:${componentId}:${variantId}]`;
+// v0.53.0: 계획 규모 가드도 같은 승인 방식을 쓴다. 키만 다르므로 **본문을 공유 헬퍼로 뽑았다**
+//   (사본을 늘리면 한쪽만 고쳐져 조용히 갈라진다 — 이 파일이 `:697`에 이미 그 경고를 적어 뒀다).
+//   `approvedDesignVariant` 의 시그니처·동작은 그대로다.
+function approvedByAskKey(transcript, key) {
   const blocks = [];
   for (const record of Array.isArray(transcript) ? transcript : []) {
     const content = (record && (record.message || record).content) || [];
@@ -764,6 +861,17 @@ function approvedDesignVariant(transcript, componentId, variantId) {
   return { approved: false, toolUseId: null };
 }
 
+function approvedDesignVariant(transcript, componentId, variantId) {
+  return approvedByAskKey(transcript, `[chageun-design-variant:${componentId}:${variantId}]`);
+}
+
+// 큰 계획 진행 승인. 키는 `bigPlanKey()` 가 만들어 차단 사유문에 그대로 찍는다 —
+//   모델이 짐작해 쓰면 안 맞는다. env 탈출구를 안 쓰는 이유는 그게 세션 도중 못 켜지기 때문이다
+//   (`:54`·`:94` 가 같은 사실을 이미 못박아 뒀다).
+function approvedBigPlan(transcript, key) {
+  return approvedByAskKey(transcript, String(key || ""));
+}
+
 function unattendedBlock(toolName, toolInput, opts) {
   const name = String(toolName || "");
   if (name === "Bash") {
@@ -790,6 +898,10 @@ function unattendedBlock(toolName, toolInput, opts) {
 }
 
 const REASONS_UNATTENDED = {
+  "plan-size": "무인 차단(park): 계획서가 3,000줄을 넘습니다. 사람이 돌아오면 일을 쪼갤지 " +
+    "이 크기로 갈지 정해야 합니다 — 무인 중에는 큰 계획을 통과시키지 않습니다.",
+  "plan-rounds": "무인 차단(park): 같은 계획을 5회째 재검증하고 있습니다. 사람이 돌아오면 " +
+    "조건을 안고 착수할지 일을 쪼갤지 정해야 합니다.",
   "u-push": "무인 모드 차단: git push는 자동배포로 이어질 수 있어 무인 중엔 못 합니다. 이 작업을 park하고 사람 복귀를 기다립니다.",
   "u-deploy": "무인 모드 차단: 배포·퍼블리시(프리뷰 포함)는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
   "u-egress": "무인 모드 차단: 외부로 데이터를 내보내는 명령(전송·업로드·원시 소켓)은 되돌리기 불가·유출 위험이라 무인 중 금지. localhost 검증은 허용됩니다. park하고 사람 복귀를 기다립니다.",
@@ -808,4 +920,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, PLAN_MAX_ROUNDS, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };

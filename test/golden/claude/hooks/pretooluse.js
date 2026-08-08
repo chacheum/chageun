@@ -8,7 +8,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, approvedDesignVariant } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, approvedDesignVariant, planScaleBlock, approvedBigPlan } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
 
@@ -313,6 +313,28 @@ process.stdin.on("end", () => {
     {
       const gm = gateModelBlock(name, ti);
       if (gm && (UNATTENDED || process.env.CHAGEUN_ALLOW_GATE_MODEL !== "1")) return deny(gm, false);
+    }
+
+    // 1.6) 계획 규모 가드(v0.53.0). plan-validator.md 의 같은 축은 **보고**만 하고 안 멈춰서
+    //   실측 사고를 못 막았다(4,020줄 계획 · 10회 넘는 재검증 · 나흘간 코드 0줄).
+    //   탈출구를 환경변수로 안 둔 이유: 그건 세션 도중 못 켜서 오차단 시 회복이 세션 재시작뿐이다
+    //   (`pretooluse-core.js:54`·`:94` 가 같은 사실을 이미 못박아 뒀다).
+    //   무인 모드는 승인 통로를 무시한다(사람이 승인할 수 없는 자리 · 실패 모드는 park).
+    //   ⚠ try/catch 로 감싸지 않는다 — 판정 오류를 조용히 삼키면 가드가 꺼진 줄 모른다.
+    //   파일 읽기 실패는 planScaleBlock 안에서 후보 단위로 걸러진다.
+    {
+      const cwdBase = input.cwd || process.cwd();
+      const ps = planScaleBlock(name, ti, {
+        readFile: (rel) => fs.readFileSync(path.resolve(cwdBase, rel), "utf8"),
+      });
+      if (ps) {
+        let ok = false;
+        if (!UNATTENDED) {
+          const approvals = readTranscriptIfMentions(input.transcript_path, "chageun-big-plan:") || [];
+          ok = approvedBigPlan(approvals, ps.detail).approved;
+        }
+        if (!ok) return deny(ps.key, UNATTENDED, ps.detail);
+      }
     }
 
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
