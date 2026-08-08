@@ -109,3 +109,50 @@ test("게이트가 아닌 에이전트 호출은 안 막는다", () => {
     tool_input: { subagent_type: "general-purpose", prompt: "계획서: docs/plans/big.md" } });
   assert.equal(r.status, 0);
 });
+
+// 2회차 medium: 래퍼의 **축별 승인 루프**를 덮는다. 단위 테스트는 배열 반환만 보므로,
+//   루프를 `every` 같은 형태로 "정리"하면 크기 승인 하나가 회차까지 여는 1회차 결함이 재발한다.
+test("크기 승인이 있어도 회차는 따로 막힌다", () => {
+  const key = "[chageun-big-plan:big.md:4k]";
+  const question = `계획이 큽니다 ${key}`;
+  const records = [
+    { message: { content: [{ type: "tool_use", id: "t1", name: "AskUserQuestion",
+      input: { questions: [{ question, multiSelect: false,
+        options: [{ label: "쪼갠다" }, { label: "이 크기로 진행" }] }] } }] } },
+    { message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false,
+      content: `${JSON.stringify(question)}=${JSON.stringify("이 크기로 진행")}` }] } },
+  ];
+  const tp = join(DIR, "size-only.jsonl");
+  writeFileSync(tp, records.map((o) => JSON.stringify(o)).join("\n"));
+  const r = runHook({ ...gateCall("재검증 회차: 9\n계획서: docs/plans/big.md"), transcript_path: tp });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /5회째 재검증/);
+});
+
+test("승인 질문은 있는데 형식이 어긋나면 그 사실을 알려준다", () => {
+  const key = "[chageun-big-plan:big.md:4k]";
+  const question = `계획이 큽니다 ${key}`;
+  // 선택지 3개 = 형식 위반. 질문은 찾히지만 승인으로 인정되지 않아야 한다.
+  const records = [{ message: { content: [{ type: "tool_use", id: "t1", name: "AskUserQuestion",
+    input: { questions: [{ question, multiSelect: false,
+      options: [{ label: "a" }, { label: "b" }, { label: "c" }] }] } }] } }];
+  const tp = join(DIR, "malformed.jsonl");
+  writeFileSync(tp, records.map((o) => JSON.stringify(o)).join("\n"));
+  const r = runHook({ ...gateCall("계획서: docs/plans/big.md"), transcript_path: tp });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /형식이 안 맞아 인정되지 않았습니다/);
+});
+
+test("한글 폴더 이름이 앞에 와도 검사 대상이다", () => {
+  mkdirSync(join(DIR, "프로젝트문서", "plans"), { recursive: true });
+  writeFileSync(join(DIR, "프로젝트문서/plans/한글계획.md"), "a\n".repeat(4020));
+  const r = runHook(gateCall("계획서: 프로젝트문서/plans/한글계획.md 검증"));
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /계획서가 너무 큽니다/);
+});
+
+test("회차 차단은 회차를 읽은 출처를 찍는다", () => {
+  const r = runHook(gateCall("재검증 회차: 6\n계획서: docs/plans/small.md"));
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /출처 호출 프롬프트/);
+});

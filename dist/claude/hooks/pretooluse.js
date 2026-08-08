@@ -320,18 +320,25 @@ process.stdin.on("end", () => {
     //   탈출구를 환경변수로 안 둔 이유: 그건 세션 도중 못 켜서 오차단 시 회복이 세션 재시작뿐이다
     //   (`pretooluse-core.js:54`·`:94` 가 같은 사실을 이미 못박아 뒀다).
     //   무인 모드는 승인 통로를 무시한다(사람이 승인할 수 없는 자리 · 실패 모드는 park).
-    //   ⚠ 자체 try/catch 를 둔다. 바깥 catch(`function main` 끝)는 유인 모드에서 **아무 말 없이
+    //   ⚠ 자체 try/catch 를 둔다. 바깥 catch(stdin 'end' 핸들러 끝)는 유인 모드에서 **아무 말 없이
     //     exit 0** 이라, 판정에 버그가 들어가면 가드가 꺼진 줄 모른 채 몇 주가 지난다
     //     (pr-reviewer 1회차 medium). 여기서는 통과시키되 stderr 한 줄로 꺼졌음을 남긴다.
     //   크기·회차 **둘 다** 판정한다 — 하나만 보면 크기 승인 하나가 회차 상한까지 함께 연다.
     {
       let hits = null;
+      // 승인 확인용으로 어차피 읽는 트랜스크립트를 앞으로 당겨 **기계 회차 계수**에도 쓴다
+      //   (회차를 자기신고에만 기대면 안 적으면 안 켜지고 지우면 통과한다).
+      const planTranscript = readTranscriptIfMentions(input.transcript_path, "plan-validator") || [];
       try {
         const cwdBase = input.cwd || process.cwd();
         hits = planScaleBlock(name, ti, {
           readFile: (rel) => fs.readFileSync(path.resolve(cwdBase, rel), "utf8"),
+          transcript: planTranscript,
         });
       } catch (e) {
+        // 무인은 이 파일의 관례대로 **fail-closed** — 판정 불확실 = park(바깥 catch와 같은 원칙).
+        //   사람이 없는 자리에서 "큰 계획은 무조건 멈춤"이 조용히 꺼지면 안 된다(2회차 medium).
+        if (UNATTENDED) return deny("u-error", true);
         process.stderr.write("[chageun] 계획 규모 가드가 판정에 실패해 이번 호출은 통과시킵니다: "
           + (e && e.message ? e.message : e) + "\n");
         hits = null;
@@ -341,9 +348,21 @@ process.stdin.on("end", () => {
           ? [] : (readTranscriptIfMentions(input.transcript_path, "chageun-big-plan:") || []);
         for (const hit of hits) {
           const ok = !UNATTENDED && approvedBigPlan(approvals, hit.detail).approved;
+          if (ok) continue;
+          // 승인 질문은 **있었는데** 형식이 안 맞아 인정 못 한 경우를 구분해 알려준다.
+          //   같은 차단문만 다시 내면 무엇이 틀렸는지 알 길이 없어 같은 실패를 반복한다(2회차 high).
+          const tried = !UNATTENDED && approvals.some((r) => {
+            const c2 = ((r && (r.message || r)).content) || [];
+            return Array.isArray(c2) && c2.some((b) => b && b.type === "tool_use"
+              && b.name === "AskUserQuestion" && JSON.stringify(b.input || {}).includes(hit.detail));
+          });
+          const why = tried
+            ? " ⚠ 이 키가 든 승인 질문은 찾았지만 **형식이 안 맞아 인정되지 않았습니다** —"
+              + " 질문 1개 · 선택지 2개 · 사용자가 두 번째를 **클릭**(직접 입력 아님)을 확인하세요."
+            : "";
           // 무인은 승인 통로를 무시하므로 쓸 수 없는 키를 붙이지 않는다(오독 방지).
-          if (!ok) return deny(hit.key, UNATTENDED,
-            UNATTENDED ? "잰 파일 " + hit.measured : hit.detail + " · 잰 파일 " + hit.measured);
+          return deny(hit.key, UNATTENDED,
+            UNATTENDED ? hit.measured : hit.detail + " · " + hit.measured + why);
         }
       }
     }
