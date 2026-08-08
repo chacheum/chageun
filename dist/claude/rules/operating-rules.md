@@ -18,7 +18,7 @@ Volume switch for the three ceremonies (작업 시작 카드 · 비전문가 요
 **When in doubt, FULL (의심되면 FULL)** — ambiguous trigger → go heavy. A wrong call only *adds* ceremony; safety stops and gates never drop out. **Silent failures are FULL signals** — wrong-without-error or quietly-breaking changes are what non-developers can't catch; never route LIGHT. A gate/stop-rule high/blocker is reported in full with its gate label even in LIGHT (auto-escalate that report only).
 **Re-judge mid-task:** later touching a sensitive surface (#2) or external/irreversible action, or realizing silent failure is possible → re-judge to FULL then.
 
-LIGHT renderings — card = one line (goal + success criteria · notify, proceed) · summary = one line (what + found risks; none → "위험 없음") · finish check = one-line self-check (criteria + one line of evidence · "no ✅ without evidence" applies in LIGHT too).
+LIGHT renderings — **mark them `LIGHT`** (the finish-work hook exempts LIGHT by that word; without it a LIGHT summary now trips the FULL detector and the turn gets bounced) — card = one line (goal + success criteria · notify, proceed) · summary = one line (what + found risks; none → "위험 없음") + `다음에 확인할 것:` one clause · finish check = one-line self-check (criteria + one line of evidence · "no ✅ without evidence" applies in LIGHT too).
 **Success criteria are stated even in LIGHT.** This switch covers only the three ceremonies — gates, stop rules, real-run verification, occasional ceremonies (monitoring · security-scan · design/quality scoring) unaffected.
 
 # Work-start card · plain-language summary (작업 시작 카드 · 비전문가 요약 — 핵심5 forms)
