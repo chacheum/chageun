@@ -171,3 +171,55 @@ test("차단 안내문이 branch 조건부 허용과 대체 명령을 알린다(
   assert.ok(msg.includes("rev-parse --abbrev-ref HEAD") && msg.includes("for-each-ref --contains"),
     "자주 막히던 것의 이미 허용된 대체를 안내");
 });
+
+// ── v0.52.0: check-ignore 는 순수 읽기 ─────────────────────────────────────────
+// 2026-08-08 회고 실측: 리뷰 담당 Bash 차단 42건 중 **진짜 오차단은 check-ignore 2건뿐**이었다.
+// (파이프는 원래 통과하고, `2>&1`은 `>`를 여는 것이라 의도된 차단이며, hash-object 는 `-w` 가 쓴다.)
+// git 2.43 옵션 전수 `-q/-v/--stdin/-z/-n/--no-index` 에 파일·저장소 쓰기가 없다.
+test("check-ignore 는 읽기 전용이라 통과", () => {
+  for (const cmd of [
+    "git check-ignore -v docs/x.md",
+    "git check-ignore -q src/x",
+    // `--stdin` 은 입력 경로가 있다(READ_FILTER 에 cat 이 있어 `cat f | …` 가 통과한다).
+    // 그래도 출력이 stdout 뿐이라 무해하다 — 1차 계획의 "입력 경로가 없다"는 근거는 틀렸다.
+    "cat list.txt | git check-ignore --stdin",
+    "git -C /repo check-ignore -z --no-index src/x",
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), null, cmd);
+});
+
+test("check-ignore 를 열어도 쓰기형·탈출형은 그대로 막힌다", () => {
+  for (const cmd of [
+    "git hash-object -w src/x",           // 객체 저장소에 씀 → allowlist 밖(YAGNI 로 안 연다)
+    "git check-ignore -v x > out.txt",    // 리다이렉션
+    "git check-ignore -v $(cat x)",       // 명령치환
+    "git branch newname",                 // 쓰기형 branch
+    "git checkout main -- dist/",         // 체크아웃
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), "ra-bash", cmd);
+});
+
+// 허용목록과 안내문이 **두 벌**이라 한쪽만 고치면 조용히 어긋난다(안내문이 거짓말을 하거나,
+// 허용된 명령을 아무도 모른다). 부분문자열 대조는 못 쓴다 — `includes("log")` 는 `shortlog`
+// 때문에 log 를 지워도 초록이다. 경계 정규식도 못 쓴다 — `branch` 가 안내문에선
+// `**branch는` · `` `git branch`. `` 로만 나와 무조건 실패한다(plan-validator 3차 F-1).
+// 그래서 **집합 대조**로 한다. 목록을 손으로 베끼지 않고 양쪽 원본에서 뽑는다.
+test("허용 서브명령과 ra-bash 안내문이 양방향으로 일치", () => {
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"), "utf8");
+  const m = src.match(/const GIT_READ_SUB = \/\^\(\?:([^)]+)\)\$\//);
+  assert.ok(m, "GIT_READ_SUB 를 못 찾음 — 정규식 모양이 바뀌었으면 이 테스트도 같이 고칠 것");
+  const subs = m[1].split("|");
+  const msg = reasonFor("ra-bash");
+
+  const runs = msg.match(/(?:[a-z][a-z-]*·){3,}[a-z][a-z-]*/g);
+  assert.ok(runs, "안내문의 서브명령 나열부를 못 찾음 — 문장 모양이 바뀌었으면 이 테스트도 같이 고칠 것");
+  const listed = new Set(runs.join("·").split("·"));
+
+  // 나열부가 아니라 **산문으로** 설명하는 것. 늘리려면 안내문 원문을 보고 늘린다.
+  const PROSE_ONLY = new Set(["branch"]);
+  for (const s of PROSE_ONLY) assert.ok(msg.includes(s), `산문 설명이 사라진 서브명령: ${s}`);
+
+  for (const s of subs)                                    // 허용목록 → 안내문
+    assert.ok(listed.has(s) || PROSE_ONLY.has(s), `안내문에 빠진 허용 서브명령: ${s}`);
+  for (const s of listed)                                  // 안내문 → 허용목록
+    assert.ok(subs.includes(s), `안내문에만 있고 허용목록엔 없는 서브명령: ${s}`);
+});

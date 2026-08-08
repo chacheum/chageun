@@ -54,7 +54,7 @@ const REASONS = {
   "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). pr-reviewer에게 **재검토를 요청**하세요 — 이미 돌린 리뷰어를 SendMessage로 이어 부른 재검토도 인정됩니다(새 Agent로 다시 띄워도 됩니다. 그땐 **프롬프트에 `재리뷰 회차: N`과 지난 회차 blocker/high 제목을 적으세요** — 새로 띄우면 회차 소스가 그것뿐이라 안 적으면 몇 번째인지 아무도 못 셉니다). 예외로 건너뛰어야 하면 **세션 자체를 CHAGEUN_SKIP_GATE_CHECK=1로 시작**해야 합니다(명령 앞에 인라인으로 붙이는 건 훅 프로세스에 안 닿아 안 켜집니다).",
   "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
   "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
-  "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged, 그리고 **branch는 읽기 형태만** — `--show-current`·`--list`·`--contains`·`-a`·`-r`·`-v` 등이나 인자 없는 `git branch`. 브랜치 이름을 인자로 주거나 `-d`·`-m`·`-f`를 붙이면 쓰기라 막힙니다). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 자주 막히던 것의 이미 허용된 대체: 현재 브랜치는 `git rev-parse --abbrev-ref HEAD`, 특정 커밋을 담은 브랜치는 `git for-each-ref --contains <sha>`. 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
+  "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged·check-ignore, 그리고 **branch는 읽기 형태만** — `--show-current`·`--list`·`--contains`·`-a`·`-r`·`-v` 등이나 인자 없는 `git branch`. 브랜치 이름을 인자로 주거나 `-d`·`-m`·`-f`를 붙이면 쓰기라 막힙니다). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 자주 막히던 것의 이미 허용된 대체: 현재 브랜치는 `git rev-parse --abbrev-ref HEAD`, 특정 커밋을 담은 브랜치는 `git for-each-ref --contains <sha>`. `check-ignore`는 **종료코드 1 = 무시되지 않음**(오류 아님)입니다. 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
   "ra-error": "차단: 리뷰 에이전트 안전 판정 중 오류라 안전측 차단(fail-closed)합니다. 검토는 Read/Grep으로 계속하세요.",
   "gate-model-downgrade": "차단: 검증 게이트를 기본보다 약한 모델로 띄우려 했습니다. 게이트는 \"검토 대상보다 최소 같거나 강한 독립 심판\"이라 약한 모델로 내리면 게이트의 의미가 사라집니다(심판이 일꾼보다 약해짐). **`model` 파라미터를 빼면** 에이전트 설정의 기본 모델이 그대로 쓰입니다 — 그게 정답인 경우가 대부분입니다. 그 모델을 못 쓰는 환경이면 실행 전 사용자가 CHAGEUN_ALLOW_GATE_MODEL=1로만 열 수 있습니다(게이트를 아예 안 부르는 것보다는 약한 심판이 낫기 때문입니다).",
   "design-color": "차단(차근 색 백스톱): 새로 넣는 코드에 디자인 토큰 대신 직접 색이 있습니다. 팔레트 색 클래스(`bg-blue-500` 등)·임의값(`-[#hex]`) 대신 docs/design-system.md의 토큰을 쓰세요. 색 견본판·Tailwind safelist처럼 색 이름이 원래 나열되는 파일이면, design-system.md front-matter의 `lint-allow-colors`에 그 팔레트명을 선언하거나 그 줄에 `design-lint-ignore` 주석을 붙이세요(그 줄만 통과). 전체 우회는 실행 전 사용자가 CHAGEUN_SKIP_DESIGN_LINT=1로만 켤 수 있습니다.",
@@ -513,7 +513,12 @@ const AGENT_MEM = path.join(os.homedir(), ".claude", "agent-memory");
 // symbolic-ref(HEAD 재기록)·reflog(expire/delete로 복구로그 파기)는 변경 명령이라 제외(pr-reviewer low).
 // v0.42: `branch` 추가 — 실측 32건의 리뷰 차단 중 3건이 읽기 전용 branch 조회였다
 // (`--show-current` 2 · `--contains` 1). 단 branch는 **읽기 형태만** 통과시킨다(아래 branchArgsAllowed).
-const GIT_READ_SUB = /^(?:diff|log|status|show|ls-files|ls-tree|blame|rev-parse|rev-list|shortlog|describe|cat-file|for-each-ref|name-rev|whatchanged|grep|branch)$/;
+// v0.52.0: `check-ignore` 추가 — 순수 읽기다. **기준: git 2.43 옵션 전수**
+// (`-q/--quiet` · `-v/--verbose` · `--stdin` · `-z` · `-n/--non-matching` · `--no-index`)에
+// 파일·저장소 쓰기가 없고 출력은 stdout 뿐이다. 이 판정기의 옵션 검사는 열거식 **거부**라
+// git 이 나중에 쓰기 옵션을 추가하면 자동 통과하므로, 그 목록이 늘면 여기를 다시 본다.
+// `hash-object` 는 **안 넣는다**: `-w` 가 객체 저장소에 쓴다(allowlist 원칙 = 모호하면 거부).
+const GIT_READ_SUB = /^(?:diff|log|status|show|ls-files|ls-tree|blame|rev-parse|rev-list|shortlog|describe|cat-file|for-each-ref|name-rev|whatchanged|grep|branch|check-ignore)$/;
 // `branch`는 **allowlist로만** 연다. 거부목록으로 만들면 뚫린다(plan-validator F-5):
 //   (a) `git branch 새이름` 은 **옵션이 하나도 없는 쓰기**라 거부목록이 원천적으로 못 잡는다
 //   (b) 장형 `--delete/--move/--copy` (c) 단형 `-f` (d) git이 허용하는 접두 축약(`--del`) (e) 묶음 `-rd`
