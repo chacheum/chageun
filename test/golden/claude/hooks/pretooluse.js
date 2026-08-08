@@ -326,54 +326,58 @@ process.stdin.on("end", () => {
     //     (pr-reviewer 1회차 medium). 여기서는 통과시키되 stderr 한 줄로 꺼졌음을 남긴다.
     //   크기·회차 **둘 다** 판정한다 — 하나만 보면 크기 승인 하나가 회차 상한까지 함께 연다.
     {
-      let hits = null;
+      // ⚠ try 는 이 절 **전체**를 감싼다. 3회차까지는 planScaleBlock 호출만 감쌌는데, 그 아래
+      //   승인 확인·차단문 조립에서 던지면 파일 맨 끝 바깥 catch 로 가 유인 모드에서 **아무 말 없이
+      //   exit 0** 이었다 — 바로 이 절이 막으려던 그 경로다(4회차 low). deny 는 process.exit 이라
+      //   try 안에서도 그대로 빠져나간다.
+      try {
       // ⚠ 트랜스크립트는 여기서 **읽지 않는다.** 3회차에 기계 회차 계수를 먹이려고 이 자리에서
       //   무조건 읽었는데, §1.6은 모든 도구 호출에서 도는 자리라 `git status` 한 번에도 세션 기록
       //   전체(수천 레코드)를 파싱했다. needle 조기 탈출은 "plan-validator"가 차근 세션에 늘 있어
       //   안 걸린다. 긴 세션에서 훅 timeout 을 넘기면 **하드 차단 전부가 조용히 꺼진다**.
       //   승인 확인용 읽기는 아래에서 **차단이 실제로 걸렸을 때만** 한다.
-      try {
         const cwdBase = input.cwd || process.cwd();
-        hits = planScaleBlock(name, ti, {
+        const hits = planScaleBlock(name, ti, {
           // `~/…` 는 셸이 아니라 우리가 편다 — path.resolve 는 `<cwd>/~/…` 로 만들어 읽기가 실패하고,
           //   실패는 후보 탈락이라 **가드가 조용히 꺼진다**(3회차 low · 한글 경로와 같은 실패 종류).
           readFile: (rel) => fs.readFileSync(
             /^~\//.test(rel) ? path.join(os.homedir(), rel.slice(2)) : path.resolve(cwdBase, rel), "utf8"),
         });
+        // 승인 키·형식 안내는 **사람만** 쓸 수 있다. 무인과 서브에이전트는 그 화면을 못 띄우므로
+        //   켤 수 없는 스위치를 안내하지 않는다(왕복만 늘린다 — 이 파일 위쪽 배포 문구의 실측 교훈).
+        const humanCanApprove = !UNATTENDED && !IS_SUBAGENT;
+        if (hits && hits.length) {
+          const approvals = humanCanApprove
+            ? (readTranscriptIfMentions(input.transcript_path, "chageun-big-plan:") || []) : [];
+          for (const hit of hits) {
+            const verdict = humanCanApprove ? approvedBigPlan(approvals, hit.detail) : { approved: false };
+            if (verdict.approved) continue;
+            // 승인 질문은 **있었는데** 인정 못 한 경우를 구분해 알려준다. 같은 차단문만 다시 내면
+            //   무엇이 틀렸는지 알 길이 없어 같은 실패를 반복한다(2회차 high).
+            //   ⚠ "형식 오류"와 "사용자가 안 눌렀다"를 갈라야 한다 — 사용자가 첫 번째(거절)를 눌렀는데
+            //   형식 오류라고 안내하면 모델이 같은 질문을 다시 띄운다. 사람의 "아니오"가 기계 오류로
+            //   포장돼 재촉으로 바뀐다(3회차 medium).
+            const tried = humanCanApprove && approvals.some((r) => {
+              const c2 = (r && (r.message || r).content) || [];   // 괄호 위치 = 코어와 동일(null 안전)
+              return Array.isArray(c2) && c2.some((b) => b && b.type === "tool_use"
+                && b.name === "AskUserQuestion" && JSON.stringify(b.input || {}).includes(hit.detail));
+            });
+            const why = !tried ? ""
+              : verdict.wellFormed
+                ? " ⚠ 이 키가 든 승인 질문은 형식이 맞는데 **두 번째 선택지가 눌리지 않았습니다** —"
+                  + " 사용자가 거절했거나 아직 답하지 않은 것입니다. **거절이면 다시 묻지 말고 일을 쪼개세요.**"
+                : " ⚠ 이 키가 든 승인 질문은 찾았지만 **형식이 안 맞아 인정되지 않았습니다** —"
+                  + " 차단문의 형식 요건을 확인하세요.";
+            return deny(hit.key, UNATTENDED,
+              humanCanApprove ? hit.detail + " · " + hit.measured + why : hit.measured);
+          }
+        }
       } catch (e) {
         // 무인은 이 파일의 관례대로 **fail-closed** — 판정 불확실 = park(바깥 catch와 같은 원칙).
         //   사람이 없는 자리에서 "큰 계획은 무조건 멈춤"이 조용히 꺼지면 안 된다(2회차 medium).
         if (UNATTENDED) return deny("u-error", true);
         process.stderr.write("[chageun] 계획 규모 가드가 판정에 실패해 이번 호출은 통과시킵니다: "
           + (e && e.message ? e.message : e) + "\n");
-        hits = null;
-      }
-      if (hits && hits.length) {
-        const approvals = UNATTENDED
-          ? [] : (readTranscriptIfMentions(input.transcript_path, "chageun-big-plan:") || []);
-        for (const hit of hits) {
-          const verdict = UNATTENDED ? { approved: false } : approvedBigPlan(approvals, hit.detail);
-          if (verdict.approved) continue;
-          // 승인 질문은 **있었는데** 인정 못 한 경우를 구분해 알려준다. 같은 차단문만 다시 내면
-          //   무엇이 틀렸는지 알 길이 없어 같은 실패를 반복한다(2회차 high).
-          //   ⚠ "형식 오류"와 "사용자가 안 눌렀다"를 갈라야 한다 — 사용자가 첫 번째(거절)를 눌렀는데
-          //   형식 오류라고 안내하면 모델이 같은 질문을 다시 띄운다. 사람의 "아니오"가 기계 오류로
-          //   포장돼 재촉으로 바뀐다(3회차 medium).
-          const tried = !UNATTENDED && approvals.some((r) => {
-            const c2 = ((r && (r.message || r)).content) || [];
-            return Array.isArray(c2) && c2.some((b) => b && b.type === "tool_use"
-              && b.name === "AskUserQuestion" && JSON.stringify(b.input || {}).includes(hit.detail));
-          });
-          const why = !tried ? ""
-            : verdict.wellFormed
-              ? " ⚠ 이 키가 든 승인 질문은 형식이 맞는데 **두 번째 선택지가 눌리지 않았습니다** —"
-                + " 사용자가 거절했거나 아직 답하지 않은 것입니다. **거절이면 다시 묻지 말고 일을 쪼개세요.**"
-              : " ⚠ 이 키가 든 승인 질문은 찾았지만 **형식이 안 맞아 인정되지 않았습니다** —"
-                + " 위 형식 요건 5가지를 확인하세요.";
-          // 무인은 승인 통로를 무시하므로 쓸 수 없는 키를 붙이지 않는다(오독 방지).
-          return deny(hit.key, UNATTENDED,
-            UNATTENDED ? hit.measured : hit.detail + " · " + hit.measured + why);
-        }
       }
     }
 

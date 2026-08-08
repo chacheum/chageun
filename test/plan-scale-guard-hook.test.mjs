@@ -21,7 +21,6 @@ const DIR = mkdtempSync(join(tmpdir(), "chageun-plan-"));
 mkdirSync(join(DIR, "docs", "plans"), { recursive: true });
 writeFileSync(join(DIR, "docs/plans/big.md"), "a\n".repeat(4020));
 writeFileSync(join(DIR, "docs/plans/small.md"), "b\n".repeat(1785));
-writeFileSync(join(DIR, "docs/plans/round9.md"), "재검증 회차: 9\n" + "c\n".repeat(50));
 process.on("exit", () => { try { rmSync(DIR, { recursive: true, force: true }); } catch (_) {} });
 
 const gateCall = (prompt) => ({
@@ -38,16 +37,6 @@ test("큰 계획이면 exit 2 로 막고 승인 키를 화면에 찍는다", () 
 
 test("상한 아래 계획은 exit 0 으로 통과한다", () => {
   assert.equal(runHook(gateCall("계획서: docs/plans/small.md")).status, 0);
-});
-
-test("재검증 5회째면 exit 2 로 막는다", () => {
-  const r = runHook(gateCall("재검증 회차: 5\n계획서: docs/plans/small.md"));
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /5회째 재검증/);
-});
-
-test("계획서 머리의 회차도 읽어 막는다", () => {
-  assert.equal(runHook(gateCall("계획서: docs/plans/round9.md")).status, 2);
 });
 
 // 이 테스트가 3회차 게이트의 blocker 2건(배선 미정의 · 승인 키 계약 불일치)을 동시에 덮는다.
@@ -110,25 +99,6 @@ test("게이트가 아닌 에이전트 호출은 안 막는다", () => {
   assert.equal(r.status, 0);
 });
 
-// 2회차 medium: 래퍼의 **축별 승인 루프**를 덮는다. 단위 테스트는 배열 반환만 보므로,
-//   루프를 `every` 같은 형태로 "정리"하면 크기 승인 하나가 회차까지 여는 1회차 결함이 재발한다.
-test("크기 승인이 있어도 회차는 따로 막힌다", () => {
-  const key = "[chageun-big-plan:big.md:4k]";
-  const question = `계획이 큽니다 ${key}`;
-  const records = [
-    { message: { content: [{ type: "tool_use", id: "t1", name: "AskUserQuestion",
-      input: { questions: [{ question, multiSelect: false,
-        options: [{ label: "쪼갠다" }, { label: "이 크기로 진행" }] }] } }] } },
-    { message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false,
-      content: `${JSON.stringify(question)}=${JSON.stringify("이 크기로 진행")}` }] } },
-  ];
-  const tp = join(DIR, "size-only.jsonl");
-  writeFileSync(tp, records.map((o) => JSON.stringify(o)).join("\n"));
-  const r = runHook({ ...gateCall("재검증 회차: 9\n계획서: docs/plans/big.md"), transcript_path: tp });
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /5회째 재검증/);
-});
-
 test("승인 질문은 있는데 형식이 어긋나면 그 사실을 알려준다", () => {
   const key = "[chageun-big-plan:big.md:4k]";
   const question = `계획이 큽니다 ${key}`;
@@ -176,8 +146,7 @@ test("사용자가 두 번째를 안 눌렀으면 형식 오류라고 말하지 
   assert.doesNotMatch(r.stderr, /형식이 안 맞아 인정되지 않았습니다/);
 });
 
-test("회차 차단은 회차를 읽은 출처를 찍는다", () => {
-  const r = runHook(gateCall("재검증 회차: 6\n계획서: docs/plans/small.md"));
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /출처 호출 프롬프트/);
+// 회차 축은 v0.53.0에 안 들어간다(2차 작업) — 회차 표기가 있어도 크기만으로 판정해야 한다.
+test("회차 표기가 있어도 크기가 상한 아래면 통과한다", () => {
+  assert.equal(runHook(gateCall("재검증 회차: 9\n계획서: docs/plans/small.md")).status, 0);
 });

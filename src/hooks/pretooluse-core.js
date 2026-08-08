@@ -63,19 +63,6 @@ const REASONS = {
     "잰 파일은 프롬프트에 적힌 계획서 후보 중 **가장 큰 것**입니다 — 이번 검증 대상이 아니라 " +
     "참고로 언급한 옛 계획서라면, 그 경로를 프롬프트에서 빼고 다시 부르세요.\n" +
     "⚠ **검증 대상 계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다**(코어: 게이트에 대상 경로를 항상 넘긴다).",
-  "plan-rounds":
-    "차단: 같은 계획을 5회째 재검증하고 있습니다. 계획이 커서 볼수록 새 지적이 나오는 상태입니다.\n" +
-    "두 길 중 하나를 사용자에게 물어 고르세요: (1) 남은 조건을 끝 점검 항목으로 등록하고 구현 착수, " +
-    "(2) 일을 쪼개서 앞부분만 다시 계획.\n" +
-    "**막는 지적(blocker)이 0이면 코어 규칙상 (1)이 기본입니다** — 조건부 통과는 승인 한 번으로 진행합니다.\n" +
-    "회차를 어디서 읽었는지는 이 메시지 끝 `출처`에 있습니다 — **`계획서 머리`면 그 파일 앞부분을, " +
-    "`호출 프롬프트`면 프롬프트의 회차 줄을** 고치세요(엉뚱한 곳을 열지 않도록).\n" +
-    "**이 회차 표기가 끝난 옛 작업 것이면 지우고 다시 부르세요**(승인 없이 풀립니다). " +
-    "코어 규칙은 GO 나면 마커를 지우게 돼 있지만 기계 확인이 없어 남아 있을 수 있습니다. " +
-    "⚠ **끝난 작업이 아닌데 지우는 것은 우회이며 규칙 위반입니다** — 이 축은 자기신고라 " +
-    "지우면 실제로 통과됩니다. 그래서 지우는 것은 규칙으로만 막혀 있습니다.\n" +
-    "한 번 더 검증해야 하면 아래 대괄호 키로 승인을 받으세요(넣는 법은 계획 크기 차단과 같습니다).\n" +
-    "⚠ **계획서 경로를 빼고 다시 부르는 것은 우회이며 규칙 위반입니다.**",
   "force-push": "차단: `git push --force`는 남의 커밋을 덮어써 되돌리기 어렵습니다. 필요하면 `--force-with-lease`를 쓰세요(안전 강제 push).",
   "rm-recursive": "차단: 루트/홈/현재 트리 전체를 지우는 `rm -rf`는 되돌릴 수 없습니다. 지울 대상 경로를 구체적으로 좁히세요.",
   "sql-destructive": "차단: DROP/TRUNCATE 같은 파괴적 스키마 명령입니다. 운영 데이터라면 되돌릴 수 없으니, 테스트 환경인지·백업이 있는지 먼저 확인하세요.",
@@ -123,7 +110,6 @@ function block(toolName, toolInput) {
 // 그 판단을 서브에이전트에게 떠넘긴 셈이었다).
 const REASONS_SUBAGENT = {
   "plan-size": "차단: 계획서가 3,000줄을 넘습니다. **서브에이전트는 이 승인을 받을 수 없습니다**(화면 질문은 사람만 답합니다). 본 세션에 BLOCKED 로 보고하고 멈추세요 — 일을 쪼갤지 이 크기로 갈지는 사용자가 정합니다.",
-  "plan-rounds": "차단: 같은 계획을 5회째 재검증하고 있습니다. **서브에이전트는 이 승인을 받을 수 없습니다**. 본 세션에 BLOCKED 로 보고하고 멈추세요.",
   "deploy": "차단(배포는 되돌리기 어려움): **서브에이전트는 배포를 승인할 수 없습니다.** 이 탈출구는 사람이 세션을 시작할 때만 켤 수 있고(명령 앞에 환경변수를 붙여도 안 켜집니다), 운영 배포 승인은 사람이 내릴 판단입니다. 지금 작업을 멈추고(park) 본 세션에 **BLOCKED**로 보고하세요 — 무엇을 배포하려 했는지, 왜 필요한지, 사전 점검에서 확인한 것을 함께 적으세요.",
 };
 function reasonFor(key, forSubagent) {
@@ -318,9 +304,6 @@ function isPlanDocPath(p) {
 //   (1회차 게이트가 잡음), 실패 건은 합산 없이도 걸리므로 2차로 미뤘다.
 //   ⚠ 남는 구멍: 계획을 각 3,000줄 아래 여러 권으로 쪼개면 통과한다.
 const PLAN_MAX_LINES = 3000;
-const PLAN_MAX_ROUNDS = 5;
-const PLAN_ROUND_RE = /재검증\s*회차\s*[:：]\s*(\d+)/;
-const PLAN_HEAD_LINES = 20;
 
 // 경로 문자 클래스를 **뒤집어** 쓴다 — `[\w./-]` 의 `\w` 는 한글을 포함하지 않아
 //   `…-홈캘린더-보기개선-1차.md` 가 통째로 안 잡혔다(사용자 계획 폴더 10개 중 4개가 한글 이름).
@@ -366,20 +349,18 @@ function planPathsInPrompt(text) {
 // 측정값을 버킷으로 넣어 유효 범위를 준다: 4천줄 승인이 9천줄까지 열어주지 않는다.
 // 경로가 아니라 **파일 이름**으로 만든다 — 같은 계획을 절대경로로도 상대경로로도 부르는데
 //   경로 문자열을 키에 쓰면 표기만 바뀌어도 승인이 무효가 된다.
-function bigPlanKey(rel, reasonKey, value) {
+function bigPlanKey(rel, lines) {
   const base = String(rel).split("/").pop();
-  const bucket = reasonKey === "plan-rounds" ? "r" + value : Math.floor(value / 1000) + "k";
-  return "[chageun-big-plan:" + base + ":" + bucket + "]";
+  return "[chageun-big-plan:" + base + ":" + Math.floor(lines / 1000) + "k]";
 }
 
 // 반환: { key, detail } 또는 null. detail = 승인 키(래퍼가 사유문 뒤에 붙인다).
 // 코어 순수 계약(`:1`)을 지키려고 파일 읽기는 **주입받는다** — 없으면 판정하지 않는다.
-// ⚑ 한계(2차 작업으로 미룸): 회차는 **자기신고**다 — 호출 프롬프트나 계획서 머리의
-//   `재검증 회차: N`을 읽는다. 안 적으면 이 축이 안 켜지고, 적힌 걸 지우면 통과한다.
-//   3회차에 트랜스크립트로 직접 세는 계수기를 넣었다가 **되돌렸다**: 훅에 막힌 호출까지 회차로 세어
-//   "검증을 한 번도 안 받은 계획"을 5회째로 차단했고(high), 계수를 먹이려고 모든 도구 호출에서
-//   트랜스크립트를 통째로 파싱해 긴 세션에서 훅이 죽을 수 있었다(high). 둘 다 계수기 하나에서 나왔다.
-//   기계 계수는 `planReminderNeeded`의 is_error 제외 로직을 헬퍼로 공유하는 별도 작업으로 뺀다.
+// ⚑ v1은 **크기 한 축만** 잰다. "같은 계획을 N회째 재검증" 축은 만들었다가 이 PR에서 뺐다(2차 작업):
+//   회차를 **쓰라**는 코어 규칙은 "계획서 머리"에만 있는데 실측에서 그 표기는 19번 중 0번 적혔고,
+//   훅은 그마저 앞 20줄만 본다 — 즉 거의 안 켜진다. 대신 오작동 경로는 있었다(참고로 언급한 옛
+//   계획서의 남은 표기가 **새 계획의 첫 검증**을 막는다). 켜지지도 않으면서 오차단만 하는 축이라
+//   내보내지 않는다. 되살리려면 쓰는 쪽(코어 규칙)과 읽는 쪽을 한 작업에서 같이 고쳐야 한다.
 function planScaleBlock(toolName, toolInput, opts) {
   if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
   if (gateOf(subagentOf(toolInput)) !== "plan-validator") return null;
@@ -391,34 +372,21 @@ function planScaleBlock(toolName, toolInput, opts) {
   if (!cands.length) return null;   // 경로 미기재 = fail-open(사유문이 우회를 못박는다)
 
   let big = null;
-  const pm = prompt.match(PLAN_ROUND_RE);
-  let round = pm ? +pm[1] || 0 : 0;
-  let roundFrom = round ? "호출 프롬프트" : null;   // 회차를 어디서 읽었는지 — 차단문이 찍는다
   for (const rel of cands) {
     let txt;
     try { txt = readFile(rel); } catch (_) { continue; }
     if (typeof txt !== "string") continue;
-    const lines = txt.split("\n");
-    if (!big || lines.length > big.lines) big = { rel, lines: lines.length };
-    // 파일 쪽 회차는 **앞 20줄만** 본다. 전체를 보면 회차 표기를 본문에 인용한 계획서가 자기 차단된다.
-    const fm = lines.slice(0, PLAN_HEAD_LINES).join("\n").match(PLAN_ROUND_RE);
-    if (fm && (+fm[1] || 0) > round) { round = +fm[1] || 0; roundFrom = rel + " 머리"; }
+    // 개행으로 끝나는 파일(대부분의 편집기)은 split 이 끝의 빈 조각까지 세어 1 크게 나온다.
+    //   그대로 두면 **정확히 3,000줄인 계획서가 "3,000줄 초과"로 막힌다**(4회차 low).
+    const count = txt.split("\n").length - (txt.endsWith("\n") ? 1 : 0);
+    if (!big || count > big.lines) big = { rel, lines: count };
   }
   if (!big) return null;            // 하나도 못 읽으면 막지 않는다
-
-  // **둘을 각각 돌려준다.** 하나만 돌려주면 승인 하나가 다른 축까지 함께 연다 — 실측 사고에서
-  //   "이 크기로 진행" 승인 뒤 재검증 10회가 아무 저항 없이 굴러간 것이 정확히 그 모양이다
-  //   (v0.53.0 pr-reviewer 1회차 medium). 순서는 크기 먼저 — 크기가 원인이고 회차는 증상이다.
-  const hits = [];
-  if (big.lines > PLAN_MAX_LINES)
-    hits.push({ key: "plan-size", detail: bigPlanKey(big.rel, "plan-size", big.lines),
-                measured: big.rel + "(" + big.lines + "줄)" });
-  // 회차 히트는 **회차를 읽은 출처**를 찍는다. 가장 큰 파일을 찍으면 "그 파일 머리를 지우세요"
-  //   안내가 엉뚱한 곳을 가리킨다(회차가 프롬프트나 다른 파일에서 왔을 때 — 2회차 medium).
-  if (round >= PLAN_MAX_ROUNDS)
-    hits.push({ key: "plan-rounds", detail: bigPlanKey(big.rel, "plan-rounds", round),
-                measured: "회차 " + round + " · 출처 " + (roundFrom || "알 수 없음") });
-  return hits.length ? hits : null;
+  if (big.lines <= PLAN_MAX_LINES) return null;
+  // 배열로 돌려준다 — 축이 늘어도 래퍼의 승인 루프가 **축마다** 따로 확인하게(승인 하나가
+  //   다른 축까지 함께 열리지 않게 · v0.53.0 pr-reviewer 1회차 medium).
+  return [{ key: "plan-size", detail: bigPlanKey(big.rel, big.lines),
+            measured: big.rel + "(" + big.lines + "줄)" }];
 }
 // v0.43.1: 어느 저장소 diff에도 못 들어가는 임시·스크래치 위치는 코드가 아니다 —
 // 실측(honclwd 최근 트랜스크립트 12개): 코드로 계상된 편집 192건 중 43건(22%)이 저장소 밖 스크래치라
@@ -970,8 +938,6 @@ function unattendedBlock(toolName, toolInput, opts) {
 const REASONS_UNATTENDED = {
   "plan-size": "무인 차단(park): 계획서가 3,000줄을 넘습니다. 사람이 돌아오면 일을 쪼갤지 " +
     "이 크기로 갈지 정해야 합니다 — 무인 중에는 큰 계획을 통과시키지 않습니다.",
-  "plan-rounds": "무인 차단(park): 같은 계획을 5회째 재검증하고 있습니다. 사람이 돌아오면 " +
-    "조건을 안고 착수할지 일을 쪼갤지 정해야 합니다.",
   "u-push": "무인 모드 차단: git push는 자동배포로 이어질 수 있어 무인 중엔 못 합니다. 이 작업을 park하고 사람 복귀를 기다립니다.",
   "u-deploy": "무인 모드 차단: 배포·퍼블리시(프리뷰 포함)는 외부로 나가는 행동이라 무인 중 금지. park하고 사람 복귀를 기다립니다.",
   "u-egress": "무인 모드 차단: 외부로 데이터를 내보내는 명령(전송·업로드·원시 소켓)은 되돌리기 불가·유출 위험이라 무인 중 금지. localhost 검증은 허용됩니다. park하고 사람 복귀를 기다립니다.",
@@ -990,4 +956,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, PLAN_MAX_ROUNDS, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };

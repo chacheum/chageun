@@ -12,7 +12,7 @@ const F = {
   "docs/plans/2026-08-01-홈캘린더-보기개선-1차.md": "c\n".repeat(4000),
 };
 const opts = { readFile: (rel) => { if (!(rel in F)) throw new Error("ENOENT"); return F[rel]; } };
-// planScaleBlock 은 히트 **배열**을 돌려준다(크기·회차를 각각 승인받게 하려고).
+// planScaleBlock 은 히트 **배열**을 돌려준다(축이 늘어도 축마다 따로 승인받게 하려고).
 const hits = (prompt, sub = "chageun:plan-validator") =>
   planScaleBlock("Task", { subagent_type: sub, prompt }, opts);
 const call = (prompt, sub) => { const h = hits(prompt, sub); return h ? h[0] : null; };
@@ -52,38 +52,23 @@ test("readFile 미주입이면 판정하지 않는다(코어 순수 계약)", ()
   assert.equal(planScaleBlock("Task", { subagent_type: "plan-validator", prompt: "docs/plans/big.md" }), null);
 });
 
-test("회차를 프롬프트에서 읽는다", () => {
-  assert.equal(call("재검증 회차: 5\ndocs/plans/small.md").key, "plan-rounds");
-});
-test("회차 4는 통과(5회째에서 막힌다)", () => {
-  assert.equal(call("재검증 회차: 4\ndocs/plans/small.md"), null);
-});
-test("회차는 파일 앞 20줄만 본다(본문 인용에 자기 차단 안 됨)", () => {
-  const f = { "docs/plans/q.md": "머리\n".repeat(30) + "재검증 회차: 9\n" };
-  assert.equal(planScaleBlock("Task", { subagent_type: "plan-validator", prompt: "docs/plans/q.md" },
-    { readFile: (r) => f[r] }), null);
-});
-// 크기 승인 하나가 회차 상한까지 열면 안 된다 — 둘 다 돌려주고 각각 승인받게 한다.
-test("크기와 회차가 둘 다 걸리면 둘 다 돌려준다(크기 먼저)", () => {
-  const h = hits("재검증 회차: 9\ndocs/plans/big.md");
-  assert.deepEqual(h.map((x) => x.key), ["plan-size", "plan-rounds"]);
-});
 test("잰 파일과 줄수를 함께 돌려준다(오차단을 바로 알아보게)", () => {
-  assert.equal(call("docs/plans/big.md").measured, "docs/plans/big.md(4021줄)");
+  // 4,020 (4021 아님) — 개행으로 끝나는 파일의 끝 빈 조각은 안 센다(4회차 low).
+  assert.equal(call("docs/plans/big.md").measured, "docs/plans/big.md(4020줄)");
 });
 
 test("승인 키에 측정값이 들어가 범위가 생긴다", () => {
-  assert.notEqual(bigPlanKey("docs/plans/big.md", "plan-size", 4020),
-                  bigPlanKey("docs/plans/big.md", "plan-size", 9000));
-  assert.equal(call("docs/plans/big.md").detail, bigPlanKey("docs/plans/big.md", "plan-size", 4021));
+  assert.notEqual(bigPlanKey("docs/plans/big.md", 4020),
+                  bigPlanKey("docs/plans/big.md", 9000));
+  assert.equal(call("docs/plans/big.md").detail, bigPlanKey("docs/plans/big.md", 4020));
 });
 test("승인 키는 경로가 아니라 파일 이름으로 만든다(표기가 바뀌어도 유효)", () => {
-  assert.equal(bigPlanKey("docs/plans/big.md", "plan-size", 4021),
-               bigPlanKey("/abs/x/docs/plans/big.md", "plan-size", 4021));
+  assert.equal(bigPlanKey("docs/plans/big.md", 4021),
+               bigPlanKey("/abs/x/docs/plans/big.md", 4021));
 });
 test("승인 버킷 경계: 위로만 열리고 아래로는 안 새어 나간다", () => {
-  assert.equal(bigPlanKey("a.md", "plan-size", 3001), bigPlanKey("a.md", "plan-size", 3999));
-  assert.notEqual(bigPlanKey("a.md", "plan-size", 3999), bigPlanKey("a.md", "plan-size", 4001));
+  assert.equal(bigPlanKey("a.md", 3001), bigPlanKey("a.md", 3999));
+  assert.notEqual(bigPlanKey("a.md", 3999), bigPlanKey("a.md", 4001));
 });
 test("실측 기준선: 잘 끝난 계획 크기(2,560줄)는 안 걸린다", () => {
   assert.ok(PLAN_MAX_LINES > 2560);
@@ -171,13 +156,27 @@ test("지난 회차 지적도 프롬프트에서 찾으라고 적혀 있다", ()
 
 // ---- 문턱 숫자가 차단문과 상수에서 어긋나지 않게 (3회차 low) ----
 // 문구에 "3,000줄"·"5회째"를 손으로 적어 뒀다. 상수만 바꾸면 문구가 조용히 거짓말을 한다.
-test("차단문의 숫자가 상수와 같다", () => {
-  const size = core.reasonFor("plan-size");
-  const rounds = core.reasonFor("plan-rounds");
-  assert.ok(size.includes(core.PLAN_MAX_LINES.toLocaleString("en-US")),
-    `plan-size 문구에 ${core.PLAN_MAX_LINES} 이 없다`);
-  assert.ok(rounds.includes(`${core.PLAN_MAX_ROUNDS}회째`),
-    `plan-rounds 문구에 ${core.PLAN_MAX_ROUNDS}회째 가 없다`);
+// 문구는 **세 벌**이다(사람·서브에이전트·무인). 한 벌만 재면 나머지 둘이 조용히 거짓말한다.
+test("차단문 세 벌의 문턱 숫자가 상수와 같다", () => {
+  const size = core.PLAN_MAX_LINES.toLocaleString("en-US");
+  for (const [label, text] of [
+    ["사람", core.reasonFor("plan-size")],
+    ["서브에이전트", core.reasonFor("plan-size", true)],
+    ["무인", core.reasonForUnattended("plan-size")],
+  ]) assert.ok(text.includes(size), `${label} plan-size 문구에 ${size} 이 없다`);
+
+});
+
+// 4회차 low: 개행으로 끝나는 파일을 1 크게 세어 정확히 3,000줄인 계획서가 "초과"로 막혔다.
+test("개행으로 끝나도 줄 수를 정확히 센다 — 딱 3,000줄은 안 막힌다", () => {
+  const exact = { readFile: () => "x\n".repeat(core.PLAN_MAX_LINES) };
+  assert.equal(planScaleBlock("Task", { subagent_type: "plan-validator",
+    prompt: "계획서: docs/plans/exact.md" }, exact), null);
+  const over = { readFile: () => "x\n".repeat(core.PLAN_MAX_LINES + 1) };
+  const h = planScaleBlock("Task", { subagent_type: "plan-validator",
+    prompt: "계획서: docs/plans/over.md" }, over);
+  assert.equal(h[0].key, "plan-size");
+  assert.match(h[0].measured, new RegExp(`\\(${core.PLAN_MAX_LINES + 1}줄\\)`));
 });
 
 // ---- 경로 후보를 미리 거르지 않는다 (3회차 medium: 굵게 쓴 절대경로를 통째로 놓쳤다) ----
