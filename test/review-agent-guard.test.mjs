@@ -175,6 +175,8 @@ test("차단 안내문이 branch 조건부 허용과 대체 명령을 알린다(
 // ── v0.52.0: check-ignore 는 순수 읽기 ─────────────────────────────────────────
 // 2026-08-08 회고 실측: 리뷰 담당 Bash 차단 42건 중 **진짜 오차단은 check-ignore 2건뿐**이었다.
 // (파이프는 원래 통과하고, `2>&1`은 `>`를 여는 것이라 의도된 차단이며, hash-object 는 `-w` 가 쓴다.)
+// ⚠ 이 중 `2>&1` 판정은 **v0.57.0 에서 뒤집었다** — 근거는 이 파일 끝 v0.57.0 절. 셈이 틀려서가 아니라
+// `>` 를 덩어리로 보던 것을 토큰 하나로 좁혔기 때문이다(그 토큰은 파일 이름을 못 적는다).
 // git 2.43 옵션 전수 `-q/-v/--stdin/-z/-n/--no-index` 에 파일·저장소 쓰기가 없다.
 test("check-ignore 는 읽기 전용이라 통과", () => {
   for (const cmd of [
@@ -222,4 +224,129 @@ test("허용 서브명령과 ra-bash 안내문이 양방향으로 일치", () =>
     assert.ok(listed.has(s) || PROSE_ONLY.has(s), `안내문에 빠진 허용 서브명령: ${s}`);
   for (const s of listed)                                  // 안내문 → 허용목록
     assert.ok(subs.includes(s), `안내문에만 있고 허용목록엔 없는 서브명령: ${s}`);
+});
+
+// ── v0.57.0: `2>&1` 은 파일을 못 만들고 오류를 감추지도 않는다 ─────────────────
+// 30일 실측: ra-bash 로 막힌 고유 명령 125개 중 **40개가 이 토큰 하나 때문**이었다.
+// **잰 방법(자족 기록 — 근거 문서는 이 저장소에 안 올라간다):** 30일치 트랜스크립트에서 ra-bash 로
+// 막힌 Bash 명령을 전부 뽑아(차단 140건·고유 138개) 현행 판정기에 먹여 125개가 아직 막힘을 확인한 뒤,
+// 완화안을 **제품 소스에 실제로 넣은 사본**을 만들어 그 125개를 다시 흘렸다. 잰 규칙은 아래 구현과
+// 글자까지 같고, 앵커 없는 느슨한 판(`/2>&1/g`)으로도 40개로 동일했다(차이 0).
+// 근거 둘: (1) 목적지가 파일 이름이 아니라 fd 1 로 고정돼 **이름을 못 적는다**.
+// (2) stderr 를 화면에 끌어오므로 `2>/dev/null`(오류 감추기)의 **정반대**다 — 그래서 그쪽은 계속 막는다.
+// ⚠ 이 토큰은 `&` 가 분할자라 `bashSegmentAllowed()` 까지 도달하지 못한다(`… 2>` + `1` 로 잘린다).
+// 그래서 처리 자리가 **분할 전**이다. 조각 함수에 넣으면 조용히 아무 일도 안 한다(plan-validator 1차 blocker).
+test("`2>&1` 은 통과한다", () => {
+  for (const cmd of [
+    "git log --oneline -3 2>&1",
+    "git -C /repo grep -n TODO -- src 2>&1 | head -30",
+    "git status --short 2>&1",
+    "git -C /repo diff --stat main...HEAD 2>&1 | head -50",
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), null, cmd);
+});
+
+test("`2>&1` 을 열어도 나머지 리다이렉션은 그대로 막힌다", () => {
+  for (const cmd of [
+    "git log > out.txt",              // 파일 쓰기
+    "git log 2>/tmp/pwn",             // stderr 를 파일로
+    "git log 2>/dev/null",            // 오류 감추기 — 이번에 안 연다
+    "git log 2>>/dev/null",           // 덧붙이기
+    "git log 12>&1",                  // fd 12 (앞이 공백이 아니라 앵커에 안 걸린다)
+    "git log 2>&1x",                  // 토큰 뒤에 붙음
+    "git log {fd}>&1",                // 이름 있는 fd
+    "git log 1>&2",                   // 방향 반대
+    "git log 2>&1 > out.txt",         // 지운 뒤에도 남는 `>`
+    "git log 2>&1; rm -rf /tmp/x",    // `;` 가 붙으면 뒤 앵커에 안 걸려 **치환 자체가 안 일어난다**
+    "git push origin main 2>&1",      // 허용목록 밖 서브명령
+    "echo hi 2>&1",                   // 허용목록 밖 머리
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), "ra-bash", cmd);
+});
+
+// 따옴표 속 리터럴을 지우면 `&&` 가 드러나 뒤쪽 명령이 통째로 사라진다(v0.41.0 H2 와 같은 모양의 함정).
+// **이유가 v0.57.0 에서 바뀌었다**: 예전엔 "stripQuotes 가 자리표시로 바꾸니까"였는데, 지금은 지우기가
+// **원문에서** 일어나므로 `--grep='2>&1'` 의 `2` 앞이 `'` 라 앵커에 안 걸려서다. 따옴표가 무엇을 덮는지는
+// 이제 상관이 없다(숫자만 덮은 `'2'>&1` 도 같은 이유로 안 지워진다 — 아래 차단 테스트).
+test("따옴표에 싸인 `2>&1` 리터럴은 치환 대상이 아니다", () => {
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: "git log --grep='2>&1' && rm -rf /tmp/x" }), "ra-bash");
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: 'git log --grep="2>&1" && rm -rf /tmp/x' }), "ra-bash");
+});
+
+// ⚠ 판정을 뒤집었다(pr-reviewer high). 처음엔 이 3형을 "복원되어 지워지지만 무해"로 못박았는데
+// **틀렸다.** 격리 저장소에서 실제로 돌려보니 `git branch '2'>&1` 이 통과하고 **브랜치 `2` 가 생겼다**.
+// bash 는 인용된 숫자를 파일 번호로 안 보므로 argv 가 `git branch 2`(쓰기)가 된다. `git log` 하나만
+// 보고 "무해"라 단정한 것이 원인이다 — 서브명령마다 결과가 다르다.
+// 그래서 지우는 자리를 **따옴표 떼기 앞**으로 옮겼고, 이제 원문에 매치가 없어 전부 막힌다.
+test("따옴표가 낀 가짜 `2>&1` 은 막힌다(원문에서 지우므로)", () => {
+  for (const cmd of [
+    "git log ''2>&1",
+    "git log '2'>&1",
+    "git log 2>&'1'",
+    "git branch '2'>&1",       // 실측: 옛 판에서 통과했고 브랜치가 만들어졌다
+    'git branch "2">&1',
+    "git log 2>''&1",          // 진짜 `&`(백그라운드 구분자)를 숨기던 형태
+    "git log 2>&1' '",         // 뒤에 인용 공백을 붙여 경계를 흐리는 형태
+    "git branch \\2>&1",       // **경로가 다르다**: 따옴표가 아니라 백슬래시로 만든 가짜.
+                              // 원문에서 지우므로 이것도 함께 막힌다 — 우연히 막히는 게 아니라 여기서 지킨다.
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), "ra-bash", cmd);
+});
+
+// `g` 플래그가 빠지면 두 번째부터 안 지워진다 — 그 변이를 잡는다.
+// 명령어 없이 토큰만 있는 입력은 빈 조각이 되어 통과한다(bash 에서도 아무 일이 없다). 의도임을 적어 둔다.
+test("`2>&1` 이 두 번 나와도 통과하고, 토큰만 있는 입력도 통과한다", () => {
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: "git log --oneline -3 2>&1 && git status --short 2>&1" }), null);
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "2>&1" }), null);
+});
+
+// 안내문이 조용히 되돌아가면 리뷰 담당이 허용된 형태를 영영 모른다. 두 방향을 함께 못박는다.
+test("안내문이 `2>&1` 허용과 `2>/dev/null` 금지를 함께 알린다", () => {
+  const msg = reasonFor("ra-bash");
+  assert.match(msg, /`2>&1`은 됩니다/, "허용을 알려야 리뷰 담당이 쓴다");
+  assert.match(msg, /2>\/dev\/null.{0,20}오류 감추기/, "감추는 쪽은 계속 막힌다는 것도 남겨야 한다");
+});
+
+// 실구동 검증(v0.57.0)에서 드러난 경계: 앵커가 `[ \t\n]` 이라 **탭·줄바꿈도 공백으로 친다.**
+// bash 도 탭을 단어 구분자로 보므로 같은 리다이렉션이고, 줄바꿈은 분할자로 남아 뒤쪽 명령이 따로 판정된다.
+// (실구동 때 나는 이걸 "차단"으로 기대했는데 **내 기대가 틀렸다** — 코드가 맞다. 그 경계를 여기 고정한다.)
+test("탭·줄바꿈으로 구분된 `2>&1` 도 같게 다룬다", () => {
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "git log\t2>&1" }), null);
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "git log\n2>&1" }), null);
+  // 줄바꿈 뒤에 다른 명령이 오면 그 조각이 따로 걸린다.
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: "git log 2>&1\nrm -rf /tmp/x" }), "ra-bash");
+});
+
+// 리뷰 담당이 **매번 읽는** 지시문에도 허용이 적혀 있어야 완화가 실제로 쓰인다. 훅 안내문은 차단당했을
+// 때만 보이므로 그것만으로는 부족하다(pr-reviewer low — "쓰는 쪽·읽는 쪽 반쪽 배선" 방지).
+test("pr-reviewer 지시문이 `2>&1` 허용을 알린다", () => {
+  const md = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "src", "agents", "pr-reviewer.md"), "utf8");
+  // ⚠ `/(됩니다|허용)/` 만 보면 **"안 됩니다"에도 "됩니다"가 들어 있어** 문장이 반대로 뒤집혀도 초록이다
+  // (pr-reviewer 2차 low). 그래서 부정형을 배제하되 **창을 짧게** 잡는다 — 뒤쪽 전체를 보면
+  // "…`2>&1`은 허용, `2>/dev/null`은 금지" 처럼 **옳은 문장이 빨간불**이 난다(pr-reviewer 3차 low).
+  // 이 파일은 허용·금지를 한 줄에 짝지어 쓰는 문체라 그 오탐이 실제로 날 만하다.
+  // ⚠ 부정형은 **열거**라 목록에 없는 표현("허용하지 않습니다" 등)은 못 잡는다 — 이 저장소가 스스로
+  // 적어 둔 "거부목록으로 만들면 뚫린다"와 같은 한계다. 되돌아간 문구를 다 잡는 그물이 아니다.
+  const hits = md.split("\n").filter((l) => /2>&1/.test(l) && /(됩니다|허용)/.test(l) &&
+    !/2>&1[^\n]{0,12}(안 됩니다|쓰지 마세요|금지|막힙니다)/.test(l));
+  assert.ok(hits.length >= 2, `지시문 두 자리에 허용 안내가 있어야 함 (현재 ${hits.length}곳)`);
+  assert.match(md, /2>\/dev\/null/, "감추는 쪽 금지는 그대로 남아야 함");
+});
+
+// 원문에서 지우므로 **따옴표 안쪽의 `2>&1` 도 지워진다** — 이 파일의 불변식("스캐너가 본 토큰 ==
+// 셸이 git에 넘기는 argv")에 생긴 유일한 예외다(pr-reviewer 2차 low). 무해한 근거는 두 가지다:
+//   1. 그 자리 글자는 bash 에게도 그냥 인자라 명령이 되지 않는다.
+//   2. 위험 옵션 검사는 **토큰 맨 앞**을 보는데, 지우기는 앞뒤가 공백일 때만 일어나므로 맨 앞을 못 건드리고,
+//      토큰이 붙지 않는 진짜 이유는 **앵커가 앞뒤 공백을 소비하지 않아 원문에 그대로 남기** 때문이다
+//      (`-n 2>&1 Otouch` → `-n  Otouch`). 치환값을 공백으로 둔 것은 여분의 방어일 뿐이라 `""` 로 바꿔도
+//      결과가 같고, 이 테스트는 그 변이를 **못 잡는다**(pr-reviewer 3차 low — 변이를 넣어 확인했다).
+// **나중에 옵션 검사를 "맨 앞" 기준에서 바꾸는 사람은 이 전제를 함께 확인할 것.**
+test("따옴표 안쪽이 지워져도 앞머리 옵션 검사는 살아 있다", () => {
+  const B = (c) => reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: c });
+  assert.equal(B("git log --grep='a 2>&1 b'"), null, "따옴표 안이 지워져도 무해 — 통과");
+  assert.equal(B("git grep '--open-files-in-pager=touch X 2>&1 y' TODO"), "ra-bash", "앞머리 검사는 그대로");
+  assert.equal(B("git log -n 2>&1 Otouch"), null, "앵커가 공백을 안 먹어 `-nOtouch` 로 안 붙는다");
+  assert.equal(B("git log -n2>&1Otouch"), "ra-bash", "붙여 쓰면 애초에 안 지워져 `>` 로 거부");
 });
