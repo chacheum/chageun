@@ -817,7 +817,7 @@ function bashSegmentAllowed(rawSeg) {
   if (!seg) return true;
   const stripped = stripQuotes(seg);
   if (stripped === null) return false;                         // 따옴표 미닫힘·큰따옴표 속 치환 → 거부
-  if (/[<>]|\$\(|`/.test(stripped)) return false;              // 리다이렉션·명령치환 금지
+  if (/[<>]|\$\(|`/.test(stripped)) return false;              // 리다이렉션·명령치환 금지(단 인용 없는 `2>&1` 은 reviewAgentBlock 이 원문에서 먼저 지운다)
   const toks = stripped.split(/\s+/).filter(Boolean);
   // **불변식: 스캐너가 본 토큰 == 셸이 git에 넘기는 argv.** 이게 성립해야 아래 옵션 denylist가 의미를 갖는다.
   // 이 판정기는 머리·서브명령이 앵커된 allowlist(가려지면 오히려 막힘)인데 **옵션 검사만 denylist**라,
@@ -888,16 +888,21 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
   if (name === "Bash") {
     // 따옴표를 먼저 떼고 조각낸다 — 따옴표 속 `|`(`git grep 'a|b'`의 정규식 교대 등)를 셸 파이프로
     // 오인해 정상 명령을 과차단하던 것 방지(pr-reviewer low). 단일 `&`(백그라운드)도 분할에 포함.
-    const cmd0 = stripQuotes(String((toolInput && toolInput.command) || ""));
-    if (cmd0 === null) return "ra-bash";                         // 따옴표 미닫힘·큰따옴표 속 치환 → 거부
-    // `2>&1` 만 여기서 지운다. **자리가 분할 전인 이유**: `&` 가 분할자라 이 토큰은 조각 함수까지
-    // 도달하지 못하고 `… 2>` + `1` 로 잘린다(둘 다 거부). 조각 함수에 넣으면 조용히 무효다.
-    // 안전 근거: 목적지가 fd 1 로 고정돼 **파일 이름을 못 적는다**. 앞뒤 앵커가 공백을 보존하므로
-    // 토큰이 붙거나 새 분할자가 드러나는 일이 없고, `12>&1`·`{fd}>&1`·`2>&1x` 는 안 걸리며
-    // 지운 뒤 남는 `>`(`2>&1 > out.txt`)는 그대로 거부된다.
-    // 따옴표가 `>`·`&` 를 덮으면 자리표시가 되어 대상이 아니다. 숫자만 덮은 `'2'>&1` 은 복원되어
-    // 지워지는데 bash 에서도 fd 복제라 무해하다(plan-validator 2차 medium — 테스트로 못박음).
-    const cmd = cmd0.replace(/(?<=^|\s)2>&1(?=\s|$)/g, " ");
+    // `2>&1` 만 지운다. **자리가 두 가지로 정해진다.**
+    // (1) **분할 전**이어야 한다 — `&` 가 분할자라 이 토큰은 조각 함수까지 도달하지 못하고
+    //     `… 2>` + `1` 로 잘린다(둘 다 거부). 조각 함수에 넣으면 조용히 무효다.
+    // (2) **따옴표를 떼기 전**이어야 한다 — stripQuotes 는 따옴표 문자를 버리고 안 쪽 안전 글자를
+    //     그대로 내보내므로, 그 뒤에서 지우면 인용된 가짜와 진짜를 구별할 수 없다. 실측(pr-reviewer high):
+    //     `git branch '2'>&1` 이 통과했고 **실제로 브랜치 `2` 가 만들어졌다**(bash 는 인용된 숫자를 fd 로
+    //     안 보므로 argv 가 `git branch 2` 다). `git log 2>''&1` 은 진짜 `&`(백그라운드 구분자)를 숨겼다.
+    //     원문에서 지우면 둘 다 매치되지 않아 그대로 `>` 를 물고 거부된다.
+    // 안전 근거: 인용 없는 `2>&1` 은 목적지가 fd 1 로 고정돼 **파일 이름을 못 적는다**.
+    // 경계는 bash 의 단어 구분자와 같은 집합으로 좁힌다(자바스크립트 `\s` 는 NBSP 등 bash 가 구분자로
+    // 안 보는 글자까지 포함해 스캐너 시야와 argv 가 갈라진다 — pr-reviewer low).
+    // 지운 자리에 공백을 남기므로 토큰이 붙지 않고, 지운 뒤 남는 `>`(`2>&1 > out.txt`)는 그대로 거부된다.
+    const raw = String((toolInput && toolInput.command) || "").replace(/(?<=^|[ \t\n])2>&1(?=[ \t\n]|$)/g, " ");
+    const cmd = stripQuotes(raw);
+    if (cmd === null) return "ra-bash";                          // 따옴표 미닫힘·큰따옴표 속 치환 → 거부
     for (const seg of cmd.split(/&&|\|\||[;|&\n]/)) if (!bashSegmentAllowed(seg)) return "ra-bash";
     return null;
   }
