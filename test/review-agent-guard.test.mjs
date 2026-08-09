@@ -228,8 +228,10 @@ test("허용 서브명령과 ra-bash 안내문이 양방향으로 일치", () =>
 
 // ── v0.57.0: `2>&1` 은 파일을 못 만들고 오류를 감추지도 않는다 ─────────────────
 // 30일 실측: ra-bash 로 막힌 고유 명령 125개 중 **40개가 이 토큰 하나 때문**이었다.
-// (docs/2026-08-09-ra-bash-reconciliation.md — 완화안을 제품 소스에 실제로 넣은 사본으로 같은 기록을
-//  다시 흘려 잰 값. 잰 규칙은 아래 구현과 글자까지 같고, 앵커 없는 느슨한 판으로도 40개로 동일했다.)
+// **잰 방법(자족 기록 — 근거 문서는 이 저장소에 안 올라간다):** 30일치 트랜스크립트에서 ra-bash 로
+// 막힌 Bash 명령을 전부 뽑아(차단 140건·고유 138개) 현행 판정기에 먹여 125개가 아직 막힘을 확인한 뒤,
+// 완화안을 **제품 소스에 실제로 넣은 사본**을 만들어 그 125개를 다시 흘렸다. 잰 규칙은 아래 구현과
+// 글자까지 같고, 앵커 없는 느슨한 판(`/2>&1/g`)으로도 40개로 동일했다(차이 0).
 // 근거 둘: (1) 목적지가 파일 이름이 아니라 fd 1 로 고정돼 **이름을 못 적는다**.
 // (2) stderr 를 화면에 끌어오므로 `2>/dev/null`(오류 감추기)의 **정반대**다 — 그래서 그쪽은 계속 막는다.
 // ⚠ 이 토큰은 `&` 가 분할자라 `bashSegmentAllowed()` 까지 도달하지 못한다(`… 2>` + `1` 로 잘린다).
@@ -270,11 +272,21 @@ test("따옴표가 `>`·`&` 를 덮으면 치환 대상이 아니다", () => {
     { command: 'git log --grep="2>&1" && rm -rf /tmp/x' }), "ra-bash");
 });
 
-// 반대로 따옴표가 숫자만 덮으면 토큰이 복원되어 지워진다. **무해함까지 확인했다**(plan-validator 2차 medium):
-// 셋 다 bash 에서도 fd 복제이거나 인자가 하나 늘 뿐이고 파일을 만들지 않는다. 현재 동작을 못박아 둔다.
-test("따옴표가 숫자만 덮으면 복원되어 지워진다(무해)", () => {
-  for (const cmd of ["git log ''2>&1", "git log '2'>&1", "git log 2>&'1'"])
-    assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), null, cmd);
+// ⚠ 판정을 뒤집었다(pr-reviewer high). 처음엔 이 3형을 "복원되어 지워지지만 무해"로 못박았는데
+// **틀렸다.** 격리 저장소에서 실제로 돌려보니 `git branch '2'>&1` 이 통과하고 **브랜치 `2` 가 생겼다**.
+// bash 는 인용된 숫자를 파일 번호로 안 보므로 argv 가 `git branch 2`(쓰기)가 된다. `git log` 하나만
+// 보고 "무해"라 단정한 것이 원인이다 — 서브명령마다 결과가 다르다.
+// 그래서 지우는 자리를 **따옴표 떼기 앞**으로 옮겼고, 이제 원문에 매치가 없어 전부 막힌다.
+test("따옴표가 낀 가짜 `2>&1` 은 막힌다(원문에서 지우므로)", () => {
+  for (const cmd of [
+    "git log ''2>&1",
+    "git log '2'>&1",
+    "git log 2>&'1'",
+    "git branch '2'>&1",       // 실측: 옛 판에서 통과했고 브랜치가 만들어졌다
+    'git branch "2">&1',
+    "git log 2>''&1",          // 진짜 `&`(백그라운드 구분자)를 숨기던 형태
+    "git log 2>&1' '",         // 뒤에 인용 공백을 붙여 경계를 흐리는 형태
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), "ra-bash", cmd);
 });
 
 // `g` 플래그가 빠지면 두 번째부터 안 지워진다 — 그 변이를 잡는다.
@@ -301,4 +313,14 @@ test("탭·줄바꿈으로 구분된 `2>&1` 도 같게 다룬다", () => {
   // 줄바꿈 뒤에 다른 명령이 오면 그 조각이 따로 걸린다.
   assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
     { command: "git log 2>&1\nrm -rf /tmp/x" }), "ra-bash");
+});
+
+// 리뷰 담당이 **매번 읽는** 지시문에도 허용이 적혀 있어야 완화가 실제로 쓰인다. 훅 안내문은 차단당했을
+// 때만 보이므로 그것만으로는 부족하다(pr-reviewer low — "쓰는 쪽·읽는 쪽 반쪽 배선" 방지).
+test("pr-reviewer 지시문이 `2>&1` 허용을 알린다", () => {
+  const md = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "src", "agents", "pr-reviewer.md"), "utf8");
+  const hits = md.split("\n").filter((l) => /2>&1/.test(l) && /(됩니다|허용)/.test(l));
+  assert.ok(hits.length >= 2, `지시문 두 자리에 허용 안내가 있어야 함 (현재 ${hits.length}곳)`);
+  assert.match(md, /2>\/dev\/null/, "감추는 쪽 금지는 그대로 남아야 함");
 });
