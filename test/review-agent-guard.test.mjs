@@ -287,8 +287,8 @@ test("따옴표가 낀 가짜 `2>&1` 은 막힌다(원문에서 지우므로)", 
     'git branch "2">&1',
     "git log 2>''&1",          // 진짜 `&`(백그라운드 구분자)를 숨기던 형태
     "git log 2>&1' '",         // 뒤에 인용 공백을 붙여 경계를 흐리는 형태
-    "git branch \\2>&1",        // **경로가 다르다**: 따옴표가 아니라 백슬래시로 만든 가짜.
-                               // 원문에서 지우므로 이것도 함께 막힌다 — 우연히 막히는 게 아니라 여기서 지킨다.
+    "git branch \\2>&1",       // **경로가 다르다**: 따옴표가 아니라 백슬래시로 만든 가짜.
+                              // 원문에서 지우므로 이것도 함께 막힌다 — 우연히 막히는 게 아니라 여기서 지킨다.
   ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), "ra-bash", cmd);
 });
 
@@ -324,10 +324,13 @@ test("pr-reviewer 지시문이 `2>&1` 허용을 알린다", () => {
   const md = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "src", "agents", "pr-reviewer.md"), "utf8");
   // ⚠ `/(됩니다|허용)/` 만 보면 **"안 됩니다"에도 "됩니다"가 들어 있어** 문장이 반대로 뒤집혀도 초록이다
-  // (pr-reviewer 2차 low). 부정형이 같은 줄에 있으면 허용 안내로 세지 않는다.
-  const NEG = /(안 됩니다|쓰지 마세요|금지|막힙니다)/;
+  // (pr-reviewer 2차 low). 그래서 부정형을 배제하되 **창을 짧게** 잡는다 — 뒤쪽 전체를 보면
+  // "…`2>&1`은 허용, `2>/dev/null`은 금지" 처럼 **옳은 문장이 빨간불**이 난다(pr-reviewer 3차 low).
+  // 이 파일은 허용·금지를 한 줄에 짝지어 쓰는 문체라 그 오탐이 실제로 날 만하다.
+  // ⚠ 부정형은 **열거**라 목록에 없는 표현("허용하지 않습니다" 등)은 못 잡는다 — 이 저장소가 스스로
+  // 적어 둔 "거부목록으로 만들면 뚫린다"와 같은 한계다. 되돌아간 문구를 다 잡는 그물이 아니다.
   const hits = md.split("\n").filter((l) => /2>&1/.test(l) && /(됩니다|허용)/.test(l) &&
-    !NEG.test(l.slice(l.search(/2>&1/))));   // `2>&1` **뒤쪽**에 부정형이 오면 그 문장은 금지다
+    !/2>&1[^\n]{0,12}(안 됩니다|쓰지 마세요|금지|막힙니다)/.test(l));
   assert.ok(hits.length >= 2, `지시문 두 자리에 허용 안내가 있어야 함 (현재 ${hits.length}곳)`);
   assert.match(md, /2>\/dev\/null/, "감추는 쪽 금지는 그대로 남아야 함");
 });
@@ -336,12 +339,14 @@ test("pr-reviewer 지시문이 `2>&1` 허용을 알린다", () => {
 // 셸이 git에 넘기는 argv")에 생긴 유일한 예외다(pr-reviewer 2차 low). 무해한 근거는 두 가지다:
 //   1. 그 자리 글자는 bash 에게도 그냥 인자라 명령이 되지 않는다.
 //   2. 위험 옵션 검사는 **토큰 맨 앞**을 보는데, 지우기는 앞뒤가 공백일 때만 일어나므로 맨 앞을 못 건드리고,
-//      지운 자리에 공백을 남겨 토큰이 붙지도 않는다(`-n 2>&1 Otouch` 가 `-nOtouch` 로 합쳐지지 않는다).
+//      토큰이 붙지 않는 진짜 이유는 **앵커가 앞뒤 공백을 소비하지 않아 원문에 그대로 남기** 때문이다
+//      (`-n 2>&1 Otouch` → `-n  Otouch`). 치환값을 공백으로 둔 것은 여분의 방어일 뿐이라 `""` 로 바꿔도
+//      결과가 같고, 이 테스트는 그 변이를 **못 잡는다**(pr-reviewer 3차 low — 변이를 넣어 확인했다).
 // **나중에 옵션 검사를 "맨 앞" 기준에서 바꾸는 사람은 이 전제를 함께 확인할 것.**
 test("따옴표 안쪽이 지워져도 앞머리 옵션 검사는 살아 있다", () => {
   const B = (c) => reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: c });
   assert.equal(B("git log --grep='a 2>&1 b'"), null, "따옴표 안이 지워져도 무해 — 통과");
   assert.equal(B("git grep '--open-files-in-pager=touch X 2>&1 y' TODO"), "ra-bash", "앞머리 검사는 그대로");
-  assert.equal(B("git log -n 2>&1 Otouch"), null, "지운 자리 공백이 남아 `-nOtouch` 로 안 붙는다");
+  assert.equal(B("git log -n 2>&1 Otouch"), null, "앵커가 공백을 안 먹어 `-nOtouch` 로 안 붙는다");
   assert.equal(B("git log -n2>&1Otouch"), "ra-bash", "붙여 쓰면 애초에 안 지워져 `>` 로 거부");
 });
