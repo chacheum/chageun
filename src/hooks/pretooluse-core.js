@@ -89,7 +89,7 @@ const REASONS = {
   "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). pr-reviewer에게 **재검토를 요청**하세요 — 이미 돌린 리뷰어를 SendMessage로 이어 부른 재검토도 인정됩니다(새 Agent로 다시 띄워도 됩니다. 그땐 **프롬프트에 `재리뷰 회차: N`과 지난 회차 blocker/high 제목을 적으세요** — 새로 띄우면 회차 소스가 그것뿐이라 안 적으면 몇 번째인지 아무도 못 셉니다). 예외로 건너뛰어야 하면 **세션 자체를 CHAGEUN_SKIP_GATE_CHECK=1로 시작**해야 합니다(명령 앞에 인라인으로 붙이는 건 훅 프로세스에 안 닿아 안 켜집니다).",
   "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
   "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
-  "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged·check-ignore, 그리고 **branch는 읽기 형태만** — `--show-current`·`--list`·`--contains`·`-a`·`-r`·`-v` 등이나 인자 없는 `git branch`. 브랜치 이름을 인자로 주거나 `-d`·`-m`·`-f`를 붙이면 쓰기라 막힙니다). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 자주 막히던 것의 이미 허용된 대체: 현재 브랜치는 `git rev-parse --abbrev-ref HEAD`, 특정 커밋을 담은 브랜치는 `git for-each-ref --contains <sha>`. `check-ignore`는 **종료코드 1 = 무시되지 않음**(오류 아님)입니다. 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
+  "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged·check-ignore, 그리고 **branch는 읽기 형태만** — `--show-current`·`--list`·`--contains`·`-a`·`-r`·`-v` 등이나 인자 없는 `git branch`. 브랜치 이름을 인자로 주거나 `-d`·`-m`·`-f`를 붙이면 쓰기라 막힙니다). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 그 밖의 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 오류 메시지까지 보려면 `2>&1`은 됩니다(감추는 게 아니라 화면으로 끌어오는 것이라 허용합니다). 단 **앞뒤를 띄어 쓰세요** — `2>&1| head`처럼 붙여 쓰면 안 열립니다(`… 2>&1 | head`). 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 자주 막히던 것의 이미 허용된 대체: 현재 브랜치는 `git rev-parse --abbrev-ref HEAD`, 특정 커밋을 담은 브랜치는 `git for-each-ref --contains <sha>`. `check-ignore`는 **종료코드 1 = 무시되지 않음**(오류 아님)입니다. 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
   "ra-error": "차단: 리뷰 에이전트 안전 판정 중 오류라 안전측 차단(fail-closed)합니다. 검토는 Read/Grep으로 계속하세요.",
   "gate-model-downgrade": "차단: 검증 게이트를 기본보다 약한 모델로 띄우려 했습니다. 게이트는 \"검토 대상보다 최소 같거나 강한 독립 심판\"이라 약한 모델로 내리면 게이트의 의미가 사라집니다(심판이 일꾼보다 약해짐). **`model` 파라미터를 빼면** 에이전트 설정의 기본 모델이 그대로 쓰입니다 — 그게 정답인 경우가 대부분입니다. 그 모델을 못 쓰는 환경이면 실행 전 사용자가 CHAGEUN_ALLOW_GATE_MODEL=1로만 열 수 있습니다(게이트를 아예 안 부르는 것보다는 약한 심판이 낫기 때문입니다).",
   "design-color": "차단(차근 색 백스톱): 새로 넣는 코드에 디자인 토큰 대신 직접 색이 있습니다. 팔레트 색 클래스(`bg-blue-500` 등)·임의값(`-[#hex]`) 대신 docs/design-system.md의 토큰을 쓰세요. 색 견본판·Tailwind safelist처럼 색 이름이 원래 나열되는 파일이면, design-system.md front-matter의 `lint-allow-colors`에 그 팔레트명을 선언하거나 그 줄에 `design-lint-ignore` 주석을 붙이세요(그 줄만 통과). 전체 우회는 실행 전 사용자가 CHAGEUN_SKIP_DESIGN_LINT=1로만 켤 수 있습니다.",
@@ -817,7 +817,7 @@ function bashSegmentAllowed(rawSeg) {
   if (!seg) return true;
   const stripped = stripQuotes(seg);
   if (stripped === null) return false;                         // 따옴표 미닫힘·큰따옴표 속 치환 → 거부
-  if (/[<>]|\$\(|`/.test(stripped)) return false;              // 리다이렉션·명령치환 금지
+  if (/[<>]|\$\(|`/.test(stripped)) return false;              // 리다이렉션·명령치환 금지(단 인용 없는 `2>&1` 은 reviewAgentBlock 이 원문에서 먼저 지운다)
   const toks = stripped.split(/\s+/).filter(Boolean);
   // **불변식: 스캐너가 본 토큰 == 셸이 git에 넘기는 argv.** 이게 성립해야 아래 옵션 denylist가 의미를 갖는다.
   // 이 판정기는 머리·서브명령이 앵커된 allowlist(가려지면 오히려 막힘)인데 **옵션 검사만 denylist**라,
@@ -888,7 +888,20 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
   if (name === "Bash") {
     // 따옴표를 먼저 떼고 조각낸다 — 따옴표 속 `|`(`git grep 'a|b'`의 정규식 교대 등)를 셸 파이프로
     // 오인해 정상 명령을 과차단하던 것 방지(pr-reviewer low). 단일 `&`(백그라운드)도 분할에 포함.
-    const cmd = stripQuotes(String((toolInput && toolInput.command) || ""));
+    // `2>&1` 만 지운다. **자리가 두 가지로 정해진다.**
+    // (1) **분할 전**이어야 한다 — `&` 가 분할자라 이 토큰은 조각 함수까지 도달하지 못하고
+    //     `… 2>` + `1` 로 잘린다(둘 다 거부). 조각 함수에 넣으면 조용히 무효다.
+    // (2) **따옴표를 떼기 전**이어야 한다 — stripQuotes 는 따옴표 문자를 버리고 안 쪽 안전 글자를
+    //     그대로 내보내므로, 그 뒤에서 지우면 인용된 가짜와 진짜를 구별할 수 없다. 실측(pr-reviewer high):
+    //     `git branch '2'>&1` 이 통과했고 **실제로 브랜치 `2` 가 만들어졌다**(bash 는 인용된 숫자를 fd 로
+    //     안 보므로 argv 가 `git branch 2` 다). `git log 2>''&1` 은 진짜 `&`(백그라운드 구분자)를 숨겼다.
+    //     원문에서 지우면 둘 다 매치되지 않아 그대로 `>` 를 물고 거부된다.
+    // 안전 근거: 인용 없는 `2>&1` 은 목적지가 fd 1 로 고정돼 **파일 이름을 못 적는다**.
+    // 경계는 bash 의 단어 구분자와 같은 집합으로 좁힌다(자바스크립트 `\s` 는 NBSP 등 bash 가 구분자로
+    // 안 보는 글자까지 포함해 스캐너 시야와 argv 가 갈라진다 — pr-reviewer low).
+    // 지운 자리에 공백을 남기므로 토큰이 붙지 않고, 지운 뒤 남는 `>`(`2>&1 > out.txt`)는 그대로 거부된다.
+    const raw = String((toolInput && toolInput.command) || "").replace(/(?<=^|[ \t\n])2>&1(?=[ \t\n]|$)/g, " ");
+    const cmd = stripQuotes(raw);
     if (cmd === null) return "ra-bash";                          // 따옴표 미닫힘·큰따옴표 속 치환 → 거부
     for (const seg of cmd.split(/&&|\|\||[;|&\n]/)) if (!bashSegmentAllowed(seg)) return "ra-bash";
     return null;
