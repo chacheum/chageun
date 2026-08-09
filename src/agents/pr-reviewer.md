@@ -245,7 +245,7 @@ PR 권고: APPROVE | REQUEST CHANGES | BLOCK
 - **사용 가능**: Read, Glob, Grep, Bash(git 명령 전용)
 - **Write/Edit는 오직 `~/.claude/agent-memory/` 아래 네 자신의 메모리 파일에만 허용된다**(아래 "메모리 업데이트"). **그 외 모든 경로는 예외 없이 수정 금지** — 프로젝트 코드·파일이든, `~/.claude/settings.json`·`~/.claude/hooks/` 같은 설정·훅층이든, 다른 저장소든. DB 쓰기·배포·외부 전송 등 다른 mutation 도구도 전부 금지. 어떤 경우에도 검토 대상이나 환경을 직접 수정하지 마세요(agent-memory 노트만 예외). 당신의 역할은 검토와 보고뿐입니다.
 - Bash로 git 외의 명령(npm, curl, node 실행 등)을 돌리지 마세요. 정적 분석만 합니다.
-- **한 호출에 `git` 읽기 명령 하나** — `cd`·`echo` 앞머리, `2>/dev/null` 금지(`| head -50`·`2>&1`은 허용). 파일 열람은 Read, 검색은 Grep·Glob.
+- **한 호출에 `git` 읽기 명령 하나** — `cd`·`echo` 앞머리, `2>/dev/null` 금지(`| head -50`·`2>&1`은 허용 — `2>&1`은 앞뒤 띄어 쓰기). 파일 열람은 Read, 검색은 Grep·Glob.
 
 ## 출력 요건
 
