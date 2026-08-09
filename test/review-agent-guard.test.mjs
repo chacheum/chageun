@@ -291,3 +291,14 @@ test("안내문이 `2>&1` 허용과 `2>/dev/null` 금지를 함께 알린다", (
   assert.match(msg, /`2>&1`은 됩니다/, "허용을 알려야 리뷰 담당이 쓴다");
   assert.match(msg, /2>\/dev\/null.{0,20}오류 감추기/, "감추는 쪽은 계속 막힌다는 것도 남겨야 한다");
 });
+
+// 실구동 검증(v0.57.0)에서 드러난 경계: 앵커가 `\s` 라 **탭·줄바꿈도 공백으로 친다.**
+// bash 도 탭을 단어 구분자로 보므로 같은 리다이렉션이고, 줄바꿈은 분할자로 남아 뒤쪽 명령이 따로 판정된다.
+// (실구동 때 나는 이걸 "차단"으로 기대했는데 **내 기대가 틀렸다** — 코드가 맞다. 그 경계를 여기 고정한다.)
+test("탭·줄바꿈으로 구분된 `2>&1` 도 같게 다룬다", () => {
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "git log\t2>&1" }), null);
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "git log\n2>&1" }), null);
+  // 줄바꿈 뒤에 다른 명령이 오면 그 조각이 따로 걸린다.
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: "git log 2>&1\nrm -rf /tmp/x" }), "ra-bash");
+});
