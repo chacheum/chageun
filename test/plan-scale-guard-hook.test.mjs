@@ -31,7 +31,7 @@ const gateCall = (prompt) => ({
 test("큰 계획이면 exit 2 로 막고 승인 키를 화면에 찍는다", () => {
   const r = runHook(gateCall("계획서: docs/plans/big.md"));
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /계획서가 너무 큽니다/);
+  assert.match(r.stderr, /차단: 계획서가 [\d,]+줄을 넘습니다/);   // 문턱 숫자가 바뀌어도 견디게 자릿수만 잡는다
   assert.match(r.stderr, /\[chageun-big-plan:big\.md:4k\]/);
 });
 
@@ -130,7 +130,7 @@ test("한글 폴더 이름이 앞에 와도 검사 대상이다", () => {
   writeFileSync(join(DIR, "프로젝트문서/plans/한글계획.md"), "a\n".repeat(4020));
   const r = runHook(gateCall("계획서: 프로젝트문서/plans/한글계획.md 검증"));
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /계획서가 너무 큽니다/);
+  assert.match(r.stderr, /차단: 계획서가 [\d,]+줄을 넘습니다/);   // 문턱 숫자가 바뀌어도 견디게 자릿수만 잡는다
 });
 
 // 3회차 medium: "벗겨서 절대경로가 되면 버린다" 규칙이 굵게 쓴 절대경로를 통째로 놓쳤다.
@@ -140,7 +140,7 @@ test("굵게 표시한 절대경로도 검사 대상이다", () => {
   const r = runHook({ tool_name: "Task", cwd: DIR,
     tool_input: { subagent_type: "plan-validator", prompt: `계획서: **${abs}** 를 검증해줘` } });
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /계획서가 너무 큽니다/);
+  assert.match(r.stderr, /차단: 계획서가 [\d,]+줄을 넘습니다/);   // 문턱 숫자가 바뀌어도 견디게 자릿수만 잡는다
 });
 
 test("사용자가 두 번째를 안 눌렀으면 형식 오류라고 말하지 않는다", () => {
@@ -159,9 +159,11 @@ test("사용자가 두 번째를 안 눌렀으면 형식 오류라고 말하지 
 });
 
 // 회차 축은 **만들지 않기로 확정됐다**(2026-08-09) — 실측에서 회차 수에는 문턱을 걸 자리가 없었다.
-//   8회·11회차에서**야** blocker 0 에 처음 닿고 **그 회차에 실제 결함을 잡은** 계획들이 있어,
-//   문턱을 더 높여도 늦은 회차의 생산적인 검증을 함께 막는다. 회차 표기가 있어도 크기만으로
-//   판정해야 한다. 사유 전문 = docs/plans/2026-08-08-plan-rounds-guard-plan.md 머리
+//   기각의 본체 = 늦은 회차 표본이 한 자릿수(6회 1건 · 10회 1건 · 11회 1건 · 14회 2건)라
+//   어디에 걸어도 표본 몇 개에 맞춘 값이 된다. 회차 표기가 있어도 크기만으로 판정해야 한다.
+//   ⚠ 여기 원래 있던 "8회·11회차에서야 blocker 0 에 닿고 그 회차에 실제 결함을 잡았다"는
+//   **순환 논증이라 철회했다** — 그 판정들은 사고 계획서 자신의 것이다. 근거로 쓰지 말 것.
+//   사유 전문 = docs/plans/2026-08-08-plan-rounds-guard-plan.md 머리
 //   (docs/ 는 공개 저장소에 안 올라가는 비공개 문서다).
 // ⚠ 두 테스트는 **stdout 과 stderr 를 함께** 본다. 이 훅에서 "막지 않고 알리기"는 stdout 의
 //   additionalContext 로만 나가므로(pretooluse.js 의 stderr 계약 주석 참조), stderr 만 보면
