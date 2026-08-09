@@ -175,6 +175,8 @@ test("차단 안내문이 branch 조건부 허용과 대체 명령을 알린다(
 // ── v0.52.0: check-ignore 는 순수 읽기 ─────────────────────────────────────────
 // 2026-08-08 회고 실측: 리뷰 담당 Bash 차단 42건 중 **진짜 오차단은 check-ignore 2건뿐**이었다.
 // (파이프는 원래 통과하고, `2>&1`은 `>`를 여는 것이라 의도된 차단이며, hash-object 는 `-w` 가 쓴다.)
+// ⚠ 이 중 `2>&1` 판정은 **v0.57.0 에서 뒤집었다** — 근거는 이 파일 끝 v0.57.0 절. 셈이 틀려서가 아니라
+// `>` 를 덩어리로 보던 것을 토큰 하나로 좁혔기 때문이다(그 토큰은 파일 이름을 못 적는다).
 // git 2.43 옵션 전수 `-q/-v/--stdin/-z/-n/--no-index` 에 파일·저장소 쓰기가 없다.
 test("check-ignore 는 읽기 전용이라 통과", () => {
   for (const cmd of [
@@ -222,4 +224,70 @@ test("허용 서브명령과 ra-bash 안내문이 양방향으로 일치", () =>
     assert.ok(listed.has(s) || PROSE_ONLY.has(s), `안내문에 빠진 허용 서브명령: ${s}`);
   for (const s of listed)                                  // 안내문 → 허용목록
     assert.ok(subs.includes(s), `안내문에만 있고 허용목록엔 없는 서브명령: ${s}`);
+});
+
+// ── v0.57.0: `2>&1` 은 파일을 못 만들고 오류를 감추지도 않는다 ─────────────────
+// 30일 실측: ra-bash 로 막힌 고유 명령 125개 중 **40개가 이 토큰 하나 때문**이었다.
+// (docs/2026-08-09-ra-bash-reconciliation.md — 완화안을 제품 소스에 실제로 넣은 사본으로 같은 기록을
+//  다시 흘려 잰 값. 잰 규칙은 아래 구현과 글자까지 같고, 앵커 없는 느슨한 판으로도 40개로 동일했다.)
+// 근거 둘: (1) 목적지가 파일 이름이 아니라 fd 1 로 고정돼 **이름을 못 적는다**.
+// (2) stderr 를 화면에 끌어오므로 `2>/dev/null`(오류 감추기)의 **정반대**다 — 그래서 그쪽은 계속 막는다.
+// ⚠ 이 토큰은 `&` 가 분할자라 `bashSegmentAllowed()` 까지 도달하지 못한다(`… 2>` + `1` 로 잘린다).
+// 그래서 처리 자리가 **분할 전**이다. 조각 함수에 넣으면 조용히 아무 일도 안 한다(plan-validator 1차 blocker).
+test("`2>&1` 은 통과한다", () => {
+  for (const cmd of [
+    "git log --oneline -3 2>&1",
+    "git -C /repo grep -n TODO -- src 2>&1 | head -30",
+    "git status --short 2>&1",
+    "git -C /repo diff --stat main...HEAD 2>&1 | head -50",
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), null, cmd);
+});
+
+test("`2>&1` 을 열어도 나머지 리다이렉션은 그대로 막힌다", () => {
+  for (const cmd of [
+    "git log > out.txt",              // 파일 쓰기
+    "git log 2>/tmp/pwn",             // stderr 를 파일로
+    "git log 2>/dev/null",            // 오류 감추기 — 이번에 안 연다
+    "git log 2>>/dev/null",           // 덧붙이기
+    "git log 12>&1",                  // fd 12 (앞이 공백이 아니라 앵커에 안 걸린다)
+    "git log 2>&1x",                  // 토큰 뒤에 붙음
+    "git log {fd}>&1",                // 이름 있는 fd
+    "git log 1>&2",                   // 방향 반대
+    "git log 2>&1 > out.txt",         // 지운 뒤에도 남는 `>`
+    "git log 2>&1; rm -rf /tmp/x",    // `;` 가 붙으면 뒤 앵커에 안 걸려 **치환 자체가 안 일어난다**
+    "git push origin main 2>&1",      // 허용목록 밖 서브명령
+    "echo hi 2>&1",                   // 허용목록 밖 머리
+  ]) assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), "ra-bash", cmd);
+});
+
+// 따옴표 속 리터럴을 지우면 `&&` 가 드러나 뒤쪽 명령이 통째로 사라진다(v0.41.0 H2 와 같은 모양의 함정).
+// **정확히는 따옴표가 `>` 나 `&` 를 덮을 때만** 자리표시가 되어 대상에서 빠진다 — stripQuotes 는 따옴표
+// 문자 자체를 버리고 인용 안 안전 글자(SAFE_IN_QUOTE, 숫자 포함)는 그대로 내보내기 때문이다.
+test("따옴표가 `>`·`&` 를 덮으면 치환 대상이 아니다", () => {
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: "git log --grep='2>&1' && rm -rf /tmp/x" }), "ra-bash");
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: 'git log --grep="2>&1" && rm -rf /tmp/x' }), "ra-bash");
+});
+
+// 반대로 따옴표가 숫자만 덮으면 토큰이 복원되어 지워진다. **무해함까지 확인했다**(plan-validator 2차 medium):
+// 셋 다 bash 에서도 fd 복제이거나 인자가 하나 늘 뿐이고 파일을 만들지 않는다. 현재 동작을 못박아 둔다.
+test("따옴표가 숫자만 덮으면 복원되어 지워진다(무해)", () => {
+  for (const cmd of ["git log ''2>&1", "git log '2'>&1", "git log 2>&'1'"])
+    assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: cmd }), null, cmd);
+});
+
+// `g` 플래그가 빠지면 두 번째부터 안 지워진다 — 그 변이를 잡는다.
+// 명령어 없이 토큰만 있는 입력은 빈 조각이 되어 통과한다(bash 에서도 아무 일이 없다). 의도임을 적어 둔다.
+test("`2>&1` 이 두 번 나와도 통과하고, 토큰만 있는 입력도 통과한다", () => {
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash",
+    { command: "git log --oneline -3 2>&1 && git status --short 2>&1" }), null);
+  assert.equal(reviewAgentBlock("chageun:pr-reviewer", "Bash", { command: "2>&1" }), null);
+});
+
+// 안내문이 조용히 되돌아가면 리뷰 담당이 허용된 형태를 영영 모른다. 두 방향을 함께 못박는다.
+test("안내문이 `2>&1` 허용과 `2>/dev/null` 금지를 함께 알린다", () => {
+  const msg = reasonFor("ra-bash");
+  assert.match(msg, /`2>&1`은 됩니다/, "허용을 알려야 리뷰 담당이 쓴다");
+  assert.match(msg, /2>\/dev\/null.{0,20}오류 감추기/, "감추는 쪽은 계속 막힌다는 것도 남겨야 한다");
 });
