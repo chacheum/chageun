@@ -863,6 +863,14 @@ const G7_MUST_FLAG = [
   ["ssh host fold -w4 .env", "원격에서 fold"],
   ["find . -name '.env*' -exec od -c {} \\;", "find -exec od"],
   ["sudo dd if=.env bs=1 skip=20 count=12", "sudo dd 로 값 잘라 읽기 — 래퍼 바로 뒤"],
+  // 3차 리뷰가 잡은 것 — `tr`·`cut` 을 명령 자리 판정에 넣었더니 따옴표 안과 루프 본문이 열렸다(high).
+  // 자리를 따지는 대신 **하이픈·낱말 문자 뒤가 아닐 것**만 요구해 해소했다.
+  ['bash -c "tr a-z A-Z < .env"', "따옴표로 감싼 대문자화"],
+  ['sh -c "cut -d= -f2 .env"', "따옴표로 감싼 값 자르기"],
+  ['ssh host "cut -d= -f2 .env"', "따옴표 유무로 판정이 갈리면 안 된다"],
+  ['eval "tr a-z A-Z < .env"', "eval 은 래퍼 목록에도 없었다"],
+  ["for f in .env; do tr a-z A-Z < $f; done", "루프 본문"],
+  ["if [ -f .env ]; then cut -d= -f2 .env; fi", "조건문 본문"],
 ];
 const G7_MUST_PASS = [
   ["cat .env", "평문 읽기 — PostToolUse 마스킹이 처리한다"],
@@ -889,6 +897,7 @@ const G7_MUST_PASS = [
   ["tr -d '\\n' < .env", "리다이렉션은 인자가 아니다 — 떼고 봐야 안전 판정이 돈다"],
   ["grep -o '^[A-Z_]*=' .env | tr -d '=' > keys.txt", "키 이름을 파일로 저장"],
   ["ls -tr .env", "`-tr` 옵션의 tr 은 명령이 아니다"],
+  ["wget --cut-dirs=1 http://x/y && cat .env", "`--cut-dirs` 의 cut 도 명령이 아니다"],
 ];
 // 지금도 열려 있는 과차단(정직 회계). `.env` 는 명령 전체에서 찾고 자르기 도구는 각자 위치만 보므로,
 // 둘이 서로 무관해도 짝으로 성립한다. 고치려면 `;`·`&&`·`||`·개행으로 쪼개 파이프라인 단위로 짝지어야
@@ -898,6 +907,14 @@ const G7_KNOWN_OVERBLOCK = [
   ["ls -la .env && ps aux | cut -d' ' -f2", "환경 파일 확인과 프로세스 번호 뽑기는 무관하다"],
   ["base64 logo.png && cat .env", "이미지 인코딩과 설정 확인은 무관하다"],
 ];
+// 🛑 **여기서 선을 긋는다(2026-08-10 사용자 결정 대기 항목 — 3차 리뷰 권고).**
+// 이 층은 완전한 벽이 아니라 마스킹의 동반 장치다. 셸 문법을 정규식으로 열거하는 방식은 원리상 끝이 없다
+// (따옴표 다음엔 `eval`, 그다음엔 `{ }`, 그다음엔 프로세스 치환). 세 회차 연속으로 **고친 자리에서
+// 새 구멍**이 났고, 그게 열거의 한계 신호다. 아래는 알고 안 막는 것들이다 — 넓히기 전에 사용자에게 물어라.
+//   - `awk`·`sed`·`python`·`perl` 로 값을 변형하는 것
+//   - 두 단계 실행(`cp .env /tmp/e` 후 `base64 /tmp/e`) · 변수 대입(`ENC=base64; $ENC .env`)
+//   - `od`·`dd`·`fold` 를 따옴표 안이나 루프 본문에서 부르는 것
+//     (이 셋만 자리 판정을 유지한다. 안 하면 `echo "dd/mm/yyyy" && cat .env` 류가 걸린다.)
 test("게이트(G7): .env 마스킹 우회만 차단 · 평문 읽기·키 이름 뽑기·process.env 는 허용", () => {
   for (const [cmd, why] of G7_MUST_FLAG)
     assert.equal(bash(cmd), "env-encoder", `막아야 하는데 통과: ${why} — ${cmd}`);
@@ -906,7 +923,7 @@ test("게이트(G7): .env 마스킹 우회만 차단 · 평문 읽기·키 이�
   for (const [cmd, why] of G7_KNOWN_OVERBLOCK)
     assert.equal(bash(cmd), "env-encoder", `이미 고쳤으면 MUST_PASS 로 옮겨라: ${why} — ${cmd}`);
   // 표를 비워 놓고 초록으로 만드는 회귀 차단(선례: review-agent-guard.test.mjs).
-  assert.ok(G7_MUST_FLAG.length >= 31 && G7_MUST_PASS.length >= 24, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
+  assert.ok(G7_MUST_FLAG.length >= 37 && G7_MUST_PASS.length >= 25, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
 });
 
 // ── L1: G7 새 훅 파일(posttooluse·secret-scan·finish-work)도 무인 변조 차단(읽기 허용, 오탐 방지) ──

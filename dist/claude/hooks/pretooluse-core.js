@@ -56,7 +56,7 @@ const hasEncoder = (cmd) => ENCODER_RE.test(cmd) || ENCODER_REV_RE.test(cmd) || 
 //     닫힌 지정에 2 이상이 있으면(`-f2`·`-f1,2`·`-f2-3`) 값이 잘려 마스킹을 벗어난다 → 차단.
 //     글자·바이트 자르기(`-c`·`-b`)는 언제나 값을 자른다 → 차단.
 function cutSlicesValue(cmd) {
-  for (const m of cmd.matchAll(new RegExp(CMD_POS + "cut\\b([^|;&\\n]*)", "g"))) {
+  for (const m of cmd.matchAll(/(?<![-\w])cut\b([^|;&\n]*)/g)) {
     const args = m[1];
     if (/(?:^|\s)(?:-[cb]|--characters|--bytes)[= ]?\S/.test(args)) return true;
     // `-f` 는 **모두** 본다. 하나만 보면 `cut -d= -f1 -f2` 가 첫 칸만 읽혀 통과한다.
@@ -78,7 +78,7 @@ function cutSlicesValue(cmd) {
 const TR_SAFE_DELETE = /^(?:[\s='"]|\\[nrt])*$/;
 const TR_SAFE_FROM = /^(?:\s|\\[nrt])*$/;
 function trAltersValue(cmd) {
-  for (const m of cmd.matchAll(new RegExp(CMD_POS + "tr\\b([^|;&\\n]*)", "g"))) {
+  for (const m of cmd.matchAll(/(?<![-\w])tr\b([^|;&\n]*)/g)) {
     // 명령치환의 닫는 괄호와 리다이렉션은 인자가 아니다. 떼고 본다.
     // (`$(… | tr -d '"')` · `tr -d '\n' < .env` · `… | tr -d '=' > keys.txt`)
     const args = m[1].replace(/\s*[<>]{1,2}\s*\S+/g, "").replace(/[)\s]+$/, "").trim();
