@@ -319,8 +319,8 @@ test("비고 쪽에 붙어 있던 `|` 도 붙은 채로 되살린다", () => {
   assert.equal(feats[0].비고, "a|b 참고");
 });
 
-// 검사가 **실제로 실패할 수 있는지**를 시험한다. 옛 판의 칸 복원 대조는 자기가 만든 문자열을
-// 같은 구분자로 도로 쪼개 비교해서 수학적으로 항상 참이었고, 그래서 위 사고를 통과시켰다.
+// 검사가 **실제로 실패할 수 있는지**를 시험한다. 옛 판의 칸 복원 대조는 자기가 만든 문자열을 같은
+// 구분자로 도로 쪼개 비교해서 **이어 붙이는 방식이 틀린 건 절대 못 잡았고**, 그래서 위 사고를 통과시켰다.
 test("칸 복원 대조는 이어 붙이기에 공백을 섞으면 실패한다", () => {
   const line = "| F-33 | 이름 | 가격|할인 | u | 높음 | 완료 | 화면 | 비고 |";
   const row = splitCells(line);
@@ -339,5 +339,35 @@ test("칸 복원 대조는 조각을 빠뜨리거나 겹쳐 자르면 실패한�
                    row.raw[5], row.raw[6], row.raw[7], row.raw.slice(8).join("|")];
   assert.equal(rowRestoreOk(row, 성실하게), true);
   assert.equal(rowRestoreOk(row, [...성실하게.slice(0, 2), row.raw[2], ...성실하게.slice(3)]), false, "한 조각을 빠뜨리면 잡아야 한다");
-  assert.equal(rowRestoreOk(row, [...성실하게.slice(0, 7), undefined]), false, "닻이 칸 수를 벗어나면 잡아야 한다");
+  assert.equal(rowRestoreOk(row, [...성실하게.slice(0, 2), row.raw.slice(2, 5).join("|"), ...성실하게.slice(3)]), false, "같은 조각을 두 번 쓰면 잡아야 한다");
+});
+
+test("칸 복원 대조의 `undefined` 가드는 그 가드만이 잡는 자리를 지킨다", () => {
+  // 마지막 칸이 원래 **빈 칸**이면 `join` 이 undefined 를 빈 문자열로 써서 이어 붙인 글자가 똑같아진다.
+  // 그래서 등호만으로는 못 잡고 가드가 있어야 잡힌다 — 가드를 지우면 이 단언만 빨개진다.
+  const row = splitCells("| F-35 | 이름 | 가|나 | u | 높음 | 완료 | 화면 ||");
+  const 성실하게 = [row.raw[0], row.raw[1], row.raw.slice(2, 4).join("|"), row.raw[4],
+                   row.raw[5], row.raw[6], row.raw[7], row.raw.slice(8).join("|")];
+  assert.equal(성실하게[7], "", "이 시험이 성립하려면 마지막 조각이 빈 칸이어야 한다");
+  assert.equal(rowRestoreOk(row, 성실하게), true);
+  assert.equal(rowRestoreOk(row, [...성실하게.slice(0, 7), undefined]), false, "가드가 없으면 여기서 true 가 나온다");
+});
+
+test("칸 복원 대조가 실패하면 **실제로** 파일을 안 쓴다 — 검사와 멈춤이 배선돼 있다", () => {
+  // 이 저장소가 세 번 겪은 실패 양식이 "검사는 있는데 아무것도 안 막았다"이다. 함수만 시험하면
+  // 함수와 멈춤 **사이의 한 줄**이 비어도 테스트가 초록이다(실측: 그 줄을 지워도 전부 통과했다).
+  // 프로덕션에서 이 fatal 을 밟는 입력은 끝 칸이 빠져 닻이 배열 끝에 붙는 행 한 종류다.
+  const { fatal, out } = render(doc("| F-40 | 이름 | 설 | 명 | 사 | 용 | 높음 | 완료 | 화면 |"));
+  assert.equal(out, null, "어긋났으면 아무것도 안 쓴다");
+  assert.equal(fatal.length, 1);
+  assert.match(fatal[0], /F-40: 이 줄은 칸 수가 안 맞는다/);
+  assert.match(fatal[0], /`\|` 개수를 세어/, "무엇을 어떻게 고칠지까지 알려 준다");
+});
+
+test("설명·비고 **양쪽**에 `|` 가 있는 행도 각각 제자리로 되살린다", () => {
+  const { feats, fatal } = convert(doc("| F-41 | 이름 | a|b | u | 높음 | 완료 | 화면 | c|d |"));
+  assert.deepEqual(fatal, []);
+  assert.equal(feats[0].설명, "a|b");
+  assert.equal(feats[0].비고, "c|d");
+  assert.equal(feats[0].화면, "화면", "가운데 칸들이 밀리지 않아야 한다");
 });
