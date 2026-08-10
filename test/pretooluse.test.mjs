@@ -474,6 +474,16 @@ test("리마인더: 체크박스만 토글한 계획서 편집은 재무장하�
   assert.equal(planReminderNeeded(many("- [ ] a\n- [ ] b", "- [X] a\n- [x] b"), "Edit", editCode), false, "대문자 X · 여러 줄");
   assert.equal(planReminderNeeded(many("- [x] a", "- [ ] a"), "Edit", editCode), false, "체크 해제");
 });
+// 🛑 이 예외가 "계획서가 있다"는 사실까지 끄면 안 된다(v0.62.0 리뷰가 잡은 자리).
+// 지난 세션에 쓴 계획서를 이어받으면 이번 세션엔 계획서 쓰기 기록도 게이트 기록도 없다.
+// 그때 체크만 켜고 코드를 고치면, 그 계획은 검증을 한 번도 안 받았는데도 조용해진다.
+test("리마인더: 체크박스만 토글해도 미검증 계획서면 여전히 뜬다", () => {
+  const objs = [
+    TU_ID("Edit", { file_path: "docs/login-plan.md", old_string: "- [ ] 1단계", new_string: "- [x] 1단계" }, "tu_1"),
+  ];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), true,
+    "검증을 안 받은 계획서인데 체크박스 예외가 리마인더까지 삼켰다");
+});
 test("리마인더: 체크박스 말고 한 글자라도 바뀌면 그대로 재무장한다", () => {
   const base = [
     TU_ID("Write", { file_path: "docs/login-plan.md", content: "..." }, "tu_1"),
@@ -931,6 +941,13 @@ const G7_MUST_FLAG = [
   ["if [ -f .env ]; then cut -d= -f2 .env; fi", "조건문 본문"],
   // 4차: 인자 수집을 `)` 에서 멈추게 한 좁힘(v0.62.0)이 명령치환 안까지 풀어 주면 안 된다.
   ['echo "$(cat .env | tr a-z A-Z)"', "명령치환 안이어도 값 변형은 막는다"],
+  // 🛑 5차(v0.62.0 리뷰가 잡은 구멍): 인자 수집을 `)` 에서 끊으면 여기가 통째로 열린다.
+  //   캡처가 `-d '` 에서 끊겨 따옴표 한 글자만 남고, 작은따옴표는 안전 문자군이라 통과한다.
+  //   위 `tr -d 'aeiou'` 와 실제 효과가 같은데 `)` 한 글자로 갈리면 안 된다. **꼬리에서만 떼라.**
+  ["cat .env | tr -d ')aeiou'", "삭제 문자군 안의 닫는 괄호로 수집을 끊으면 안 된다"],
+  [`echo "$(cat .env | tr -d ')aeiou')"`, "명령치환 안에서도 같다"],
+  // 꼬리 청소가 짝 잃은 따옴표 한 글자를 남기면 그게 "안전한 삭제 문자군"으로 읽혔다.
+  ["cat .env | tr -d ')'", "짝이 안 맞는 따옴표는 안전으로 치지 않는다"],
 ];
 const G7_MUST_PASS = [
   ["cat .env", "평문 읽기 — PostToolUse 마스킹이 처리한다"],
@@ -996,7 +1013,7 @@ test("게이트(G7): .env 마스킹 우회만 차단 · 평문 읽기·키 이�
   for (const [cmd, why] of G7_KNOWN_OVERBLOCK)
     assert.equal(bash(cmd), "env-encoder", `이미 고쳤으면 MUST_PASS 로 옮겨라: ${why} — ${cmd}`);
   // 표를 비워 놓고 초록으로 만드는 회귀 차단(선례: review-agent-guard.test.mjs).
-  assert.ok(G7_MUST_FLAG.length >= 38 && G7_MUST_PASS.length >= 27, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
+  assert.ok(G7_MUST_FLAG.length >= 41 && G7_MUST_PASS.length >= 27, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
 });
 
 // ── L1: G7 새 훅 파일(posttooluse·secret-scan·finish-work)도 무인 변조 차단(읽기 허용, 오탐 방지) ──

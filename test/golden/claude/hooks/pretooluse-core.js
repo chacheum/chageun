@@ -82,18 +82,26 @@ function cutSlicesValue(cmd) {
 const TR_SAFE_DELETE = /^(?:[\s='"]|\\[nrt])*$/;
 const TR_SAFE_FROM = /^(?:\s|\\[nrt])*$/;
 function trAltersValue(cmd) {
-  for (const m of cmd.matchAll(/(?<![-\w])tr\b([^|;&\n)]*)/g)) {
+  for (const m of cmd.matchAll(/(?<![-\w])tr\b([^|;&\n]*)/g)) {
     // 명령치환의 닫는 괄호와 리다이렉션은 인자가 아니다. 떼고 본다.
     // (`$(… | tr -d '"')` · `tr -d '\n' < .env` · `… | tr -d '=' > keys.txt`)
-    // 🛑 인자 수집이 `)` 에서 멈추는 것(위 문자군)이 핵심이다. 아래 꼬리 청소만으로는
-    //   `echo "$(… | tr '\n' ' ')"` 처럼 괄호 **뒤에 따옴표가 더 붙은** 모양을 못 벗겨,
-    //   두 인자 형태로 못 읽히고 정상 작업이 막혔다(2026-08-10 실측 오차단).
-    //   `)` 뒤에 tr 인자가 오는 셸 문법은 없으므로 잃는 판정이 없다.
-    const args = m[1].replace(/\s*[<>]{1,2}\s*\S+/g, "").replace(/[)\s]+$/, "").trim();
-    const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|(\S+))\s*$/.exec(args);
+    // 🛑 **꼬리에서만 뗀다. 인자 수집을 `)` 에서 끊지 말 것.** 이 함수는 모아 온 인자 전체가
+    //   안전 패턴에 딱 맞아야(`^…$`) 통과시키는 구조라, 수집 범위를 줄이면 위험한 꼬리가
+    //   잘려 나가 "안전"으로 떨어진다. 실제로 2026-08-10 에 문자군을 `[^|;&\n)]*` 로 좁혔다가
+    //   `tr -d ')aeiou'` 가 통째로 열렸다(캡처가 `-d '` 에서 끊겨 따옴표 한 글자만 남고,
+    //   작은따옴표는 안전 문자군이라 통과). `)` 는 셸 문법 밖에도 **따옴표 안에** 올 수 있다.
+    //   바로 위 `cutSlicesValue` 는 위험한 것을 찾으면 막는 반대 구조라 같은 좁힘에도 안 열린다.
+    // 꼬리 청소가 `)` 뒤의 따옴표까지 먹는 이유: `echo "$(… | tr '\n' ' ')"` 는 괄호 **뒤에
+    //   따옴표가 더 붙어** 두 인자 형태로 안 읽혔고 정상 작업이 막혔다(실측 오차단).
+    //   중첩 명령치환(`))`)이 있어 반복(`+`)이 필요하다.
+    const args = m[1].replace(/\s*[<>]{1,2}\s*\S+/g, "").replace(/(?:\)[\s'"]*)+$/, "").trim();
+    // 따옴표 없는 인자에는 따옴표 글자가 올 수 없다(`([^'"\s]+)`). 이게 없으면 꼬리 청소가
+    // 짝을 잃은 따옴표 한 글자를 남겼을 때(`tr -d ')'` → `-d '`) 그 한 글자가 "안전한 삭제
+    // 문자군"으로 읽혀 통과한다. 짝이 안 맞는 따옴표는 안전으로 치지 않고 막는 쪽으로 떨어뜨린다.
+    const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|([^'"\s]+))\s*$/.exec(args);
     const set = del && (del[1] != null ? del[1] : del[2] != null ? del[2] : del[3]);
     if (set != null && TR_SAFE_DELETE.test(set)) continue;
-    const two = /^(?:'([^']*)'|"([^"]*)"|(\S+))\s+(?:'[^']*'|"[^"]*"|\S+)\s*$/.exec(args);
+    const two = /^(?:'([^']*)'|"([^"]*)"|([^'"\s]+))\s+(?:'[^']*'|"[^"]*"|\S+)\s*$/.exec(args);
     const from = two && (two[1] != null ? two[1] : two[2] != null ? two[2] : two[3]);
     if (from != null && TR_SAFE_FROM.test(from)) continue;
     return true;
@@ -577,10 +585,9 @@ function isCodeTarget(p) {
 //   그 모양이 8번 반복됐다. 계획이 안 바뀌었는데 재검증을 요구하는 자리라 예외를 뒀다.
 // 범위는 딱 하나다 — Edit 의 old/new 가 `- [ ]` ↔ `- [x]` 차이뿐일 때(대소문자 무관, 그 외는 완전 동일).
 //   Write(문서 통째 교체)는 무엇이 바뀌었는지 알 수 없어 적용 안 한다. MultiEdit·NotebookEdit 도 밖이다.
-// 놓치는 것(정직): **지난 세션에 쓴 계획서를 이어받아, 이번 세션에서는 체크만 켜고 바로 코드를
-//   고치는 경우 리마인더가 아예 안 뜬다.** 전에는 그 토글이 "이번 세션에 계획서가 있다"는 유일한
-//   신호였고, 그 계획이 한 번도 검증을 안 받았어도 리마인더가 떴다. 이제는 침묵한다(실측 확인).
-//   그 경우에도 계획서를 조금이라도 고치면(한 글자면 충분) 다시 뜬다.
+// 이 술어는 **재검증 요구만** 끈다(호출부 참조) — "계획서가 있다"는 사실까지 끄면 지난 세션
+//   계획서를 이어받아 체크만 켜는 경우에 리마인더가 통째로 사라진다. 그 계획은 검증을 한 번도
+//   안 받았을 수 있다(2026-08-10 pr-reviewer 가 잡은 자리 — 처음엔 둘을 한 자리에서 껐다).
 const CHECKBOX_MARK_RE = /- \[[ xX]\]/g;
 function isCheckboxToggleOnly(toolName, inp) {
   if (String(toolName || "") !== "Edit") return false;
@@ -620,8 +627,14 @@ function planReminderNeeded(objs, toolName, toolInput) {
         //       바로 아래 plan-validator 판정이 이미 쓰던 잣대인데 여기만 안 대고 있었다.
         //       무장만 문제가 아니라 **이미 받아 둔 게이트 통과 기록까지 지웠다.**
         //   (2) 진행 표시 토글뿐인 Edit — 계획이 안 바뀌었는데 재검증을 요구하던 자리.
+        //   (2)는 **재검증 요구만** 끈다. "계획서가 있다"(planSeen)는 사실은 그대로 켠다 —
+        //       한 자리에 겹쳐 두면 지난 세션 계획서를 이어받아 체크만 켜는 경우에 리마인더가
+        //       통째로 사라진다(그 계획은 검증을 한 번도 안 받았을 수 있다).
         if (isPlanDocPath(p)) {
-          if (!erroredIds.has(String(b.id || "")) && !isCheckboxToggleOnly(nm, inp)) { planSeen = true; validated = false; codeEdited = false; }
+          if (!erroredIds.has(String(b.id || ""))) {
+            planSeen = true;
+            if (!isCheckboxToggleOnly(nm, inp)) { validated = false; codeEdited = false; }
+          }
         }
         else if (planSeen && isCodeTarget(p)) codeEdited = true;
       } else if (/^(Task|Agent)$/.test(nm)) {
