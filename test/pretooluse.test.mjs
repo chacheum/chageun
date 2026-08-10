@@ -853,6 +853,16 @@ const G7_MUST_FLAG = [
   ["grep x .env | cut -d= -f2-3", "닫힌 범위"],
   ["cut -c20- .env", "글자 단위 자르기"],
   ["cut -b1-8 .env", "바이트 단위 자르기"],
+  ["cut -d= -f1 -f2 .env", "`-f` 를 하나만 보면 첫 칸만 읽혀 통과한다"],
+  // 2차 리뷰가 잡은 것 — 안전 문자군에 맨 글자 n·r·t 가 들어가 있었다(high)
+  ["cat .env | tr 'nrt' 'xyz'", "n·r·t 만 바꿔치기 — 값에 거의 항상 들어 있다"],
+  ["cat .env | tr t z", "한 글자만 바꿔치기"],
+  ["cat .env | tr -d 'rnt'", "n·r·t 만 삭제"],
+  // 짧은 이름에 자리 판정을 남긴 대가로 래퍼 뒤가 사각이었다(medium)
+  ["docker exec app od -An -tx1 /app/.env", "컨테이너 안에서 od"],
+  ["ssh host fold -w4 .env", "원격에서 fold"],
+  ["find . -name '.env*' -exec od -c {} \\;", "find -exec od"],
+  ["sudo dd if=.env bs=1 skip=20 count=12", "sudo dd 로 값 잘라 읽기 — 래퍼 바로 뒤"],
 ];
 const G7_MUST_PASS = [
   ["cat .env", "평문 읽기 — PostToolUse 마스킹이 처리한다"],
@@ -876,6 +886,9 @@ const G7_MUST_PASS = [
   ["git rev-list --count HEAD; cat .env", "rev-list 도 마찬가지"],
   ["cp ~/w/.env.local .env.local && echo ok", "환경변수 파일 복사"],
   ["set -a; . ./.env.local; set +a\nnpm start", "환경변수 읽어 서버 띄우기"],
+  ["tr -d '\\n' < .env", "리다이렉션은 인자가 아니다 — 떼고 봐야 안전 판정이 돈다"],
+  ["grep -o '^[A-Z_]*=' .env | tr -d '=' > keys.txt", "키 이름을 파일로 저장"],
+  ["ls -tr .env", "`-tr` 옵션의 tr 은 명령이 아니다"],
 ];
 // 지금도 열려 있는 과차단(정직 회계). `.env` 는 명령 전체에서 찾고 자르기 도구는 각자 위치만 보므로,
 // 둘이 서로 무관해도 짝으로 성립한다. 고치려면 `;`·`&&`·`||`·개행으로 쪼개 파이프라인 단위로 짝지어야
@@ -893,7 +906,7 @@ test("게이트(G7): .env 마스킹 우회만 차단 · 평문 읽기·키 이�
   for (const [cmd, why] of G7_KNOWN_OVERBLOCK)
     assert.equal(bash(cmd), "env-encoder", `이미 고쳤으면 MUST_PASS 로 옮겨라: ${why} — ${cmd}`);
   // 표를 비워 놓고 초록으로 만드는 회귀 차단(선례: review-agent-guard.test.mjs).
-  assert.ok(G7_MUST_FLAG.length >= 23 && G7_MUST_PASS.length >= 21, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
+  assert.ok(G7_MUST_FLAG.length >= 31 && G7_MUST_PASS.length >= 24, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
 });
 
 // ── L1: G7 새 훅 파일(posttooluse·secret-scan·finish-work)도 무인 변조 차단(읽기 허용, 오탐 방지) ──
