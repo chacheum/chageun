@@ -4,7 +4,7 @@
 // 그래서 테스트도 "잘 옮겼나"가 아니라 "잃은 게 없나"를 본다.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { convert, toYaml, verify, render, assembledIssues } from "../src/skills/product-map/table-to-yaml.mjs";
+import { convert, toYaml, verify, render, assembledIssues, splitCells, rowRestoreOk } from "../src/skills/product-map/table-to-yaml.mjs";
 
 const HEAD = "| ID | 기능명 | 설명 | 사용자 | 우선순위 | 상태 | 관련 화면 | 비고 |";
 const SEP = "|----|--------|------|--------|----------|------|-----------|------|";
@@ -294,4 +294,93 @@ test("되돌림 대조는 값이 실제로 달라졌을 때 잡아낸다", () =>
   const diffs = verify(feats, broken);
   assert.equal(diffs.length, 1);
   assert.match(diffs[0], /F-09 · 설명/);
+});
+
+// ── 밀린 행을 다시 이을 때 `|` 양옆 공백이 사라지던 자리 (2026-08-10 실사고) ──────────────
+// 한 실무 프로젝트 지도의 어느 행에서 `?open=activity|opp` 가 `?open=activity | opp` 로 나갔다.
+// fatal 0 · 대조 세 줄 전부 초록이었다 — 셋 다 기준이 "다듬은 값"이라 볼 자리가 없었다.
+// 잡은 건 PyYAML 로 원본 표와 행·칸까지 맞춘 바깥 대조뿐이었다.
+
+test("붙어 있던 `|` 는 붙은 채로 되살린다 — 양옆에 공백을 넣지 않는다", () => {
+  const { feats, fatal } = convert(doc("| F-30 | 이름 | 플래그(`?open=activity|opp`)로 재마운트 | u | 높음 | 완료 | 화면 | 비고 |"));
+  assert.deepEqual(fatal, []);
+  assert.equal(feats[0].설명, "플래그(`?open=activity|opp`)로 재마운트");
+});
+
+test("띄어 있던 `|` 는 띄운 채로 되살린다 — 원본 공백을 그대로 옮긴다", () => {
+  const { feats, fatal } = convert(doc("| F-31 | 이름 | 가격|할인 |  여백 | u | 높음 | 완료 | 화면 | 비고 |"));
+  assert.deepEqual(fatal, []);
+  assert.equal(feats[0].설명, "가격|할인 |  여백", "안쪽 공백은 손대지 않는다(바깥만 다듬는다)");
+});
+
+test("비고 쪽에 붙어 있던 `|` 도 붙은 채로 되살린다", () => {
+  const { feats, fatal } = convert(doc("| F-32 | 이름 | 설명 | u | 높음 | 완료 | 화면 | a|b 참고 |"));
+  assert.deepEqual(fatal, []);
+  assert.equal(feats[0].비고, "a|b 참고");
+});
+
+// 검사가 **실제로 실패할 수 있는지**를 시험한다. 옛 판의 칸 복원 대조는 자기가 만든 문자열을 같은
+// 구분자로 도로 쪼개 비교해서 **이어 붙이는 방식이 틀린 건 절대 못 잡았고**, 그래서 위 사고를 통과시켰다.
+test("칸 복원 대조는 이어 붙이기에 공백을 섞으면 실패한다", () => {
+  const line = "| F-33 | 이름 | 가격|할인 | u | 높음 | 완료 | 화면 | 비고 |";
+  const row = splitCells(line);
+  const 성실하게 = [row.raw[0], row.raw[1], row.raw.slice(2, 4).join("|"), row.raw[4],
+                   row.raw[5], row.raw[6], row.raw[7], row.raw.slice(8).join("|")];
+  assert.equal(rowRestoreOk(row, 성실하게), true, "제대로 이었으면 통과해야 한다");
+
+  const 공백을섞으면 = [...성실하게];
+  공백을섞으면[2] = row.raw.slice(2, 4).join(" | ");        // 옛 판이 하던 그대로
+  assert.equal(rowRestoreOk(row, 공백을섞으면), false, "이게 false 가 아니면 검사가 아니다");
+});
+
+test("칸 복원 대조는 조각을 빠뜨리거나 겹쳐 자르면 실패한다", () => {
+  const row = splitCells("| F-34 | 이름 | 가 | 나 | u | 높음 | 완료 | 화면 | 비고 |");
+  const 성실하게 = [row.raw[0], row.raw[1], row.raw.slice(2, 4).join("|"), row.raw[4],
+                   row.raw[5], row.raw[6], row.raw[7], row.raw.slice(8).join("|")];
+  assert.equal(rowRestoreOk(row, 성실하게), true);
+  assert.equal(rowRestoreOk(row, [...성실하게.slice(0, 2), row.raw[2], ...성실하게.slice(3)]), false, "한 조각을 빠뜨리면 잡아야 한다");
+  assert.equal(rowRestoreOk(row, [...성실하게.slice(0, 2), row.raw.slice(2, 5).join("|"), ...성실하게.slice(3)]), false, "같은 조각을 두 번 쓰면 잡아야 한다");
+});
+
+test("칸 복원 대조의 `undefined` 가드는 그 가드만이 잡는 자리를 지킨다", () => {
+  // 마지막 칸이 원래 **빈 칸**이면 `join` 이 undefined 를 빈 문자열로 써서 이어 붙인 글자가 똑같아진다.
+  // 그래서 등호만으로는 못 잡고 가드가 있어야 잡힌다 — 가드를 지우면 이 단언만 빨개진다.
+  const row = splitCells("| F-35 | 이름 | 가|나 | u | 높음 | 완료 | 화면 ||");
+  const 성실하게 = [row.raw[0], row.raw[1], row.raw.slice(2, 4).join("|"), row.raw[4],
+                   row.raw[5], row.raw[6], row.raw[7], row.raw.slice(8).join("|")];
+  assert.equal(성실하게[7], "", "이 시험이 성립하려면 마지막 조각이 빈 칸이어야 한다");
+  assert.equal(rowRestoreOk(row, 성실하게), true);
+  assert.equal(rowRestoreOk(row, [...성실하게.slice(0, 7), undefined]), false, "가드가 없으면 여기서 true 가 나온다");
+});
+
+test("칸 복원 대조가 실패하면 **실제로** 파일을 안 쓴다 — 검사와 멈춤이 배선돼 있다", () => {
+  // 이 저장소가 세 번 겪은 실패 양식이 "검사는 있는데 아무것도 안 막았다"이다. 함수만 시험하면
+  // 함수와 멈춤 **사이의 한 줄**이 비어도 테스트가 초록이다(실측: 그 줄을 지워도 전부 통과했다).
+  // 프로덕션에서 이 fatal 을 밟는 입력은 끝 칸이 빠져 닻이 배열 끝에 붙는 행 한 종류다.
+  const { fatal, out } = render(doc("| F-40 | 이름 | 설 | 명 | 사 | 용 | 높음 | 완료 | 화면 |"));
+  assert.equal(out, null, "어긋났으면 아무것도 안 쓴다");
+  assert.equal(fatal.length, 1);
+  assert.match(fatal[0], /F-40: 이 줄은 끝 칸이 빠진 것 같다/);
+  assert.match(fatal[0], /빈 칸 하나로 닫아/, "무엇을 어떻게 고칠지까지 알려 준다");
+  // 붙일 조각을 주면 그 줄은 이미 `|` 로 끝나 칸이 하나 더 생긴다 — 결과 모양으로만 안내한다.
+  assert.doesNotMatch(fatal[0], /\(`\| \|`\)를 더 넣어/, "붙일 조각을 그대로 주지 않는다");
+});
+
+test("멈춤 문구가 **일부러 쓴 `|` 를 지우라고** 시키지 않는다", () => {
+  // 개수를 목표로 주면("칸을 8개로 맞춰라") 설명에 `|` 를 일부러 쓴 줄에서는 그 `|` 와 주변 글자를
+  // 지우게 된다 — 스크립트가 막으려는 바로 그 행동이다(2차 리뷰). 그래서 목표는 개수가 아니라 행동이다.
+  const { fatal, out } = render(doc("| F-50 | 이름 | a|b | 설 | 명 | u | 높음 | 완료 | 화면 |"));
+  assert.equal(out, null);
+  assert.equal(fatal.length, 1);
+  // 숫자를 글자로 박으면 칸 수가 바뀔 때 이 금지 목록만 옛 숫자를 보게 되어 조용히 약해진다.
+  assert.doesNotMatch(fatal[0], /개수를 세어|개가 되게/, "개수를 목표로 주면 안 된다");
+  assert.match(fatal[0], /지우지 마라/, "일부러 쓴 `|` 는 건드리지 말라고 해야 한다");
+});
+
+test("설명·비고 **양쪽**에 `|` 가 있는 행도 각각 제자리로 되살린다", () => {
+  const { feats, fatal } = convert(doc("| F-41 | 이름 | a|b | u | 높음 | 완료 | 화면 | c|d |"));
+  assert.deepEqual(fatal, []);
+  assert.equal(feats[0].설명, "a|b");
+  assert.equal(feats[0].비고, "c|d");
+  assert.equal(feats[0].화면, "화면", "가운데 칸들이 밀리지 않아야 한다");
 });
