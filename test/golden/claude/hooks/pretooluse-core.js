@@ -82,9 +82,13 @@ function cutSlicesValue(cmd) {
 const TR_SAFE_DELETE = /^(?:[\s='"]|\\[nrt])*$/;
 const TR_SAFE_FROM = /^(?:\s|\\[nrt])*$/;
 function trAltersValue(cmd) {
-  for (const m of cmd.matchAll(/(?<![-\w])tr\b([^|;&\n]*)/g)) {
+  for (const m of cmd.matchAll(/(?<![-\w])tr\b([^|;&\n)]*)/g)) {
     // 명령치환의 닫는 괄호와 리다이렉션은 인자가 아니다. 떼고 본다.
     // (`$(… | tr -d '"')` · `tr -d '\n' < .env` · `… | tr -d '=' > keys.txt`)
+    // 🛑 인자 수집이 `)` 에서 멈추는 것(위 문자군)이 핵심이다. 아래 꼬리 청소만으로는
+    //   `echo "$(… | tr '\n' ' ')"` 처럼 괄호 **뒤에 따옴표가 더 붙은** 모양을 못 벗겨,
+    //   두 인자 형태로 못 읽히고 정상 작업이 막혔다(2026-08-10 실측 오차단).
+    //   `)` 뒤에 tr 인자가 오는 셸 문법은 없으므로 잃는 판정이 없다.
     const args = m[1].replace(/\s*[<>]{1,2}\s*\S+/g, "").replace(/[)\s]+$/, "").trim();
     const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|(\S+))\s*$/.exec(args);
     const set = del && (del[1] != null ? del[1] : del[2] != null ? del[2] : del[3]);
@@ -568,6 +572,24 @@ function isCodeTarget(p) {
   if (isScratchPath(s)) return false;        // 임시·스크래치는 어느 diff에도 안 들어감
   return true;
 }
+// 계획서 편집이 **진행 표시 토글뿐**인가(2026-08-10 사용자 결정으로 연 예외 하나).
+// 실측: 게이트를 통과한 뒤 체크박스 하나를 체크했더니 13초 만에 리마인더가 다시 떴고, 한 세션에서
+//   그 모양이 8번 반복됐다. 계획이 안 바뀌었는데 재검증을 요구하는 자리라 예외를 뒀다.
+// 범위는 딱 하나다 — Edit 의 old/new 가 `- [ ]` ↔ `- [x]` 차이뿐일 때(대소문자 무관, 그 외는 완전 동일).
+//   Write(문서 통째 교체)는 무엇이 바뀌었는지 알 수 없어 적용 안 한다. MultiEdit·NotebookEdit 도 밖이다.
+// 놓치는 것(정직): **지난 세션에 쓴 계획서를 이어받아, 이번 세션에서는 체크만 켜고 바로 코드를
+//   고치는 경우 리마인더가 아예 안 뜬다.** 전에는 그 토글이 "이번 세션에 계획서가 있다"는 유일한
+//   신호였고, 그 계획이 한 번도 검증을 안 받았어도 리마인더가 떴다. 이제는 침묵한다(실측 확인).
+//   그 경우에도 계획서를 조금이라도 고치면(한 글자면 충분) 다시 뜬다.
+const CHECKBOX_MARK_RE = /- \[[ xX]\]/g;
+function isCheckboxToggleOnly(toolName, inp) {
+  if (String(toolName || "") !== "Edit") return false;
+  const o = inp && inp.old_string, n = inp && inp.new_string;
+  if (typeof o !== "string" || typeof n !== "string") return false;
+  // 표식은 표준형(빈 칸)으로 모은다 — 체크 상태만 지우고 나머지 글자는 손대지 않는다.
+  const norm = (s) => s.replace(CHECKBOX_MARK_RE, "- [ ]");
+  return norm(o) === norm(n);
+}
 function planReminderNeeded(objs, toolName, toolInput) {
   if (!EDIT_TOOLS_RE.test(String(toolName || ""))) return false;
   const ti = toolInput || {};
@@ -593,7 +615,14 @@ function planReminderNeeded(objs, toolName, toolInput) {
       const nm = String(b.name || ""); const inp = b.input || {};
       if (EDIT_TOOLS_RE.test(nm)) {
         const p = inp.file_path || inp.notebook_path;
-        if (isPlanDocPath(p)) { planSeen = true; validated = false; codeEdited = false; }
+        // v0.62.0: 계획서 편집이라고 다 무장시키지 않는다. 두 가지를 먼저 뺀다.
+        //   (1) 실패한 호출 — 파일이 디스크에 없으니 검증시킬 대상 자체가 없다. `erroredIds` 는
+        //       바로 아래 plan-validator 판정이 이미 쓰던 잣대인데 여기만 안 대고 있었다.
+        //       무장만 문제가 아니라 **이미 받아 둔 게이트 통과 기록까지 지웠다.**
+        //   (2) 진행 표시 토글뿐인 Edit — 계획이 안 바뀌었는데 재검증을 요구하던 자리.
+        if (isPlanDocPath(p)) {
+          if (!erroredIds.has(String(b.id || "")) && !isCheckboxToggleOnly(nm, inp)) { planSeen = true; validated = false; codeEdited = false; }
+        }
         else if (planSeen && isCodeTarget(p)) codeEdited = true;
       } else if (/^(Task|Agent)$/.test(nm)) {
         const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
