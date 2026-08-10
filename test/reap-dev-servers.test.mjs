@@ -2,10 +2,24 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { isDevServer, isDevLauncher, isDeleted, selectReapable, MAX_KILL } = require("../src/hooks/reap-dev-servers-core.js");
+const {
+  isDevServer, isDevLauncher, isDeleted, selectReapable, MAX_KILL,
+  isClaudeSession, parseSsNet, parseStat, ageMsFromStat, selectReapableDetailed, IDLE_MIN_AGE_MS,
+} = require("../src/hooks/reap-dev-servers-core.js");
 
 const UID = 1000;
 const del = (p) => p + " (deleted)";
+
+// ── 놀고 있는(주인 없는) 개발 서버 정리용 공통 픽스처 ────────────────────────────
+const HOUR = 60 * 60 * 1000;
+// 기본형: 살아있는 폴더 · 3시간째 · 부모는 init(1) = 띄운 세션 소멸 · 5173 을 듣고 있음
+const vite = (over) => Object.assign({
+  pid: 700, ppid: 1, uid: UID, comm: "node",
+  cmdline: "node /app/web/node_modules/.bin/vite",
+  cwd: "/app/web", ageMs: 3 * HOUR,
+}, over || {});
+const net = (over) => Object.assign({ listen: [{ pid: 700, port: 5173 }], estab: [] }, over || {});
+const pick = (procs, opts) => selectReapable(procs, UID, Object.assign({ selfPid: 9 }, opts));
 
 test("isDevServer: recognizes next-server by comm and cmdline", () => {
   assert.equal(isDevServer("next-server", ""), true);
@@ -98,4 +112,154 @@ test("selectReapable: caps output at MAX_KILL", () => {
 test("selectReapable: tolerates junk input", () => {
   assert.deepEqual(selectReapable(null, UID, {}), []);
   assert.deepEqual(selectReapable([null, undefined, {}, { pid: "x" }], UID, {}), []);
+});
+
+// ══ 놀고 있는(주인 없는) 개발 서버 ═══════════════════════════════════════════════
+// 2026-08-10 실측이 계기: vite 하나가 6시간 39분 · 접속 0 · 주인 세션 소멸 상태로 299MB 를
+// 붙들고 있었는데 폴더가 멀쩡해서 기존 규칙("폴더 삭제")으로는 안 꺼졌다.
+// 세 조건 AND(접속 0 · 주인 세션 소멸 · 2시간+) — 아래 테스트는 전부 **안 끄는 쪽**을 지킨다.
+
+test("놀고 있는 개발 서버: 접속 0 · 주인 세션 소멸 · 2시간+ 이면 끈다", () => {
+  assert.deepEqual(pick([vite()], { net: net() }), [700]);
+});
+
+test("놀고 있는 개발 서버: 접속이 있으면 안 끈다 (그 pid 가 established 를 쥐고 있음)", () => {
+  // 브라우저 탭이 열려 있으면 vite·next 는 HMR 연결을 유지한다 = 사람이 보고 있다.
+  assert.deepEqual(pick([vite()], { net: net({ estab: [{ pid: 700, port: 5173 }] }) }), []);
+});
+
+test("놀고 있는 개발 서버: pid 를 못 붙인 established 라도 듣는 포트면 안 끈다", () => {
+  // ss 가 권한 때문에 users:(...) 를 못 붙이는 경우 — 포트만으로도 접속으로 본다.
+  assert.deepEqual(pick([vite()], { net: net({ estab: [{ pid: null, port: 5173 }] }) }), []);
+});
+
+test("놀고 있는 개발 서버: 상관없는 포트의 접속은 보호가 되지 않는다", () => {
+  assert.deepEqual(pick([vite()], { net: net({ estab: [{ pid: 999, port: 443 }] }) }), [700]);
+});
+
+test("놀고 있는 개발 서버: 주인 claude 세션이 살아있으면 안 끈다", () => {
+  const claude = { pid: 500, ppid: 400, uid: UID, comm: "claude", cmdline: "claude", cwd: "/app" };
+  const sh = { pid: 600, ppid: 500, uid: UID, comm: "sh", cmdline: "sh -c vite", cwd: "/app/web" };
+  const p = vite({ ppid: 600 });
+  assert.deepEqual(pick([claude, sh, p], { net: net() }), []); // 손자여도 거슬러 올라가 찾는다
+});
+
+test("놀고 있는 개발 서버: 부모를 목록에서 못 찾으면 '주인 살아있음'으로 본다", () => {
+  assert.deepEqual(pick([vite({ ppid: 4242 })], { net: net() }), []);
+});
+
+test("놀고 있는 개발 서버: 2시간이 안 됐으면 안 끈다", () => {
+  assert.deepEqual(pick([vite({ ageMs: IDLE_MIN_AGE_MS - 1 })], { net: net() }), []);
+  assert.deepEqual(pick([vite({ ageMs: IDLE_MIN_AGE_MS })], { net: net() }), [700]);
+});
+
+test("놀고 있는 개발 서버: 나이를 모르면(ageMs 없음) 안 끈다", () => {
+  assert.deepEqual(pick([vite({ ageMs: null })], { net: net() }), []);
+  assert.deepEqual(pick([vite({ ageMs: undefined })], { net: net() }), []);
+});
+
+test("놀고 있는 개발 서버: 개발 서버가 아니면 안 끈다", () => {
+  const daemon = vite({ cmdline: "node /srv/scheduler.js" });      // 범용 node 데몬
+  const build = vite({ cmdline: "node /app/web/node_modules/.bin/vite build" }); // 일회성 빌드
+  assert.deepEqual(pick([daemon, build], { net: net({ listen: [{ pid: 700, port: 5173 }] }) }), []);
+});
+
+test("놀고 있는 개발 서버: 연결 조회가 실패하면(net 없음) 아무것도 안 끈다", () => {
+  assert.deepEqual(pick([vite()], { net: null }), []);
+  assert.deepEqual(pick([vite()], {}), []);
+});
+
+test("놀고 있는 개발 서버: 듣는 포트를 못 찾으면 안 끈다", () => {
+  assert.deepEqual(pick([vite()], { net: net({ listen: [] }) }), []);
+});
+
+test("놀고 있는 개발 서버: 다른 유저·자기 자신·pid<=1 은 그대로 제외", () => {
+  const other = vite({ pid: 701, uid: 0 });
+  const self = vite({ pid: 9 });
+  const init = vite({ pid: 1, ppid: 0 });
+  const n = net({ listen: [{ pid: 701, port: 1 }, { pid: 9, port: 2 }, { pid: 1, port: 3 }] });
+  assert.deepEqual(pick([other, self, init], { net: n }), []);
+});
+
+test("놀고 있는 개발 서버: 부모 체인이 순환해도 멈추고 안 끈다", () => {
+  const a = vite({ pid: 700, ppid: 701 });
+  const b = vite({ pid: 701, ppid: 700 });
+  assert.deepEqual(pick([a, b], { net: net({ listen: [{ pid: 700, port: 5173 }, { pid: 701, port: 5174 }] }) }), []);
+});
+
+test("폴더 삭제는 그대로 OR — 접속·주인·나이를 안 봐도 끈다", () => {
+  const p = vite({ cwd: del("/app/web"), ageMs: 60 * 1000, ppid: 500 });
+  const claude = { pid: 500, ppid: 1, uid: UID, comm: "claude", cmdline: "claude", cwd: "/app" };
+  assert.deepEqual(pick([claude, p], { net: net({ estab: [{ pid: 700, port: 5173 }] }) }), [700]);
+});
+
+test("selectReapableDetailed: 왜 껐는지(reason)를 함께 돌려준다", () => {
+  const stale = { pid: 800, ppid: 1, uid: UID, comm: "next-server", cmdline: "next-server", cwd: del("/app/web") };
+  const idle = vite();
+  assert.deepEqual(selectReapableDetailed([stale, idle], UID, { selfPid: 9, net: net() }), [
+    { pid: 700, reason: "idle" },
+    { pid: 800, reason: "deleted" },
+  ]);
+});
+
+test("selectReapableDetailed: 두 조건에 다 걸리면 폴더 삭제로 표기", () => {
+  const both = vite({ cwd: del("/app/web") });
+  assert.deepEqual(selectReapableDetailed([both], UID, { selfPid: 9, net: net() }), [{ pid: 700, reason: "deleted" }]);
+});
+
+test("놀고 있는 개발 서버도 MAX_KILL 상한을 넘지 않는다", () => {
+  const many = [], listen = [];
+  for (let i = 0; i < MAX_KILL + 20; i++) {
+    many.push(vite({ pid: 1000 + i }));
+    listen.push({ pid: 1000 + i, port: 5000 + i });
+  }
+  assert.equal(pick(many, { net: net({ listen }) }).length, MAX_KILL);
+});
+
+test("isClaudeSession: claude 세션은 넓게 인정한다(넓게 볼수록 덜 끈다)", () => {
+  assert.equal(isClaudeSession("claude", ""), true);
+  assert.equal(isClaudeSession("node", "/usr/local/bin/claude --continue"), true);
+  assert.equal(isClaudeSession("node", "node /opt/n/lib/node_modules/@anthropic-ai/claude-code/cli.js"), true);
+  assert.equal(isClaudeSession("bash", "bash -c npm run dev"), false);
+  assert.equal(isClaudeSession("node", "node /app/claude-helper.js"), false); // 이름만 비슷
+  assert.equal(isClaudeSession("", ""), false);
+});
+
+// ── /proc·ss 파서 (실제 출력 형식으로 고정) ──────────────────────────────────────
+test("parseStat: 마지막 ')' 뒤부터 세어 ppid·시작시각을 뽑는다", () => {
+  // 실제 /proc/<pid>/stat 형식. comm 은 괄호 안이고 공백·괄호를 품을 수 있다.
+  const line = "2000680 (cat) R 2000648 2000680 2000648 0 -1 4194304 468 0 0 0 0 0 0 0 20 0 1 0 11433767 16629760 1824";
+  assert.deepEqual(parseStat(line), { ppid: 2000648, startTicks: 11433767 });
+  const paren = "1963965 (node (vitest 1)) S 1963841 1963796 5017 0 -1 4194304 9 0 0 0 3 1 0 0 20 0 11 0 11419312 999";
+  assert.deepEqual(parseStat(paren), { ppid: 1963841, startTicks: 11419312 });
+  assert.deepEqual(parseStat("깨진 줄"), { ppid: 0, startTicks: null });
+});
+
+test("ageMsFromStat: uptime 과 시작 tick 으로 나이를 재고, 못 재면 null", () => {
+  const line = "1 (x) S 0 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 360000 0 0"; // 3600초에 시작
+  assert.equal(ageMsFromStat(line, 114337.67), Math.round((114337.67 - 3600) * 1000));
+  assert.equal(ageMsFromStat(line, 100), null);      // 부팅보다 나중 = 못 믿음 → null
+  assert.equal(ageMsFromStat(line, NaN), null);
+  assert.equal(ageMsFromStat("깨진 줄", 1000), null);
+});
+
+test("parseSsNet: 실제 ss -H -tanp 출력에서 LISTEN·ESTAB 과 pid 를 뽑는다", () => {
+  const out = [
+    "LISTEN     0      511                     *:5182                   *:*     users:((\"node\",pid=1862213,fd=30))",
+    "LISTEN     0      4096        127.0.0.53%lo:53               0.0.0.0:*",
+    "ESTAB      0      0                   [::1]:5182               [::1]:57806 users:((\"node\",pid=1862213,fd=32))",
+    "ESTAB      0      0           10.0.0.2:57000      160.79.104.10:443   users:((\"claude\",pid=305204,fd=21))",
+    "TIME-WAIT  0      0                127.0.0.1:5182          127.0.0.1:57810",
+    "",
+  ].join("\n");
+  const parsed = parseSsNet(out);
+  assert.deepEqual(parsed.listen, [{ pid: 1862213, port: 5182 }, { pid: null, port: 53 }]);
+  assert.deepEqual(parsed.estab, [{ pid: 1862213, port: 5182 }, { pid: 305204, port: 57000 }]);
+  assert.equal(parseSsNet(""), null);          // 빈 출력 = 못 믿음 → null(안 끄는 쪽)
+  assert.equal(parseSsNet(null), null);
+});
+
+test("parseSsNet: 한 소켓을 여러 프로세스가 쥐면 전부 센다", () => {
+  const line = "LISTEN 0 511 *:3000 *:* users:((\"node\",pid=11,fd=30),(\"node\",pid=12,fd=30))";
+  assert.deepEqual(parseSsNet(line).listen, [{ pid: 11, port: 3000 }, { pid: 12, port: 3000 }]);
 });
