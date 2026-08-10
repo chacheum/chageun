@@ -46,7 +46,21 @@ const IN_TABLE_RE = /^\s*\|/;
 const MOVE_OUT = "잠시 다른 곳에 오려 두었다가 옮기기가 끝나면 되돌려라";
 const HINT_IN = `이 줄이 다른 표의 시작이면 기능 표와 사이에 제목이나 문단을 한 줄 넣어라. 예시로 적어 둔 줄이면 ${MOVE_OUT}. 아니면 ID 가 \`F-숫자\` 모양인지 보라 — 이게 가장 흔한 원인이다.`;
 const HINT_OUT = `이 줄이 표가 아니라 예시라면 ${MOVE_OUT}.`;
-const splitCells = (l) => l.replace(/\s+$/, "").split("|").slice(1, -1).map((s) => s.trim());
+// 다듬기 **전** 조각(raw)까지 들고 다닌다. 다듬은 값만 들고 다니면 밀린 행을 다시 이을 때
+// `|` 양옆의 공백이 사라진 채 ` | ` 로 붙어 **값이 바뀐다** — 실사고 2026-08-10:
+// `?open=activity|opp` 가 `?open=activity | opp` 로 나갔고 fatal 0 · 대조 세 줄 전부 초록이었다.
+// 기준이 전부 "다듬은 값"이라 뽑는 단계에서 생긴 차이는 볼 자리가 없었다.
+export const splitCells = (l) => {
+  const line = l.replace(/\s+$/, "");
+  const parts = line.split("|");
+  return { line, head: parts[0], tail: parts[parts.length - 1], raw: parts.slice(1, -1) };
+};
+
+// 밀린 행 복원 대조를 **밖에서 일부러 깨뜨려 볼 수 있게** 함수로 뺀다. 안에 묻어 두면
+// "검사가 있다"는 말만 남고 실제로 실패하는지는 아무도 못 본다(옛 판이 정확히 그랬다).
+export const rowRestoreOk = (row, parts) =>
+  !parts.some((v) => v === undefined) &&
+  row.head + "|" + parts.join("|") + "|" + row.tail === row.line;
 
 export function convert(text) {
   // 🛑 여기서 줄바꿈을 LF 로 통일한다 — CRLF 파일은 **표 밖 줄도 전부 바뀐다.** 그래서 아래 대조와
@@ -122,7 +136,8 @@ export function convert(text) {
     fatal.push("표는 찾았는데 옮길 기능 행이 0개다 — 행 ID 가 `F-숫자` 모양인지 확인하라(이대로 쓰면 표 머리만 지워진다)");
 
   const feats = [];
-  for (const cells of rows) {
+  for (const row of rows) {
+    const cells = row.raw.map((s) => s.trim());
     const f = {};
     if (cells.length === COLS.length) {
       COLS.forEach((c, j) => (f[c] = cells[j]));
@@ -136,23 +151,23 @@ export function convert(text) {
       if (anchors.length === 0) { fatal.push(`${cells[0]}: 칸이 ${cells.length}개인데 닻(우선순위+상태)을 못 찾았다 — 손으로 고쳐야 한다`); continue; }
       if (anchors.length > 1) { fatal.push(`${cells[0]}: 닻(우선순위+상태) 후보가 ${anchors.length}군데다 — 어느 쪽인지 기계가 못 정한다, 손으로 고쳐야 한다`); continue; }
       const p = anchors[0];
-      f.id = cells[0];
-      f.기능명 = cells[1];
-      f.설명 = cells.slice(2, p - 1).join(" | ");            // 잘려 나간 `|` 를 되살린다
-      f.사용자 = cells[p - 1];
-      f.우선순위 = cells[p];
-      f.상태 = cells[p + 1];
-      f.화면 = cells[p + 2];
-      f.비고 = cells.slice(p + 3).join(" | ");
+      // 🛑 다듬은 조각이 아니라 **원본 조각**을 잇는다. 잘려 나간 건 `|` 하나뿐이므로 `|` 하나로만
+      //    되돌리고, 다듬기는 이어 붙인 **뒤 바깥쪽에 한 번만** 한다(안쪽 공백을 안 건드린다).
+      const joinRaw = (from, to) => row.raw.slice(from, to).join("|");
+      const parts = [row.raw[0], row.raw[1], joinRaw(2, p - 1), row.raw[p - 1],
+                     row.raw[p], row.raw[p + 1], row.raw[p + 2], joinRaw(p + 3, row.raw.length)];
+      if (parts.some((v) => v === undefined)) { fatal.push(`${cells[0]}: 닻 자리가 칸 수를 벗어났다 — 손으로 고쳐야 한다`); continue; }
+      COLS.forEach((c, j) => (f[c] = parts[j].trim()));
 
-      // 칸 복원 대조: 복원한 값을 다시 `|` 로 이어 붙여 원본 칸 배열이 그대로 나오는지 본다.
-      const back = [f.id, f.기능명, ...f.설명.split(" | "), f.사용자, f.우선순위, f.상태, f.화면, ...f.비고.split(" | ")];
-      if (back.length !== cells.length || back.some((v, j) => v !== cells[j]))
-        fatal.push(`${f.id}: 칸 복원이 원본과 안 맞는다 — 손으로 고쳐야 한다`);
+      // 칸 복원 대조: 되살린 8조각을 `|` 로 도로 이어 **원본 줄이 글자까지 그대로 나오는지** 본다.
+      // 🛑 옛 판은 다듬은 값을 ` | ` 로 붙인 뒤 같은 문자열을 그 구분자로 도로 쪼개 비교해서
+      //    **수학적으로 항상 참**이었고, 그래서 위 실사고를 통과시켰다. 이 판은 깨질 수 있다 —
+      //    이어 붙이기에 공백을 섞거나(실사고 그 자체) 자르는 자리가 겹치거나 비면 여기서 멈춘다.
+      //    ⚠ 이 대조가 보증하는 건 "글자를 더하거나 잃지 않았다"까지다. **어느 칸에 여분의 `|` 가
+      //    있었는지는 여전히 못 본다** — 그 가정은 아래 경고로 사람에게 넘긴다.
+      if (!rowRestoreOk(row, parts))
+        fatal.push(`${f.id}: 칸 복원이 원본 줄과 안 맞는다 — 손으로 고쳐야 한다`);
       else
-        // 🛑 이 대조가 보증하는 건 "다시 이어 붙이면 원본과 같다"뿐이다. **여분의 `|` 가 설명·비고에
-        // 있었다는 가정은 검사하지 않는다.** `|` 가 화면·기능명·사용자 칸에 있었으면 복원은 틀리는데
-        // 이어 붙이기는 성립해서 조용히 통과한다. 그래서 사람에게 넘긴다.
         warn.push(`${f.id}: 칸이 ${cells.length}개였다 — 닻을 ${p + 1}번째에서 찾아 복원(설명 ${p - 3}조각 · 비고 ${cells.length - p - 3}조각). ` +
                   `**이 복원은 여분의 \`|\` 가 설명·비고에 있었다는 가정이다 — 화면·기능명·사용자에 있었다면 틀리니 이 줄은 눈으로 확인하라.**`);
     }
