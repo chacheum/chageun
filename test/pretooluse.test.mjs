@@ -815,19 +815,52 @@ test("무인 egress 회귀(pr-reviewer): userinfo 우회 차단 + 정당 localho
 });
 
 // ── G7: .env를 인코더/슬라이서로 변형 노출 시도 차단(마스킹 우회 companion) ──
-test("게이트(G7): .env 인코딩/조각 노출 시도 차단 · 평문 cat·example 계열 허용", () => {
-  assert.equal(bash("base64 .env"), "env-encoder", "base64 인코딩");
-  assert.equal(bash("xxd .env | head"), "env-encoder", "hexdump");
-  assert.equal(bash("rev .env"), "env-encoder", "역순 변형");
-  assert.equal(bash("cut -d= -f2 .env"), "env-encoder", "값 슬라이스");
-  assert.equal(bash("openssl enc -base64 -in .env"), "env-encoder", "openssl enc");
-  assert.equal(bash("cat .env.local | tr -d '\\n'"), "env-encoder", ".env.local + tr 조각");
-  // 허용: 평문 읽기는 마스킹이 처리, example 계열은 제외(F4)
-  assert.equal(bash("cat .env"), null, "평문 cat은 허용(PostToolUse 마스킹이 처리)");
-  assert.equal(bash("echo hi"), null);
-  assert.equal(bash("cut -d= -f1 .env.example"), null, "example 계열은 제외(F4)");
-  assert.equal(bash("base64 .env.sample"), null, "sample 계열도 제외");
-  assert.equal(bash("grep KEY .env"), null, "grep은 인코더 아님 — 평문 읽기라 허용(마스킹 처리)");
+//
+// 표본을 저장소에 박아 둔다. **이유(실측):** 이 규칙은 정상 작업을 91번 오차단했는데, 그동안 검증은
+// 회차마다 몇 개를 손으로 만들어 보고 버리는 식이었다. 표본이 남지 않으니 다음 사람이 같은 자리를 다시
+// 골랐고, 실제로 통과하던 정상 작업 세 부류(`process.env` · 값 다듬는 `tr` · 명령 아닌 자리의 낱말)를
+// 아무도 못 봤다. 아래 두 표는 그 세 부류를 포함해 잠근 것이다 —
+// **규칙을 손댈 땐 이 표를 지우지 말고 항목을 옮겨라**(구멍을 닫으면 MUST_PASS → MUST_FLAG 로).
+const G7_MUST_FLAG = [
+  ["base64 .env", "인코딩"],
+  ["xxd .env | head", "16진수"],
+  ["od -c .env", "od"],
+  ["rev .env", "역순 변형"],
+  ["openssl enc -base64 -in .env", "openssl enc"],
+  ["cat ./.env | fold -w4 | uuencode x", "조각내 인코딩"],
+  ["base64 e2e/.env.test", "인자로 직접"],
+  ["cut -d= -f2 .env", "값 슬라이스"],
+  ["cut -d= -f2- .env | rev", "값만 잘라 뒤집기"],
+  ["grep x .env | cut -d= -f12", "두 자리 필드도 값 쪽"],
+  ["grep x .env | cut -d= -f1,2", "값이 섞인 목록"],
+  ["grep x .env | cut -d= -f1-", "1번부터 끝까지 = 값 포함"],
+  ["cat .env.local | tr -d '\\n'", "한 줄로 이어 마스킹 무너뜨리기"],
+  ["cat .env | base64 -w0", "인코딩 + 줄바꿈 제거"],
+];
+const G7_MUST_PASS = [
+  ["cat .env", "평문 읽기 — PostToolUse 마스킹이 처리한다"],
+  ["echo hi", "무관"],
+  ["grep KEY .env", "평문 읽기"],
+  ["grep -c '^' .env", "줄 수만 세기"],
+  ["cut -d= -f1 .env.example", "example 계열 제외(F4)"],
+  ["base64 .env.sample", "sample 계열 제외"],
+  ["grep -o '^[A-Z_]*=' .env.local | tr -d '='", "키 이름만 뽑기 — 이 규칙이 권하는 행동이다"],
+  ["grep x .env | cut -d= -f1", "첫 필드 = 키 이름"],
+  ["grep x .env | cut -d= -f 1", "공백 있는 첫 필드"],
+  ["cut -d= -f1 .env | sort", "키 이름 정렬"],
+  ['node -e "const h=process.env.HOME; console.log(h)"', "process.env — 파일이 아니다"],
+  ["docker inspect x --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1", "컨테이너 키 이름만"],
+  ["git rev-parse HEAD && ls .env", "rev 가 명령 자리가 아니다"],
+  ["cp ~/w/.env.local .env.local && echo ok", "환경변수 파일 복사"],
+  ["set -a; . ./.env.local; set +a\nnpm start", "환경변수 읽어 서버 띄우기"],
+];
+test("게이트(G7): .env 마스킹 우회만 차단 · 평문 읽기·키 이름 뽑기·process.env 는 허용", () => {
+  for (const [cmd, why] of G7_MUST_FLAG)
+    assert.equal(bash(cmd), "env-encoder", `막아야 하는데 통과: ${why} — ${cmd}`);
+  for (const [cmd, why] of G7_MUST_PASS)
+    assert.equal(bash(cmd), null, `정상 작업인데 막힘: ${why} — ${cmd}`);
+  // 표를 비워 놓고 초록으로 만드는 회귀 차단(선례: review-agent-guard.test.mjs).
+  assert.ok(G7_MUST_FLAG.length >= 14 && G7_MUST_PASS.length >= 15, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
 });
 
 // ── L1: G7 새 훅 파일(posttooluse·secret-scan·finish-work)도 무인 변조 차단(읽기 허용, 오탐 방지) ──
