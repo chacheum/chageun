@@ -152,14 +152,40 @@ test("행이 `|` 로 안 끝나면 멈춘다 — 마지막 칸이 잘려 사라�
   assert.ok(fatal.some((x) => x.includes("`|` 로 안 끝난다")), fatal.join(" / "));
 });
 
-test("빈 줄 뒤가 다른 표의 머리·구분선이면 거기서 표가 끝난다", () => {
-  const second = ["| ID | 의심 | 근거 |", "|---|---|---|", "| 3 | 고아 화면 | 링크 없음 |"];
-  const { out, fatal } = render([
+test("빈 줄 뒤가 새 표면 거기서 끝난다 — 머리 이름이 아니라 모양으로 가른다", () => {
+  // 2026-08-10 3차: 종료 조건이 `| ID |` 라는 **이름**뿐이라, `| 항목 | 값 |` 같은 옆 표가 통째로
+  // 빨려 들어가 정상 파일이 거부됐다. 게다가 안내문이 "그 줄을 지워라"로 읽혀 멀쩡한 표를 지우게 했다.
+  const ROW = "| F-01 | 이름 | 설명 | u | 높음 | 완료 | 화면 | 비고 |";
+  for (const second of [
+    ["| 상태 | 개수 |", "|---|---|", "| 완료 | 3 |"],          // ID 칸 없는 옆 표
+    ["| ID | 의심 | 근거 |", "|---|---|---|", "| 3 | 고아 | 없음 |"],
+  ]) {
+    const { out, fatal } = render(["# x", "", HEAD, SEP, ROW, "", ...second, ""].join("\n"));
+    assert.deepEqual(fatal, [], `정상 파일이 거부됐다: ${second[0]}`);
+    for (const l of second) assert.ok(out.includes(l), `뒤 표가 깨졌다: ${l}`);
+  }
+});
+
+test("표 안에서 못 읽은 줄과 표 밖 기능 행은 서로 다른 안내를 준다", () => {
+  const inside = render(doc(
+    "| F-01 | 이름 | 설명 | u | 높음 | 완료 | 화면 | 비고 |",
+    "",
+    "| F02 | 둘 | 설명 | u | 높음 | 완료 | 화면 | 비고 |")).fatal[0];
+  assert.match(inside, /사이에 제목이나 문단을 한 줄 넣어라/, "옆 표를 지우라고 읽히면 안 된다");
+  const outside = render([
     "# x", "", HEAD, SEP, "| F-01 | 이름 | 설명 | u | 높음 | 완료 | 화면 | 비고 |",
-    "", ...second, "",
-  ].join("\n"));
-  assert.deepEqual(fatal, []);
-  for (const l of second) assert.ok(out.includes(l), `뒤 표가 깨졌다: ${l}`);
+    "", "문단", "", "| F-02 | 둘 | 설명 | u | 높음 | 완료 | 화면 | 비고 |", "",
+  ].join("\n")).fatal[0];
+  assert.match(outside, /표가 아니라 예시라면/);
+});
+
+test("표 자리 계산이 어긋나면 조립 후 대조가 비교를 시작하지 않는다", () => {
+  const issues = assembledIssues({
+    src: ["a", "| ID |", "b"], tableFrom: 1, tableTo: 2, tableAt: 0,
+    block: ["```yaml", "features: []", "```"], out: "x",
+  });
+  assert.equal(issues.length, 1);
+  assert.match(issues[0], /표 자리 계산이 어긋났다\(0 ≠ 1\)/);
 });
 
 test("표 중간의 빈 줄은 기능 행이 다시 이어질 때만 표 안으로 본다", () => {
