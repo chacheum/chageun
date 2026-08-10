@@ -815,19 +815,124 @@ test("무인 egress 회귀(pr-reviewer): userinfo 우회 차단 + 정당 localho
 });
 
 // ── G7: .env를 인코더/슬라이서로 변형 노출 시도 차단(마스킹 우회 companion) ──
-test("게이트(G7): .env 인코딩/조각 노출 시도 차단 · 평문 cat·example 계열 허용", () => {
-  assert.equal(bash("base64 .env"), "env-encoder", "base64 인코딩");
-  assert.equal(bash("xxd .env | head"), "env-encoder", "hexdump");
-  assert.equal(bash("rev .env"), "env-encoder", "역순 변형");
-  assert.equal(bash("cut -d= -f2 .env"), "env-encoder", "값 슬라이스");
-  assert.equal(bash("openssl enc -base64 -in .env"), "env-encoder", "openssl enc");
-  assert.equal(bash("cat .env.local | tr -d '\\n'"), "env-encoder", ".env.local + tr 조각");
-  // 허용: 평문 읽기는 마스킹이 처리, example 계열은 제외(F4)
-  assert.equal(bash("cat .env"), null, "평문 cat은 허용(PostToolUse 마스킹이 처리)");
-  assert.equal(bash("echo hi"), null);
-  assert.equal(bash("cut -d= -f1 .env.example"), null, "example 계열은 제외(F4)");
-  assert.equal(bash("base64 .env.sample"), null, "sample 계열도 제외");
-  assert.equal(bash("grep KEY .env"), null, "grep은 인코더 아님 — 평문 읽기라 허용(마스킹 처리)");
+//
+// 표본을 저장소에 박아 둔다. **이유(실측):** 이 규칙은 정상 작업을 91번 오차단했는데, 그동안 검증은
+// 회차마다 몇 개를 손으로 만들어 보고 버리는 식이었다. 표본이 남지 않으니 다음 사람이 같은 자리를 다시
+// 골랐고, 실제로 통과하던 정상 작업 세 부류(`process.env` · 값 다듬는 `tr` · 명령 아닌 자리의 낱말)를
+// 아무도 못 봤다. 아래 표는 그 세 부류에 더해, 2026-08-10 리뷰가 잡아낸 **내가 새로 열었던 우회 아홉 가지**
+// (백틱 · `docker exec` · `ssh` · `sh -c` · `find -exec` · `sudo` · rot13 · 대문자화 · `cut -c`)까지 잠근다.
+// **규칙을 손댈 땐 이 표를 지우지 말고 항목을 옮겨라**(구멍을 닫으면 KNOWN_OVERBLOCK → MUST_PASS 로).
+//
+// 🛑 **판정 축을 헷갈리지 말 것:** 막을 대상은 "위험해 보이는 명령"이 아니라 **시크릿 값 문자열을 바꿔서
+// 뒤의 마스킹이 못 찾게 만드는 명령**이다. `redact` 가 값을 글자 그대로 찾기 때문이다. 이 축을 놓치면
+// `tr -d '\n'`(값 그대로 → 안전)을 막고 `tr a-z A-Z`(값 변형 → 위험)를 통과시키는 판이 나온다. 실제로 났다.
+const G7_MUST_FLAG = [
+  ["base64 .env", "인코딩"],
+  ["xxd .env | head", "16진수"],
+  ["od -c .env", "od"],
+  ["rev .env", "역순 변형"],
+  ["openssl enc -base64 -in .env", "openssl enc"],
+  ["cat ./.env | fold -w4 | uuencode x", "조각내 인코딩"],
+  ["base64 e2e/.env.test", "인자로 직접"],
+  ["cat .env | base64 -w0", "인코딩 + 줄바꿈 제거"],
+  // 인코더를 '명령 자리'로 좁혔다가 새로 열렸던 여섯 갈래(2026-08-10 리뷰가 high 로 잡음)
+  ["echo `base64 .env`", "백틱 — `$(` 만 막으면 샌다"],
+  ["docker exec app base64 /app/.env", "컨테이너 안에서 실행"],
+  ["ssh host base64 .env", "원격에서 실행"],
+  ["sh -c 'base64 .env'", "셸 재호출"],
+  ["find . -name '.env*' -exec base64 {} \\;", "find -exec"],
+  ["sudo base64 .env", "래퍼를 앞에 붙이기"],
+  // 값의 글자를 바꿔 마스킹을 벗어나는 tr(같은 리뷰가 high 로 잡음 — 판정 축이 거꾸로였다)
+  ["cat .env | tr 'A-Za-z' 'N-ZA-Mn-za-m'", "rot13"],
+  ["cat .env | tr a-z A-Z", "대문자화"],
+  ["cat .env | tr -d 'aeiou'", "모음만 삭제"],
+  // 값이 잘려 마스킹을 벗어나는 cut
+  ["cut -d= -f2 .env", "닫힌 필드 = 값이 잘린다"],
+  ["grep x .env | cut -d= -f12", "두 자리 필드"],
+  ["grep x .env | cut -d= -f1,2", "값이 섞인 목록"],
+  ["grep x .env | cut -d= -f2-3", "닫힌 범위"],
+  ["cut -c20- .env", "글자 단위 자르기"],
+  ["cut -b1-8 .env", "바이트 단위 자르기"],
+  ["cut -d= -f1 -f2 .env", "`-f` 를 하나만 보면 첫 칸만 읽혀 통과한다"],
+  // 2차 리뷰가 잡은 것 — 안전 문자군에 맨 글자 n·r·t 가 들어가 있었다(high)
+  ["cat .env | tr 'nrt' 'xyz'", "n·r·t 만 바꿔치기 — 값에 거의 항상 들어 있다"],
+  ["cat .env | tr t z", "한 글자만 바꿔치기"],
+  ["cat .env | tr -d 'rnt'", "n·r·t 만 삭제"],
+  // 짧은 이름에 자리 판정을 남긴 대가로 래퍼 뒤가 사각이었다(medium)
+  ["docker exec app od -An -tx1 /app/.env", "컨테이너 안에서 od"],
+  ["ssh host fold -w4 .env", "원격에서 fold"],
+  ["find . -name '.env*' -exec od -c {} \\;", "find -exec od"],
+  ["sudo dd if=.env bs=1 skip=20 count=12", "sudo dd 로 값 잘라 읽기 — 래퍼 바로 뒤"],
+  // 3차 리뷰가 잡은 것 — `tr`·`cut` 을 명령 자리 판정에 넣었더니 따옴표 안과 루프 본문이 열렸다(high).
+  // 자리를 따지는 대신 **하이픈·낱말 문자 뒤가 아닐 것**만 요구해 해소했다.
+  ['bash -c "tr a-z A-Z < .env"', "따옴표로 감싼 대문자화"],
+  ['sh -c "cut -d= -f2 .env"', "따옴표로 감싼 값 자르기"],
+  ['ssh host "cut -d= -f2 .env"', "따옴표 유무로 판정이 갈리면 안 된다"],
+  ['eval "tr a-z A-Z < .env"', "eval 은 래퍼 목록에도 없었다"],
+  ["for f in .env; do tr a-z A-Z < $f; done", "루프 본문"],
+  ["if [ -f .env ]; then cut -d= -f2 .env; fi", "조건문 본문"],
+];
+const G7_MUST_PASS = [
+  ["cat .env", "평문 읽기 — PostToolUse 마스킹이 처리한다"],
+  ["echo hi", "무관"],
+  ["grep KEY .env", "평문 읽기"],
+  ["grep -c '^' .env", "줄 수만 세기"],
+  ["cut -d= -f1 .env.example", "example 계열 제외(F4)"],
+  ["base64 .env.sample", "sample 계열 제외"],
+  ["grep -o '^[A-Z_]*=' .env.local | tr -d '='", "키 이름만 뽑기 — 이 규칙이 권하는 행동이다"],
+  ["grep x .env | cut -d= -f1", "첫 필드 = 키 이름"],
+  ["grep x .env | cut -d= -f 1", "공백 있는 첫 필드"],
+  ["cut -d= -f1 .env | sort", "키 이름 정렬"],
+  ["grep x .env | cut -d= -f2-", "열린 끝 — 나머지를 다시 이어 붙여 값이 원문 그대로다"],
+  ['U=$(grep "^URL=" .env | cut -d= -f2- | tr -d \'"\')', "값을 변수에 담기 — 원문 그대로라 마스킹이 잡는다"],
+  ["cat .env | tr -d '\\n'", "줄바꿈만 제거 — 값은 안 바뀌므로 마스킹이 잡는다"],
+  ["grep -oE '^[A-Z_]+=' .env | tr '\\n' ' '", "키 이름을 한 줄로 — 값이 안 바뀐다"],
+  ["git show HEAD:server/.env.prod | grep -c '^APP_KEY=base64:'", "base64 가 값의 형식을 가리키는 문자열"],
+  ['node -e "const h=process.env.HOME; console.log(h)"', "process.env — 파일이 아니다"],
+  ["docker inspect x --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1", "컨테이너 키 이름만"],
+  ["git rev-parse HEAD && ls .env", "rev-parse 는 하위명령이다"],
+  ["git rev-list --count HEAD; cat .env", "rev-list 도 마찬가지"],
+  ["cp ~/w/.env.local .env.local && echo ok", "환경변수 파일 복사"],
+  ["set -a; . ./.env.local; set +a\nnpm start", "환경변수 읽어 서버 띄우기"],
+  ["tr -d '\\n' < .env", "리다이렉션은 인자가 아니다 — 떼고 봐야 안전 판정이 돈다"],
+  ["grep -o '^[A-Z_]*=' .env | tr -d '=' > keys.txt", "키 이름을 파일로 저장"],
+  ["ls -tr .env", "`-tr` 옵션의 tr 은 명령이 아니다"],
+  ["wget --cut-dirs=1 http://x/y && cat .env", "`--cut-dirs` 의 cut 도 명령이 아니다"],
+];
+// 지금도 열려 있는 과차단(정직 회계). `.env` 는 명령 전체에서 찾고 자르기 도구는 각자 위치만 보므로,
+// 둘이 서로 무관해도 짝으로 성립한다. 고치려면 `;`·`&&`·`||`·개행으로 쪼개 파이프라인 단위로 짝지어야
+// 하는데(선례: `isDeploy` 의 `shellSegments`), 이 브랜치 범위 밖이라 남겨 둔다.
+// **고치면 이 표가 빨개진다 — 그때 MUST_PASS 로 옮겨라.**
+const G7_KNOWN_OVERBLOCK = [
+  ["ls -la .env && ps aux | cut -d' ' -f2", "환경 파일 확인과 프로세스 번호 뽑기는 무관하다"],
+  ["base64 logo.png && cat .env", "이미지 인코딩과 설정 확인은 무관하다"],
+];
+// 🛑 **여기서 선을 긋는다(2026-08-10 사용자 결정 — "여기서 닫는다").**
+// 이 층은 완전한 벽이 아니라 마스킹의 동반 장치다. 셸 문법을 정규식으로 열거하는 방식은 원리상 끝이 없다
+// (따옴표 다음엔 `eval`, 그다음엔 `{ }`, 그다음엔 프로세스 치환). 세 회차 연속으로 **고친 자리에서
+// 새 구멍**이 났고, 그게 열거의 한계 신호다. 아래는 알고 안 막는 것들이다 — 넓히기 전에 사용자에게 물어라.
+//   - **전제부터 적는다: 뒤의 마스킹도 전부는 못 가린다.** `secret-scan-core.js` 의 `envFiles` 는 현재
+//     작업 폴더 아래 깊이 2까지의 `.env`·`.env.*` 만 읽는다(점으로 시작하는 폴더·node_modules·.git 은
+//     건너뛰고 최대 20개). 다른 프로젝트 폴더의 파일이나 `prod.env` 같은 이름은 **평문도 안 가려진다.**
+//   - `awk`·`sed`·`python`·`perl` 로 값을 변형하는 것
+//     (단 명령 글자에 `base64`·`xxd`·`rev` 같은 인코더 이름이 들어가면 그 낱말 때문에 막힌다.)
+//   - 값을 잘라 읽는 다른 도구(`head -c`·`tail -c`·`split -b`·`grep -o` 길이 지정) ·
+//     인코더 이름 목록 밖 도구(`basenc --base32`)
+//   - 두 번에 나눠 실행(`cp .env /tmp/e` 후 따로 `base64 /tmp/e`) · 변수 대입(`ENC=base64; $ENC .env`)
+//     (한 명령으로 `&&` 로 이으면 `.env` 와 인코더가 같은 글자 안에 있어 막힌다.)
+//   - `od`·`dd`·`fold` 를 따옴표 안이나 루프·조건문·그룹 본문에서 부르는 것
+//     (이 셋만 자리 판정을 유지한다. 안 하면 `echo "dd/mm/yyyy" && cat .env` 류가 걸린다.)
+// 이 목록은 짐작이 아니라 저장소 코드를 불러 돌려 본 것이다(2026-08-10, 예로 든 명령 13개 전부 적힌 대로
+// 동작). 여기 적힌 것을 나중에 막게 되면 **이 목록도 같이 고쳐라** — 안 고치면 다음 사람이 속는다.
+test("게이트(G7): .env 마스킹 우회만 차단 · 평문 읽기·키 이름 뽑기·process.env 는 허용", () => {
+  for (const [cmd, why] of G7_MUST_FLAG)
+    assert.equal(bash(cmd), "env-encoder", `막아야 하는데 통과: ${why} — ${cmd}`);
+  for (const [cmd, why] of G7_MUST_PASS)
+    assert.equal(bash(cmd), null, `정상 작업인데 막힘: ${why} — ${cmd}`);
+  for (const [cmd, why] of G7_KNOWN_OVERBLOCK)
+    assert.equal(bash(cmd), "env-encoder", `이미 고쳤으면 MUST_PASS 로 옮겨라: ${why} — ${cmd}`);
+  // 표를 비워 놓고 초록으로 만드는 회귀 차단(선례: review-agent-guard.test.mjs).
+  assert.ok(G7_MUST_FLAG.length >= 37 && G7_MUST_PASS.length >= 25, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
 });
 
 // ── L1: G7 새 훅 파일(posttooluse·secret-scan·finish-work)도 무인 변조 차단(읽기 허용, 오탐 방지) ──
