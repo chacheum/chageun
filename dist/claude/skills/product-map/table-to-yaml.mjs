@@ -40,7 +40,9 @@ const SEP_RE = /^\s*\|[\s|:-]+\|\s*$/;          // 꼬리 공백·CRLF 를 넘�
 const ROW_RE = /^\s*\|\s*F-\d+\s*\|/;
 const IN_TABLE_RE = /^\s*\|/;
 
-const FIX_HINT = "이 줄이 표가 아니라 예시라면 잠시 지우거나 표 위로 옮긴 뒤 다시 돌려라.";
+// 안내는 상황마다 다르다. 한 문구로 뭉쳐 두면 **멀쩡한 다른 표를 지우라고 읽힌다**(2026-08-10 3차 리뷰).
+const HINT_IN = "이 줄이 다른 표의 시작이면 기능 표와 사이에 제목이나 문단을 한 줄 넣어라. 예시로 적어 둔 줄이면 잠시 지우거나 표 위로 옮겨라.";
+const HINT_OUT = "이 줄이 표가 아니라 예시라면 잠시 지우거나 표 위로 옮긴 뒤 다시 돌려라.";
 const splitCells = (l) => l.replace(/\s+$/, "").split("|").slice(1, -1).map((s) => s.trim());
 
 export function convert(text) {
@@ -74,7 +76,7 @@ export function convert(text) {
     if (IN_TABLE_RE.test(l)) {
       tableLines++;
       if (!ROW_RE.test(l))
-        fatal.push(`${i + 1}번째 줄이 표 안에 있는데 기능 행으로 못 읽었다(ID 가 \`F-숫자\` 모양인지 보라): ${l.slice(0, 60)} — ${FIX_HINT}`);
+        fatal.push(`${i + 1}번째 줄이 표 안에 있는데 기능 행으로 못 읽었다(ID 가 \`F-숫자\` 모양인지 보라): ${l.slice(0, 60)} — ${HINT_IN}`);
       // 닫는 `|` 가 없으면 마지막 칸이 잘려 나간다. 칸이 9개였던 밀린 행은 잘린 뒤 정확히 8칸이 되어
       // **정상 행으로 통과하고 조각 하나가 조용히 사라진다** — 어느 대조도 없어진 조각은 못 본다.
       else if (!l.replace(/\s+$/, "").endsWith("|"))
@@ -87,11 +89,16 @@ export function convert(text) {
     // 앞보기를 `기능 행`이 아니라 `표 줄`로 잡는 이유: ID 가 어긋난 줄이 빈 줄 바로 뒤에 오면
     // 표가 끝난 줄 알고 그 아래를 통째로 본문으로 넘기는데, 표 밖 검사는 **잘 생긴 기능 행만** 찾으므로
     // 아무도 안 본다. 표 줄로 잡으면 위 fatal 에 걸린다.
-    // 단 다음이 **다른 표의 머리·구분선**이면 거기서 끝낸다 — 무관한 표를 삼키지 않는다.
+    // 단 다음이 **새 표의 시작**이면 거기서 끝낸다 — 무관한 표를 삼키지 않는다.
+    // 새 표인지는 머리 **이름**이 아니라 **모양**으로 본다: 표 줄 바로 다음이 구분선이면 그게 새 표의 머리다.
+    // 이름(`| ID |`)으로만 보면 `| 항목 | 값 |` 같은 옆 표가 통째로 빨려 들어가 정상 파일이 거부된다
+    // (2026-08-10 3차 리뷰 · 재현함). 기능 표의 뒷토막은 구분선이 뒤따르지 않으므로 지금처럼 이어진다.
     if (l.trim() === "") {
       let k = i + 1;
       while (k < src.length && src[k].trim() === "") k++;
-      if (k < src.length && IN_TABLE_RE.test(src[k]) && !HEAD_RE.test(src[k]) && !SEP_RE.test(src[k])) {
+      const startsNewTable = k < src.length &&
+        (HEAD_RE.test(src[k]) || SEP_RE.test(src[k]) || (k + 1 < src.length && SEP_RE.test(src[k + 1])));
+      if (k < src.length && IN_TABLE_RE.test(src[k]) && !startsNewTable) {
         blankLines += k - i; i = k - 1; continue;
       }
     }
@@ -101,8 +108,12 @@ export function convert(text) {
   for (; i < src.length; i++) keep.push(src[i]);
 
   // (3) 표 영역 **밖에** 기능 행처럼 생긴 줄이 남아 있으면 표가 두 토막 난 것이다.
+  //     여기는 **잘 생긴 기능 행만** 본다. ID 가 어긋난 표 줄이 문단 아래 남아 있으면 못 본다는 뜻인데,
+  //     그 줄들은 원본에서도 이미 표 밖이고 이 스크립트가 **아무것도 안 지우므로** 실피해가 없다.
+  //     "파이프 7개 이상인 표 모양 줄"까지 넓히면 닫히지만, 그러면 무관한 표를 다시 오탐한다 —
+  //     방금 3차에서 고친 게 바로 그 오탐이라 넓히지 않는다(2026-08-10 판단).
   for (let k = tableAt + 1; k < keep.length; k++)
-    if (ROW_RE.test(keep[k])) fatal.push(`기능 행처럼 생긴 줄이 표 밖에 있다 — 표가 끊겼는지 보라: ${keep[k].slice(0, 60)} — ${FIX_HINT}`);
+    if (ROW_RE.test(keep[k])) fatal.push(`기능 행처럼 생긴 줄이 표 밖에 있다 — 표가 끊겼는지 보라: ${keep[k].slice(0, 60)} — ${HINT_OUT}`);
 
   if (!fatal.length && rows.length === 0)
     fatal.push("표는 찾았는데 옮길 기능 행이 0개다 — 행 ID 가 `F-숫자` 모양인지 확인하라(이대로 쓰면 표 머리만 지워진다)");
@@ -221,8 +232,15 @@ export function verify(feats, yaml) {
 // 만들며 한 줄 빠뜨린 실수는 영원히 안 걸린다. 그런데 스킬 문서는 "기계가 본다"고 약속했으니
 // 사람은 눈으로 안 본다 — 약속만 남고 검사는 없는 상태가 가장 나쁘다.
 // 함수로 빼 둔 것도 같은 이유다: 밖에서 일부러 망가뜨려 **이 검사가 실제로 실패하는지** 시험할 수 있다.
+//
+// 이 검사가 **못 보는 것 하나**: 표 영역의 경계(`tableFrom`·`tableTo`)는 `convert` 가 스스로 정한 값이라,
+// 경계가 틀리게 넓으면 그 안의 줄은 비교 대상에서 통째로 빠진다. 그 자리는 1번째 겹(표 안에 못 읽은
+// 줄이 있으면 멈춤)이 지킨다. 표 영역 판정을 손볼 때 이 검사가 그 변경을 봐 주지 못한다는 걸 기억할 것.
 export function assembledIssues({ src, tableFrom, tableTo, tableAt, block, out }) {
   const issues = [];
+  // 머리 앞 줄은 원본 그대로 `keep` 에 들어가므로 둘은 항상 같아야 한다. 어긋나면 `got` 과 `src` 를
+  // 서로 다른 자리에서 잘라 비교하게 되어 **어긋난 채로 조용히 통과**한다.
+  if (tableAt !== tableFrom) return [`[조립 후 대조] 표 자리 계산이 어긋났다(${tableAt} ≠ ${tableFrom}) — 손으로 확인해야 한다`];
   const got = String(out).split("\n");
   const gotBlock = got.slice(tableAt, tableAt + block.length);
   const gotRest = [...got.slice(0, tableAt), ...got.slice(tableAt + block.length)];
