@@ -430,6 +430,64 @@ test("계획서 경로 판정: 부분일치 폴더·유사 이름은 계획서�
   }
 });
 
+// v0.62.0 B-1: 계획서 쓰기가 **실패**했으면 그건 계획서가 아니다.
+// 실측(2026-08-10 트랜스크립트 전수): 실패한 계획서 쓰기 30건(사용자 거절 2건 포함). 지금까지는
+// 파일이 디스크에 없는데도 planSeen 이 켜져 리마인더가 뜨고, 게다가 **이미 받아 둔 게이트 통과
+// 기록(validated)까지 지워졌다.** 판정 잣대(erroredIds)는 같은 함수 안에 이미 있었고 한쪽에서만 쓰였다.
+const TU_ID = (name, input, id) => ({ message: { role: "assistant", content: [{ type: "tool_use", name, input, id }] } });
+const ERR = (id) => ({ message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: true, content: "String to replace not found in file" }] } });
+
+test("리마인더: 실패한 계획서 쓰기는 무장시키지 않는다", () => {
+  const objs = [TU_ID("Write", { file_path: "docs/login-plan.md", content: "..." }, "tu_1"), ERR("tu_1")];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), false,
+    "계획서가 디스크에 없는데(쓰기 실패) 리마인더가 떴다 — 검증시킬 대상 자체가 없다");
+});
+test("리마인더: 실패한 계획서 편집이 이미 받은 게이트 통과 기록을 지우지 않는다", () => {
+  const objs = [
+    TU_ID("Write", { file_path: "docs/login-plan.md", content: "..." }, "tu_1"),
+    TU_ID("Task", { subagent_type: "chageun:plan-validator" }, "tu_2"),
+    TU_ID("Edit", { file_path: "docs/login-plan.md", old_string: "없는 문장", new_string: "x" }, "tu_3"),
+    ERR("tu_3"),
+  ];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), false,
+    "실패한 편집이 게이트 통과를 무효화했다");
+});
+test("리마인더: 성공한 계획서 쓰기는 그대로 무장한다(실패 판정이 넓게 새지 않는다)", () => {
+  const objs = [TU_ID("Write", { file_path: "docs/login-plan.md", content: "..." }, "tu_1"), ERR("tu_other")];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), true,
+    "무관한 다른 호출의 실패가 계획서 쓰기까지 무효로 읽혔다");
+});
+
+// v0.62.0 B-2(사용자 결정 2026-08-10): 계획서의 **진행 표시 토글뿐**인 편집은 재무장하지 않는다.
+// 실측: 게이트를 통과한 뒤 체크박스 하나를 체크했더니 13초 만에 리마인더가 다시 떴고, 한 세션에서
+// 그 모양이 8번 반복됐다. 범위는 딱 이것 하나다 — Edit 의 old/new 가 `- [ ]` ↔ `- [x]` 차이뿐일 때.
+test("리마인더: 체크박스만 토글한 계획서 편집은 재무장하지 않는다", () => {
+  const objs = [
+    TU_ID("Write", { file_path: "docs/login-plan.md", content: "..." }, "tu_1"),
+    TU_ID("Task", { subagent_type: "chageun:plan-validator" }, "tu_2"),
+    TU_ID("Edit", { file_path: "docs/login-plan.md", old_string: "- [ ] 1단계 로그인 폼", new_string: "- [x] 1단계 로그인 폼" }, "tu_3"),
+  ];
+  assert.equal(planReminderNeeded(objs, "Edit", editCode), false,
+    "진행 표시를 켠 것뿐인데 재검증을 다시 요구했다");
+  // 대문자 X · 여러 줄 한꺼번에 · 되돌리는 방향(체크 해제)도 같은 취급.
+  const many = (o, n) => [objs[0], objs[1], TU_ID("Edit", { file_path: "docs/login-plan.md", old_string: o, new_string: n }, "tu_3")];
+  assert.equal(planReminderNeeded(many("- [ ] a\n- [ ] b", "- [X] a\n- [x] b"), "Edit", editCode), false, "대문자 X · 여러 줄");
+  assert.equal(planReminderNeeded(many("- [x] a", "- [ ] a"), "Edit", editCode), false, "체크 해제");
+});
+test("리마인더: 체크박스 말고 한 글자라도 바뀌면 그대로 재무장한다", () => {
+  const base = [
+    TU_ID("Write", { file_path: "docs/login-plan.md", content: "..." }, "tu_1"),
+    TU_ID("Task", { subagent_type: "chageun:plan-validator" }, "tu_2"),
+  ];
+  const edit = (o, n) => [...base, TU_ID("Edit", { file_path: "docs/login-plan.md", old_string: o, new_string: n }, "tu_3")];
+  assert.equal(planReminderNeeded(edit("- [ ] 로그인 폼", "- [x] 로그인 폼 (OAuth 로 변경)"), "Edit", editCode), true,
+    "체크와 함께 내용이 바뀌었는데 침묵했다");
+  assert.equal(planReminderNeeded(edit("- [ ] 로그인 폼", "- [ ] 회원가입 폼"), "Edit", editCode), true, "내용만 바뀜");
+  // Write 는 파일을 통째로 덮어써 무엇이 바뀌었는지 알 수 없다 → 예외를 적용하지 않는다.
+  assert.equal(planReminderNeeded([...base, TU_ID("Write", { file_path: "docs/login-plan.md", content: "- [x] 로그인 폼" }, "tu_3")], "Edit", editCode), true,
+    "Write 통째 교체에까지 예외가 새어 나갔다");
+});
+
 // ── routing 리마인더 판정(batch6 · 순수함수) ──────────────────────────────
 const spawnCI = { subagent_type: "chageun:code-implementer", prompt: "구현" };
 
@@ -871,6 +929,8 @@ const G7_MUST_FLAG = [
   ['eval "tr a-z A-Z < .env"', "eval 은 래퍼 목록에도 없었다"],
   ["for f in .env; do tr a-z A-Z < $f; done", "루프 본문"],
   ["if [ -f .env ]; then cut -d= -f2 .env; fi", "조건문 본문"],
+  // 4차: 인자 수집을 `)` 에서 멈추게 한 좁힘(v0.62.0)이 명령치환 안까지 풀어 주면 안 된다.
+  ['echo "$(cat .env | tr a-z A-Z)"', "명령치환 안이어도 값 변형은 막는다"],
 ];
 const G7_MUST_PASS = [
   ["cat .env", "평문 읽기 — PostToolUse 마스킹이 처리한다"],
@@ -898,6 +958,10 @@ const G7_MUST_PASS = [
   ["grep -o '^[A-Z_]*=' .env | tr -d '=' > keys.txt", "키 이름을 파일로 저장"],
   ["ls -tr .env", "`-tr` 옵션의 tr 은 명령이 아니다"],
   ["wget --cut-dirs=1 http://x/y && cat .env", "`--cut-dirs` 의 cut 도 명령이 아니다"],
+  // v0.62.0 에서 풀린 두 형태. 인자 수집이 명령치환 닫는 괄호를 삼켜 `'\n' ' ')"` 가 인자로 잡혔고,
+  // 두 인자 형태로 못 읽힌 tr 은 위험으로 떨어져 아래 두 정상 작업이 막혔다(2026-08-10 실측).
+  ["echo \"$(cat .env | tr -d '\\n')\"", "명령치환 안의 안전한 tr"],
+  ["echo \"$(git ls-files | grep '\\.env' | tr '\\n' ' ')\"", "추적 중인 env 파일 목록을 한 줄로 — 값을 안 읽는다"],
 ];
 // 지금도 열려 있는 과차단(정직 회계). `.env` 는 명령 전체에서 찾고 자르기 도구는 각자 위치만 보므로,
 // 둘이 서로 무관해도 짝으로 성립한다. 고치려면 `;`·`&&`·`||`·개행으로 쪼개 파이프라인 단위로 짝지어야
@@ -932,7 +996,7 @@ test("게이트(G7): .env 마스킹 우회만 차단 · 평문 읽기·키 이�
   for (const [cmd, why] of G7_KNOWN_OVERBLOCK)
     assert.equal(bash(cmd), "env-encoder", `이미 고쳤으면 MUST_PASS 로 옮겨라: ${why} — ${cmd}`);
   // 표를 비워 놓고 초록으로 만드는 회귀 차단(선례: review-agent-guard.test.mjs).
-  assert.ok(G7_MUST_FLAG.length >= 37 && G7_MUST_PASS.length >= 25, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
+  assert.ok(G7_MUST_FLAG.length >= 38 && G7_MUST_PASS.length >= 27, "표본을 줄이지 말 것 — 옮기는 건 되고 지우는 건 안 된다");
 });
 
 // ── L1: G7 새 훅 파일(posttooluse·secret-scan·finish-work)도 무인 변조 차단(읽기 허용, 오탐 방지) ──
