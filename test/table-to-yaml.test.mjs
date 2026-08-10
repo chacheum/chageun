@@ -360,8 +360,18 @@ test("칸 복원 대조가 실패하면 **실제로** 파일을 안 쓴다 — �
   const { fatal, out } = render(doc("| F-40 | 이름 | 설 | 명 | 사 | 용 | 높음 | 완료 | 화면 |"));
   assert.equal(out, null, "어긋났으면 아무것도 안 쓴다");
   assert.equal(fatal.length, 1);
-  assert.match(fatal[0], /F-40: 이 줄은 칸 수가 안 맞는다/);
-  assert.match(fatal[0], /`\|` 개수를 세어/, "무엇을 어떻게 고칠지까지 알려 준다");
+  assert.match(fatal[0], /F-40: 이 줄은 끝 칸이 빠진 것 같다/);
+  assert.match(fatal[0], /빈 칸 하나\(`\| \|`\)를 더 넣어/, "무엇을 어떻게 고칠지까지 알려 준다");
+});
+
+test("멈춤 문구가 **일부러 쓴 `|` 를 지우라고** 시키지 않는다", () => {
+  // 개수를 목표로 주면("칸을 8개로 맞춰라") 설명에 `|` 를 일부러 쓴 줄에서는 그 `|` 와 주변 글자를
+  // 지우게 된다 — 스크립트가 막으려는 바로 그 행동이다(2차 리뷰). 그래서 목표는 개수가 아니라 행동이다.
+  const { fatal, out } = render(doc("| F-50 | 이름 | a|b | 설 | 명 | u | 높음 | 완료 | 화면 |"));
+  assert.equal(out, null);
+  assert.equal(fatal.length, 1);
+  assert.doesNotMatch(fatal[0], /개수를 세어|8개가 되게/, "개수를 목표로 주면 안 된다");
+  assert.match(fatal[0], /지우지 마라/, "일부러 쓴 `|` 는 건드리지 말라고 해야 한다");
 });
 
 test("설명·비고 **양쪽**에 `|` 가 있는 행도 각각 제자리로 되살린다", () => {
