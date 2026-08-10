@@ -101,6 +101,8 @@ function trAltersValue(cmd) {
     const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|([^'"\s]+))\s*$/.exec(args);
     const set = del && (del[1] != null ? del[1] : del[2] != null ? del[2] : del[3]);
     if (set != null && TR_SAFE_DELETE.test(set)) continue;
+    // 아래 `two` 쪽 좁힘은 **모양을 맞춘 것**이고 현재 판정에는 영향이 없다 — `TR_SAFE_FROM` 이
+    // 공백과 `\n`·`\r`·`\t` 만 허용해 따옴표를 애초에 거부한다. 실제 봉합은 위 `del` 쪽이다.
     const two = /^(?:'([^']*)'|"([^"]*)"|([^'"\s]+))\s+(?:'[^']*'|"[^"]*"|\S+)\s*$/.exec(args);
     const from = two && (two[1] != null ? two[1] : two[2] != null ? two[2] : two[3]);
     if (from != null && TR_SAFE_FROM.test(from)) continue;
@@ -588,6 +590,8 @@ function isCodeTarget(p) {
 // 이 술어는 **재검증 요구만** 끈다(호출부 참조) — "계획서가 있다"는 사실까지 끄면 지난 세션
 //   계획서를 이어받아 체크만 켜는 경우에 리마인더가 통째로 사라진다. 그 계획은 검증을 한 번도
 //   안 받았을 수 있다(2026-08-10 pr-reviewer 가 잡은 자리 — 처음엔 둘을 한 자리에서 껐다).
+// `g` 는 아래 `.replace()` 전용이다(호출마다 위치가 0으로 초기화된다). **`.test()` 로 바꾸지 말 것** —
+// 모듈 전역이라 검사 위치가 호출 사이에 이어져 한 번 걸러 결과가 뒤집힌다.
 const CHECKBOX_MARK_RE = /- \[[ xX]\]/g;
 function isCheckboxToggleOnly(toolName, inp) {
   if (String(toolName || "") !== "Edit") return false;
@@ -623,9 +627,13 @@ function planReminderNeeded(objs, toolName, toolInput) {
       if (EDIT_TOOLS_RE.test(nm)) {
         const p = inp.file_path || inp.notebook_path;
         // v0.62.0: 계획서 편집이라고 다 무장시키지 않는다. 두 가지를 먼저 뺀다.
-        //   (1) 실패한 호출 — 파일이 디스크에 없으니 검증시킬 대상 자체가 없다. `erroredIds` 는
-        //       바로 아래 plan-validator 판정이 이미 쓰던 잣대인데 여기만 안 대고 있었다.
-        //       무장만 문제가 아니라 **이미 받아 둔 게이트 통과 기록까지 지웠다.**
+        //   (1) 실패한 호출 — 무장만 문제가 아니라 **이미 받아 둔 게이트 통과 기록까지 지웠다.**
+        //       `erroredIds` 는 바로 아래 plan-validator 판정이 이미 쓰던 잣대인데 여기만 안 댔다.
+        //       ⚠ 두 실패는 사정이 다르다: **쓰기** 실패는 파일이 아예 없고, **편집** 실패는
+        //       파일이 있는데 안 바뀐 것이다(대개 바꿀 문장을 못 찾아서). 지금은 둘 다 통째로
+        //       건너뛰므로, 지난 세션 계획서를 이어받아 첫 편집이 실패하면 그 계획이 미검증인데도
+        //       리마인더가 안 뜬다 — **알고 받아들인 손실**이다(발생 창이 좁다). 테스트로 못 박아
+        //       뒀으니 고칠 땐 그 테스트가 빨개진다. 고친다면 (2)처럼 planSeen 만 켜면 된다.
         //   (2) 진행 표시 토글뿐인 Edit — 계획이 안 바뀌었는데 재검증을 요구하던 자리.
         //   (2)는 **재검증 요구만** 끈다. "계획서가 있다"(planSeen)는 사실은 그대로 켠다 —
         //       한 자리에 겹쳐 두면 지난 세션 계획서를 이어받아 체크만 켜는 경우에 리마인더가
