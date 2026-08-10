@@ -41,8 +41,14 @@ const ENV_REF_RE = /(?<![A-Za-z0-9_])\.env\b(?!\.(?:example|sample|template|dist
 const ENCODER_RE = /(?<![=\w])\b(?:base64|xxd|hexdump|uuencode|openssl\s+enc)\b(?![:\-\w])/;
 //     `rev` 는 오차단의 유일한 원인이었다 — 하위명령 형태(`git rev-parse`·`rev-list`)만 뺀다.
 const ENCODER_REV_RE = /\brev\b(?!-)(?<!git rev)/;
-//     두 글자짜리(`od`·`dd`·`fold`)는 아무 데나 나오므로 명령 자리에서만 센다.
-const ENCODER_SHORT_RE = /(?:^|[|;&(`]|\$\(|\n)\s*(?:od|dd|fold)\b/;
+//     짧은 이름(`od`·`dd`·`fold`·`tr`·`cut`)은 아무 데나 나온다(`mm/dd/yyyy` · `ls -tr`).
+//     그래서 이 다섯만 **명령 자리**를 따진다. 단 자리를 따지면 래퍼 뒤가 사각이 되므로
+//     (`docker exec app od …` · `sudo dd …` · `find … -exec od …`) 래퍼 낱말 뒤도 명령 자리로 인정한다.
+//     `git` 은 목록에 없다 — 넣으면 `git rev-parse` 오차단 11건이 돌아온다.
+//     래퍼와 명령 사이의 낱말은 **없을 수도 있다**(`sudo dd` 는 바로 붙고 `docker exec app od` 는 둘이 낀다).
+const WRAPPER = "(?:(?:sudo|env|command|nohup|time|timeout|xargs|exec|sh|bash|zsh|docker|ssh|find)\\s+(?:[^|;&\\n]*?\\s+)?)?";
+const CMD_POS = "(?:^|[|;&(`]|\\n)\\s*" + WRAPPER;   // `[(]` 가 `$(` 도 받는다
+const ENCODER_SHORT_RE = new RegExp(CMD_POS + "(?:od|dd|fold)\\b");
 const hasEncoder = (cmd) => ENCODER_RE.test(cmd) || ENCODER_REV_RE.test(cmd) || ENCODER_SHORT_RE.test(cmd);
 
 // (3) `cut` — 잘라낸 결과에 값이 **원문 그대로** 남으면 마스킹이 잡으니 막지 않는다.
@@ -50,14 +56,15 @@ const hasEncoder = (cmd) => ENCODER_RE.test(cmd) || ENCODER_REV_RE.test(cmd) || 
 //     닫힌 지정에 2 이상이 있으면(`-f2`·`-f1,2`·`-f2-3`) 값이 잘려 마스킹을 벗어난다 → 차단.
 //     글자·바이트 자르기(`-c`·`-b`)는 언제나 값을 자른다 → 차단.
 function cutSlicesValue(cmd) {
-  for (const m of cmd.matchAll(/\bcut\b([^|;&\n]*)/g)) {
+  for (const m of cmd.matchAll(new RegExp(CMD_POS + "cut\\b([^|;&\\n]*)", "g"))) {
     const args = m[1];
     if (/(?:^|\s)(?:-[cb]|--characters|--bytes)[= ]?\S/.test(args)) return true;
-    const f = /(?:^|\s)(?:-f|--fields[= ])\s*(\S+)/.exec(args);
-    if (!f) continue;
-    const spec = f[1];
-    if (spec.endsWith("-")) continue;
-    if (/(?:^|[,-])(?:[2-9]|\d{2,})/.test(spec)) return true;
+    // `-f` 는 **모두** 본다. 하나만 보면 `cut -d= -f1 -f2` 가 첫 칸만 읽혀 통과한다.
+    for (const f of args.matchAll(/(?:^|\s)(?:-f|--fields[= ])\s*(\S+)/g)) {
+      const spec = f[1];
+      if (spec.endsWith("-")) continue;
+      if (/(?:^|[,-])(?:[2-9]|\d{2,})/.test(spec)) return true;
+    }
   }
   return false;
 }
@@ -65,12 +72,16 @@ function cutSlicesValue(cmd) {
 // (4) `tr` — 값의 글자를 바꾸면 마스킹이 못 찾는다. **값을 안 바꾸는 쓰임만** 통과시킨다.
 //     통과: `-d` 로 따옴표·공백·`=`·줄바꿈만 지우기(`tr -d '"'`) · 공백류를 바꾸기(`tr '\n' ' '`).
 //     차단: rot13(`tr 'A-Za-z' 'N-ZA-Mn-za-m'`) · 대문자화(`tr a-z A-Z`) · 그 밖의 문자 삭제.
-const TR_SAFE_DELETE = /^[\s='"\\nrt]*$/;
-const TR_SAFE_FROM = /^[\s\\nrt]*$/;
+//     🛑 이스케이프는 **짝으로** 매치한다. 문자군 `[\\nrt]` 로 적으면 역슬래시·`n`·`r`·`t` 가 각각
+//     안전으로 풀려 `tr 'nrt' 'xyz'` 가 통과한다(2026-08-10 리뷰가 high 로 잡음 — 실제로 그렇게 썼다).
+//     시크릿 값에 n·r·t 는 거의 항상 들어 있어 그 세 글자만 바꿔도 마스킹을 벗어난다.
+const TR_SAFE_DELETE = /^(?:[\s='"]|\\[nrt])*$/;
+const TR_SAFE_FROM = /^(?:\s|\\[nrt])*$/;
 function trAltersValue(cmd) {
-  for (const m of cmd.matchAll(/\btr\b([^|;&\n]*)/g)) {
-    // 명령치환 안이면 닫는 괄호가 인자에 딸려 온다: `$(... | tr -d '"')`. 떼고 본다.
-    const args = m[1].replace(/[)\s]+$/, "").trim();
+  for (const m of cmd.matchAll(new RegExp(CMD_POS + "tr\\b([^|;&\\n]*)", "g"))) {
+    // 명령치환의 닫는 괄호와 리다이렉션은 인자가 아니다. 떼고 본다.
+    // (`$(… | tr -d '"')` · `tr -d '\n' < .env` · `… | tr -d '=' > keys.txt`)
+    const args = m[1].replace(/\s*[<>]{1,2}\s*\S+/g, "").replace(/[)\s]+$/, "").trim();
     const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|(\S+))\s*$/.exec(args);
     const set = del && (del[1] != null ? del[1] : del[2] != null ? del[2] : del[3]);
     if (set != null && TR_SAFE_DELETE.test(set)) continue;
