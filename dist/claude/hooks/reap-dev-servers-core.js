@@ -1,8 +1,9 @@
 // chageun: stale dev-server reaper — shared pure logic (Claude SessionStart hygiene).
 // A process is reaped only when it is a known dev server AND one of two things is true:
 //   (a) its working directory was deleted out from under it (readlink → "… (deleted)"), or
-//   (b) it is idle AND orphaned AND old — no established connection on the port it
-//       listens on, no live `claude` ancestor, and 2h+ alive (all three, AND).
+//   (b) it is idle AND ownerless AND old — no established connection on the port it
+//       listens on, no live `claude` session that owns it (by parent chain OR by working
+//       folder), and 2h+ alive (all three, AND).
 // No side effects here; the hook wraps the real /proc scan + kill around selectReapable.
 //
 // Why (b) exists (2026-08-10 measurement): a vite server had been up 6h39m with 0
@@ -11,8 +12,9 @@
 //   1. connections — vite/next hold an HMR socket open for every live browser tab, so
 //      "someone is looking at it" shows up as an established connection and we back off.
 //      A curl-once-in-a-while user leaves no connection; condition 2 covers that case.
-//   2. owner session — a server the current/any live claude session spawned is still
-//      someone's, however quiet it is.
+//   2. owner session — a server that belongs to a live claude session is still someone's,
+//      however quiet it is. Belonging is read two ways (ppid chain, working folder)
+//      because the first one alone measured as "never owned" — see ownerAlive.
 //   3. 2 hours — a just-started server is between requests, not abandoned.
 // Every unknown falls to "do NOT kill": no socket data (ss missing/failed) counts as
 // connected, an unreadable parent chain counts as owner-alive, an unknown age counts as
@@ -80,6 +82,18 @@ function isClaudeSession(comm, cmdline) {
   if (!cl) return false;
   for (const t of cl.split(/\s+/)) if (tokenIs(t, "claude")) return true;
   return /@anthropic-ai\/claude-code/.test(cl);              // run via node .../cli.js
+}
+
+// Does `base` contain `target` (same folder, or an ancestor of it)? Compared on path
+// SEGMENTS, never as a raw string prefix: "/a/b".startsWith("/a/b") would also swallow
+// the unrelated sibling "/a/bc", handing one project's session ownership of another's.
+function pathCovers(base, target) {
+  const strip = (s) => String(s == null ? "" : s).replace(/\/+$/, "");
+  const b = strip(base), t = strip(target);
+  if (!String(base || "").trim() || !String(target || "").trim()) return false;
+  if (b === "" ) return String(target).startsWith("/");   // base was "/" → covers all
+  if (b === t) return true;
+  return t.startsWith(b + "/");                            // the "/" IS the boundary check
 }
 
 // ── parsers for the raw files/commands the hook feeds in ────────────────────────────
@@ -189,8 +203,37 @@ function selectReapableDetailed(procs, ownUid, opts) {
     return true;
   }
 
+  // Working folders of the live Claude sessions that could own one of our processes.
+  // Only own-user sessions: another user's session can never own a process we may kill
+  // (and we cannot read its cwd anyway, which would otherwise freeze the whole rule).
+  // A session whose cwd we cannot read makes ownership UNKNOWABLE → nothing is reaped.
+  const claudeCwds = [];
+  let claudeCwdUnknown = false;
+  for (const p of procs) {
+    if (!p || !Number.isInteger(p.pid)) continue;
+    if (ownUid != null && p.uid != null && p.uid !== ownUid) continue;
+    if (!isClaudeSession(p.comm, p.cmdline)) continue;
+    const cwd = typeof p.cwd === "string" ? p.cwd.trim() : "";
+    if (cwd) claudeCwds.push(cwd);
+    else claudeCwdUnknown = true;
+  }
+
   // "The session that launched it is still around." Any doubt → true (= keep it).
+  //
+  // Two ways to be owned, OR'd. The parent chain alone is NOT enough: measured
+  // 2026-08-10, all three dev servers on the machine were orphans by ppid because Claude
+  // Code backgrounds them and the launching shell exits first — so the chain answers
+  // "no owner" almost always, silently reducing the three safety conditions to two.
+  // The second way is the folder: a live session sitting in the server's folder (or in a
+  // folder above it — a session at <project> owns the server in <project>/web) owns it.
+  // Known gap, left as is: a worktree is a SIBLING folder, not a child, so a server
+  // started inside one is not matched here (connections + age still guard it).
   function ownerAlive(p) {
+    if (claudeCwdUnknown) return true;                 // cannot know which folders are open
+    const cwd = typeof p.cwd === "string" ? p.cwd.trim() : "";
+    if (!cwd) return true;                             // cannot read the server's folder
+    for (const c of claudeCwds) if (pathCovers(c, cwd)) return true;
+
     let cur = p;
     for (let hop = 0; hop < MAX_PARENT_HOPS; hop++) {
       const ppid = cur.ppid;
@@ -238,7 +281,7 @@ function selectReapable(procs, ownUid, opts) {
 }
 
 module.exports = {
-  isDevServer, isDevLauncher, isDeleted, isClaudeSession,
+  isDevServer, isDevLauncher, isDeleted, isClaudeSession, pathCovers,
   parseStat, ageMsFromStat, parseSsNet,
   selectReapable, selectReapableDetailed,
   MAX_KILL, IDLE_MIN_AGE_MS,

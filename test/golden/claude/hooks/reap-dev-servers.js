@@ -4,8 +4,9 @@
 // sweeps them at session START only (matcher "startup"). Linux/WSL only.
 // Best-effort & FAIL-OPEN: any error is swallowed and the session is never blocked.
 //
-// Reaped: a dev server whose folder was deleted, OR one that is idle + orphaned + old
-// (no established connection on its listening port, no live `claude` ancestor, 2h+).
+// Reaped: a dev server whose folder was deleted, OR one that is idle + ownerless + old
+// (no established connection on its listening port, no live `claude` session owning it
+// by parent chain or by working folder, 2h+ alive).
 // The rules and the reasoning live in reap-dev-servers-core.js; this file only gathers
 // the facts (/proc, `ss`) and does the killing. Every fact we fail to gather is passed
 // through as "unknown", which the core reads as "do not kill".
@@ -41,9 +42,9 @@ function readNet() {
   return null;
 }
 
-// Full /proc sweep. It is deliberately NOT pre-filtered any more: the parent chain walk
-// needs every process (a dev server is only "orphaned" once we can prove no live claude
-// ancestor), so filtering early would make unrelated processes look like orphans.
+// Full /proc sweep. It is deliberately NOT pre-filtered any more: ownership needs every
+// process — the parent chain walk needs the ancestors, and the folder comparison needs
+// every live claude session's cwd. Filtering early would make servers look ownerless.
 function scanProc(uptimeSec) {
   const procs = [];
   let entries;
