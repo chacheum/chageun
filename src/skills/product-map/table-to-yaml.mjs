@@ -41,8 +41,11 @@ const ROW_RE = /^\s*\|\s*F-\d+\s*\|/;
 const IN_TABLE_RE = /^\s*\|/;
 
 // 안내는 상황마다 다르다. 한 문구로 뭉쳐 두면 **멀쩡한 다른 표를 지우라고 읽힌다**(2026-08-10 3차 리뷰).
-const HINT_IN = "이 줄이 다른 표의 시작이면 기능 표와 사이에 제목이나 문단을 한 줄 넣어라. 예시로 적어 둔 줄이면 잠시 지우거나 표 위로 옮겨라.";
-const HINT_OUT = "이 줄이 표가 아니라 예시라면 잠시 지우거나 표 위로 옮긴 뒤 다시 돌려라.";
+// 🛑 "표 위로 옮겨라"는 절대 권하지 않는다 — 아래 검사 (3)은 표 **아래쪽만** 훑으므로, 안내대로 옮기면
+// 그 줄은 안 옮겨진 채 네 겹이 전부 초록불이 된다(4차 리뷰). 안내가 검사 사각으로 사람을 보내면 안 된다.
+const MOVE_OUT = "잠시 다른 곳에 오려 두었다가 옮기기가 끝나면 되돌려라";
+const HINT_IN = `이 줄이 다른 표의 시작이면 기능 표와 사이에 제목이나 문단을 한 줄 넣어라. 예시로 적어 둔 줄이면 ${MOVE_OUT}. 아니면 ID 가 \`F-숫자\` 모양인지 보라 — 이게 가장 흔한 원인이다.`;
+const HINT_OUT = `이 줄이 표가 아니라 예시라면 ${MOVE_OUT}.`;
 const splitCells = (l) => l.replace(/\s+$/, "").split("|").slice(1, -1).map((s) => s.trim());
 
 export function convert(text) {
@@ -76,7 +79,7 @@ export function convert(text) {
     if (IN_TABLE_RE.test(l)) {
       tableLines++;
       if (!ROW_RE.test(l))
-        fatal.push(`${i + 1}번째 줄이 표 안에 있는데 기능 행으로 못 읽었다(ID 가 \`F-숫자\` 모양인지 보라): ${l.slice(0, 60)} — ${HINT_IN}`);
+        fatal.push(`${i + 1}번째 줄이 표 안에 있는데 기능 행으로 못 읽었다: ${l.slice(0, 60)} — ${HINT_IN}`);
       // 닫는 `|` 가 없으면 마지막 칸이 잘려 나간다. 칸이 9개였던 밀린 행은 잘린 뒤 정확히 8칸이 되어
       // **정상 행으로 통과하고 조각 하나가 조용히 사라진다** — 어느 대조도 없어진 조각은 못 본다.
       else if (!l.replace(/\s+$/, "").endsWith("|"))
@@ -96,10 +99,10 @@ export function convert(text) {
     if (l.trim() === "") {
       let k = i + 1;
       while (k < src.length && src[k].trim() === "") k++;
-      const startsNewTable = k < src.length &&
-        (HEAD_RE.test(src[k]) || SEP_RE.test(src[k]) || (k + 1 < src.length && SEP_RE.test(src[k + 1])));
-      if (k < src.length && IN_TABLE_RE.test(src[k]) && !startsNewTable) {
-        blankLines += k - i; i = k - 1; continue;
+      if (k < src.length && IN_TABLE_RE.test(src[k])) {
+        const startsNewTable = HEAD_RE.test(src[k]) || SEP_RE.test(src[k]) ||
+          (k + 1 < src.length && SEP_RE.test(src[k + 1]));
+        if (!startsNewTable) { blankLines += k - i; i = k - 1; continue; }
       }
     }
     break;
