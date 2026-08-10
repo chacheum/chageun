@@ -361,7 +361,9 @@ test("칸 복원 대조가 실패하면 **실제로** 파일을 안 쓴다 — �
   assert.equal(out, null, "어긋났으면 아무것도 안 쓴다");
   assert.equal(fatal.length, 1);
   assert.match(fatal[0], /F-40: 이 줄은 끝 칸이 빠진 것 같다/);
-  assert.match(fatal[0], /빈 칸 하나\(`\| \|`\)를 더 넣어/, "무엇을 어떻게 고칠지까지 알려 준다");
+  assert.match(fatal[0], /빈 칸 하나로 닫아/, "무엇을 어떻게 고칠지까지 알려 준다");
+  // 붙일 조각을 주면 그 줄은 이미 `|` 로 끝나 칸이 하나 더 생긴다 — 결과 모양으로만 안내한다.
+  assert.doesNotMatch(fatal[0], /\(`\| \|`\)를 더 넣어/, "붙일 조각을 그대로 주지 않는다");
 });
 
 test("멈춤 문구가 **일부러 쓴 `|` 를 지우라고** 시키지 않는다", () => {
@@ -370,7 +372,8 @@ test("멈춤 문구가 **일부러 쓴 `|` 를 지우라고** 시키지 않는�
   const { fatal, out } = render(doc("| F-50 | 이름 | a|b | 설 | 명 | u | 높음 | 완료 | 화면 |"));
   assert.equal(out, null);
   assert.equal(fatal.length, 1);
-  assert.doesNotMatch(fatal[0], /개수를 세어|8개가 되게/, "개수를 목표로 주면 안 된다");
+  // 숫자를 글자로 박으면 칸 수가 바뀔 때 이 금지 목록만 옛 숫자를 보게 되어 조용히 약해진다.
+  assert.doesNotMatch(fatal[0], /개수를 세어|개가 되게/, "개수를 목표로 주면 안 된다");
   assert.match(fatal[0], /지우지 마라/, "일부러 쓴 `|` 는 건드리지 말라고 해야 한다");
 });
 
