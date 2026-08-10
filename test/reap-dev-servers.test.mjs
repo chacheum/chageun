@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const {
   isDevServer, isDevLauncher, isDeleted, selectReapable, MAX_KILL,
   isClaudeSession, parseSsNet, parseStat, ageMsFromStat, selectReapableDetailed, IDLE_MIN_AGE_MS,
+  pathCovers,
 } = require("../src/hooks/reap-dev-servers-core.js");
 
 const UID = 1000;
@@ -146,6 +147,68 @@ test("놀고 있는 개발 서버: 주인 claude 세션이 살아있으면 안 �
 
 test("놀고 있는 개발 서버: 부모를 목록에서 못 찾으면 '주인 살아있음'으로 본다", () => {
   assert.deepEqual(pick([vite({ ppid: 4242 })], { net: net() }), []);
+});
+
+// ── 주인 판정 두 번째 통로: 폴더 대조 ────────────────────────────────────────────
+// 2026-08-10 실측(오너 확인): 이 기계의 개발 서버 3개가 **전부** 부모 체인상 고아였다.
+// Claude Code 가 백그라운드로 띄우면 띄운 셸이 먼저 빠져 부모가 init 이 되기 때문이다.
+// 즉 부모 체인만으로는 "주인 없음"이 사실상 상수라 3중 안전장치가 2중으로 줄어든다.
+// 그래서 살아있는 claude 세션의 **작업 폴더**로도 주인을 찾는다(OR).
+const claudeAt = (cwd, over) => Object.assign({ pid: 500, ppid: 1, uid: UID, comm: "claude", cmdline: "claude", cwd }, over || {});
+
+test("주인 폴더: 세션 작업 폴더가 서버 폴더와 같으면 안 끈다", () => {
+  assert.deepEqual(pick([claudeAt("/app/web"), vite()], { net: net() }), []);
+});
+
+test("주인 폴더: 세션이 서버 폴더의 조상 폴더에 있어도 안 끈다", () => {
+  // 실측 근거: 서버 cwd 는 <프로젝트>/web 인데 세션은 <프로젝트> 에 있었다.
+  assert.deepEqual(pick([claudeAt("/app"), vite()], { net: net() }), []);
+  assert.deepEqual(pick([claudeAt("/"), vite()], { net: net() }), []);
+});
+
+test("주인 폴더: 이름만 겹치는 이웃 폴더는 남이다(문자열 접두어 비교 금지)", () => {
+  // '/app/web' 세션이 '/app/website' 서버의 주인이 되면 안 된다.
+  assert.deepEqual(pick([claudeAt("/app/web"), vite({ cwd: "/app/website" })], { net: net() }), [700]);
+  // 반대 방향(서버가 더 위)도 남이다.
+  assert.deepEqual(pick([claudeAt("/app/web/inner"), vite()], { net: net() }), [700]);
+});
+
+test("주인 폴더: 남의 폴더에서 도는 세션뿐이면 그대로 끈다", () => {
+  assert.deepEqual(pick([claudeAt("/other/proj"), vite()], { net: net() }), [700]);
+});
+
+test("주인 폴더: claude 세션의 작업 폴더를 못 읽으면 아무것도 안 끈다", () => {
+  assert.deepEqual(pick([claudeAt(""), vite()], { net: net() }), []);
+  assert.deepEqual(pick([claudeAt(null), vite()], { net: net() }), []);
+});
+
+test("주인 폴더: 서버 자신의 작업 폴더를 못 읽으면 안 끈다", () => {
+  assert.deepEqual(pick([claudeAt("/other"), vite({ cwd: "" })], { net: net() }), []);
+});
+
+test("주인 폴더: 다른 유저의 claude 세션은 대조에 넣지 않는다", () => {
+  // 남의 세션은 내 프로세스의 주인이 될 수 없다(애초에 남의 프로세스는 안 끈다).
+  const stranger = claudeAt("/app/web", { pid: 501, uid: 0 });
+  assert.deepEqual(pick([stranger, vite()], { net: net() }), [700]);
+  // 남의 세션 폴더를 못 읽는 것도 내 판정을 막지 않는다.
+  assert.deepEqual(pick([claudeAt(null, { pid: 502, uid: 0 }), vite()], { net: net() }), [700]);
+});
+
+test("주인 폴더: 작업방(worktree)은 여전히 주인 없음 — 접속·나이가 받친다", () => {
+  // 작업방은 원본의 하위 폴더가 아니라 형제 폴더라 이 대조로는 안 잡힌다(의도).
+  assert.deepEqual(pick([claudeAt("/app/web"), vite({ cwd: "/app/web-wt" })], { net: net() }), [700]);
+});
+
+test("pathCovers: 세그먼트 경계까지 확인한다", () => {
+  assert.equal(pathCovers("/a/b", "/a/b"), true);
+  assert.equal(pathCovers("/a/b", "/a/b/c"), true);
+  assert.equal(pathCovers("/a/b/", "/a/b/c"), true);   // 끝 슬래시 정규화
+  assert.equal(pathCovers("/a/b", "/a/bc"), false);    // 경계 미확인 시 뚫리는 자리
+  assert.equal(pathCovers("/a/b/c", "/a/b"), false);   // 방향이 반대
+  assert.equal(pathCovers("/", "/a/b"), true);
+  assert.equal(pathCovers("", "/a/b"), false);
+  assert.equal(pathCovers("/a/b", ""), false);
+  assert.equal(pathCovers(null, null), false);
 });
 
 test("놀고 있는 개발 서버: 2시간이 안 됐으면 안 끈다", () => {
