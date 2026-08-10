@@ -11,7 +11,8 @@
 //   1. 표 영역 대조 — 표 안에서 기능 행으로 못 읽은 줄이 하나라도 있으면 멈춘다(0개도 멈춘다).
 //   2. 칸 복원 대조 — 밀린 줄을 복원한 뒤 다시 합쳐 원본 칸 배열과 같은지 본다.
 //   3. 되돌림 대조 — 만든 YAML 을 다시 읽어 원본 값과 글자 단위로 같은지 본다.
-//   4. 조립 후 대조 — 완성한 파일에서 YAML 블록을 도로 뜯어내고, 표 밖 줄이 원본과 바이트 동일한지 본다.
+//   4. 조립 후 대조 — 완성한 파일에서 YAML 블록을 도로 뜯어내고, 표 밖 줄이 **원본과** 같은지 본다
+//      (줄바꿈은 LF 로 통일한 뒤 비교한다 — CRLF 파일은 표 밖 줄도 전부 바뀌므로 "바이트 동일"은 거짓말이다).
 //
 // 알려진 예외 하나: **밀린 줄을 복원할 때 `|` 주변 공백이 한 칸으로 정규화된다**(`가격|할인` → `가격 | 할인`).
 // 칸은 이미 잘라 낼 때 앞뒤 공백을 턴 뒤라 원래 간격을 되살릴 수 없다. 두 글자 늘어나는 것이고
@@ -39,10 +40,13 @@ const SEP_RE = /^\s*\|[\s|:-]+\|\s*$/;          // 꼬리 공백·CRLF 를 넘�
 const ROW_RE = /^\s*\|\s*F-\d+\s*\|/;
 const IN_TABLE_RE = /^\s*\|/;
 
+const FIX_HINT = "이 줄이 표가 아니라 예시라면 잠시 지우거나 표 위로 옮긴 뒤 다시 돌려라.";
 const splitCells = (l) => l.replace(/\s+$/, "").split("|").slice(1, -1).map((s) => s.trim());
 
 export function convert(text) {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  // 🛑 여기서 줄바꿈을 LF 로 통일한다 — CRLF 파일은 **표 밖 줄도 전부 바뀐다.** 그래서 아래 대조와
+  // 스킬 문서는 "바이트 동일"이 아니라 "줄바꿈 정규화 후 동일"이라고 적는다(못 지킬 약속을 안 적는다).
+  const src = text.replace(/\r\n/g, "\n").split("\n");
   const keep = [];
   const rows = [];
   const warn = [];
@@ -51,42 +55,54 @@ export function convert(text) {
 
   // (1) 표 머리를 **처음 한 번만** 찾는다. 파일 전역에서 찾으면 뒤쪽의 무관한 표까지 표로 오인해
   //     그 표의 머리·구분선을 지운다(2026-08-10 실제 파일에서 그 계열의 사고가 났다).
-  for (; i < lines.length && !HEAD_RE.test(lines[i]); i++) keep.push(lines[i]);
-  if (i >= lines.length) {
+  for (; i < src.length && !HEAD_RE.test(src[i]); i++) keep.push(src[i]);
+  if (i >= src.length) {
     fatal.push("8칸 표 머리(`| ID |`)를 못 찾았다 — 이 파일은 옮길 대상이 아니다");
-    return { feats: [], keep, tableAt: -1, warn, fatal };
+    return { feats: [], src, keep, tableAt: -1, tableFrom: -1, tableTo: -1, tableLines: 0, blankLines: 0, warn, fatal };
   }
   const tableAt = keep.length;
+  const tableFrom = i;                           // 원본에서 표 영역이 시작하는 줄(조립 후 대조가 이걸 쓴다)
   keep.push("");                                 // 자리만 잡아 둔다(자리 표시 **문자열**은 쓰지 않는다 — render 참조)
   i++;
-  if (i < lines.length && SEP_RE.test(lines[i])) i++;
+  if (i < src.length && SEP_RE.test(src[i])) i++;
 
   // (2) 표 영역 = 머리 다음의 **이어지는 `|` 줄들**. 이 안에서 기능 행으로 못 읽은 줄은 그냥 넘기지 않는다.
   //     넘기면 그 줄은 이름표 없는 본문으로 남고 표 머리는 지워져, 사람이 보기엔 표가 부서진다.
-  let tableLines = 0;
-  for (; i < lines.length; i++) {
-    const l = lines[i];
+  let tableLines = 0, blankLines = 0;
+  for (; i < src.length; i++) {
+    const l = src[i];
     if (IN_TABLE_RE.test(l)) {
       tableLines++;
-      if (ROW_RE.test(l)) rows.push(splitCells(l));
-      else fatal.push(`${i + 1}번째 줄이 표 안에 있는데 기능 행으로 못 읽었다(ID 가 \`F-숫자\` 모양인지 보라): ${l.slice(0, 60)}`);
+      if (!ROW_RE.test(l))
+        fatal.push(`${i + 1}번째 줄이 표 안에 있는데 기능 행으로 못 읽었다(ID 가 \`F-숫자\` 모양인지 보라): ${l.slice(0, 60)} — ${FIX_HINT}`);
+      // 닫는 `|` 가 없으면 마지막 칸이 잘려 나간다. 칸이 9개였던 밀린 행은 잘린 뒤 정확히 8칸이 되어
+      // **정상 행으로 통과하고 조각 하나가 조용히 사라진다** — 어느 대조도 없어진 조각은 못 본다.
+      else if (!l.replace(/\s+$/, "").endsWith("|"))
+        fatal.push(`${i + 1}번째 줄이 \`|\` 로 안 끝난다 — 마지막 칸이 잘려 사라진다, 손으로 닫아라: ${l.slice(0, 60)}`);
+      else rows.push(splitCells(l));
       continue;
     }
-    // 빈 줄은 **기능 행이 곧바로 다시 이어질 때만** 표 안으로 본다. 실제 파일이 그렇게 생겼다
-    // (2026-08-10 이 저장소 기능 명세: 17행 + 빈 줄 + 8행). 다음 내용이 기능 행이 아니면 여기서 표가 끝난다 —
-    // 그래야 아래쪽의 무관한 표·문단을 안 삼킨다.
+    // 빈 줄은 **표가 곧바로 다시 이어질 때만** 표 안으로 본다. 실제 파일이 그렇게 생겼다
+    // (2026-08-10 이 저장소 기능 명세: 17행 + 빈 줄 + 8행).
+    // 앞보기를 `기능 행`이 아니라 `표 줄`로 잡는 이유: ID 가 어긋난 줄이 빈 줄 바로 뒤에 오면
+    // 표가 끝난 줄 알고 그 아래를 통째로 본문으로 넘기는데, 표 밖 검사는 **잘 생긴 기능 행만** 찾으므로
+    // 아무도 안 본다. 표 줄로 잡으면 위 fatal 에 걸린다.
+    // 단 다음이 **다른 표의 머리·구분선**이면 거기서 끝낸다 — 무관한 표를 삼키지 않는다.
     if (l.trim() === "") {
       let k = i + 1;
-      while (k < lines.length && lines[k].trim() === "") k++;
-      if (k < lines.length && ROW_RE.test(lines[k])) { tableLines += k - i; i = k - 1; continue; }
+      while (k < src.length && src[k].trim() === "") k++;
+      if (k < src.length && IN_TABLE_RE.test(src[k]) && !HEAD_RE.test(src[k]) && !SEP_RE.test(src[k])) {
+        blankLines += k - i; i = k - 1; continue;
+      }
     }
     break;
   }
-  for (; i < lines.length; i++) keep.push(lines[i]);
+  const tableTo = i;                             // 표 영역의 끝(이 줄부터는 원본 그대로 남는다)
+  for (; i < src.length; i++) keep.push(src[i]);
 
   // (3) 표 영역 **밖에** 기능 행처럼 생긴 줄이 남아 있으면 표가 두 토막 난 것이다.
   for (let k = tableAt + 1; k < keep.length; k++)
-    if (ROW_RE.test(keep[k])) fatal.push(`기능 행처럼 생긴 줄이 표 밖에 있다 — 표가 끊겼는지 보라: ${keep[k].slice(0, 60)}`);
+    if (ROW_RE.test(keep[k])) fatal.push(`기능 행처럼 생긴 줄이 표 밖에 있다 — 표가 끊겼는지 보라: ${keep[k].slice(0, 60)} — ${FIX_HINT}`);
 
   if (!fatal.length && rows.length === 0)
     fatal.push("표는 찾았는데 옮길 기능 행이 0개다 — 행 ID 가 `F-숫자` 모양인지 확인하라(이대로 쓰면 표 머리만 지워진다)");
@@ -130,12 +146,12 @@ export function convert(text) {
     if (!PRIO.has(f.우선순위)) warn.push(`${f.id}: 우선순위 '${f.우선순위}' 는 규격 밖(그대로 옮긴다)`);
     feats.push(f);
   }
-  return { feats, keep, tableAt, tableLines, warn, fatal };
+  return { feats, src, keep, tableAt, tableFrom, tableTo, tableLines, blankLines, warn, fatal };
 }
 
-// 따옴표를 **언제 뺄지**를 정한다(언제 붙일지가 아니다).
+// 따옴표를 **언제 뺄지**를 정한다(언제 붙일지가 아니다). 위험 조건을 넓게 잡고, 하나라도 걸리면 감싼다.
 //
-// 🛑 포지티브 화이트리스트인 이유: 위험한 글자를 열거하는 방식은 빠뜨린 한 가지에서 조용히 깨진다.
+// 🛑 조건을 넓게 잡는 이유: 위험한 글자만 좁게 열거하는 방식은 빠뜨린 한 가지에서 조용히 깨진다.
 // 특히 YAML 은 특수문자가 없어도 뜻이 바뀐다 — `2026-09-01` 은 날짜, `no`·`off` 는 거짓,
 // `~`·`null` 은 빈 값, `007` 은 숫자로 읽힌다. 아래 조건을 **전부** 만족할 때만 맨값으로 두고,
 // 나머지는 큰따옴표로 감싼다(JSON 문자열은 YAML 큰따옴표 문법의 부분집합이라 그대로 유효하다).
@@ -198,6 +214,30 @@ export function verify(feats, yaml) {
   return diffs;
 }
 
+// 조립 후 대조 — **실제로 파일에 쓰일 글자**(`out`)를 다시 쪼개, 표 영역만 뺀 **원본**(`src`)과 맞춘다.
+//
+// 🛑 대조 상대가 원본이어야 하는 이유. 앞 판은 끼워 넣은 결과를 끼워 넣기 **입력**과 비교해서
+// 어떤 파일을 넣어도 통과했다(2026-08-10 2차 리뷰). 기준이 실수의 결과물 자신이면, 중간 결과를
+// 만들며 한 줄 빠뜨린 실수는 영원히 안 걸린다. 그런데 스킬 문서는 "기계가 본다"고 약속했으니
+// 사람은 눈으로 안 본다 — 약속만 남고 검사는 없는 상태가 가장 나쁘다.
+// 함수로 빼 둔 것도 같은 이유다: 밖에서 일부러 망가뜨려 **이 검사가 실제로 실패하는지** 시험할 수 있다.
+export function assembledIssues({ src, tableFrom, tableTo, tableAt, block, out }) {
+  const issues = [];
+  const got = String(out).split("\n");
+  const gotBlock = got.slice(tableAt, tableAt + block.length);
+  const gotRest = [...got.slice(0, tableAt), ...got.slice(tableAt + block.length)];
+  const wantRest = [...src.slice(0, tableFrom), ...src.slice(tableTo)];
+  if (gotBlock.join("\n") !== block.join("\n"))
+    issues.push("[조립 후 대조] 끼워 넣은 자리에서 YAML 블록을 도로 못 꺼냈다 — 손으로 확인해야 한다");
+  else if (gotRest.length !== wantRest.length)
+    issues.push(`[조립 후 대조] 표 밖 줄 수가 원본과 다르다(${wantRest.length} → ${gotRest.length}) — 손으로 확인해야 한다`);
+  else {
+    const at = gotRest.findIndex((l, i) => l !== wantRest[i]);
+    if (at >= 0) issues.push(`[조립 후 대조] 표 밖 ${at + 1}번째 줄이 원본과 달라졌다 — 손으로 확인해야 한다: ${wantRest[at].slice(0, 50)}`);
+  }
+  return issues;
+}
+
 // 표 자리에 YAML 블록을 끼워 넣는다.
 //
 // 🛑 **`String.replace` 로 자리 표시 문자열을 바꾸지 말 것.** 바꿔 넣는 글자 안의 `$&`·`$1` 을 자바스크립트가
@@ -206,7 +246,7 @@ export function verify(feats, yaml) {
 // 치환됐다. 앞의 대조들이 못 잡았다 — 전부 조립 **전**의 값만 봤기 때문이다.
 // 그래서 자리 표시 문자열을 아예 없애고 줄 번호로 끼워 넣은 뒤, 조립 **후** 결과를 다시 뜯어 대조한다.
 export function render(text) {
-  const { feats, keep, tableAt, tableLines, warn, fatal } = convert(text);
+  const { feats, src, keep, tableAt, tableFrom, tableTo, tableLines, blankLines, warn, fatal } = convert(text);
   const yaml = toYaml(feats);
   const diffs = fatal.length ? [] : verify(feats, yaml);
   let out = null;
@@ -216,19 +256,10 @@ export function render(text) {
     lines.splice(tableAt, 1, ...block);
     out = lines.join("\n");
 
-    // 조립 후 대조 ①: 끼워 넣은 자리에서 블록을 도로 꺼내 방금 만든 것과 같은지(파일의 "첫" 블록이
-    // 아니라 **그 자리**를 본다 — 위쪽에 다른 ```yaml 예시가 있어도 헷갈리지 않는다).
-    const gotBlock = lines.slice(tableAt, tableAt + block.length);
-    // 조립 후 대조 ②: 표 밖 줄이 원본과 바이트 동일한지. 사람이 눈으로 219줄을 대조하던 것을 기계에 옮겼다.
-    const gotRest = [...lines.slice(0, tableAt), ...lines.slice(tableAt + block.length)];
-    const wantRest = [...keep.slice(0, tableAt), ...keep.slice(tableAt + 1)];
-    if (gotBlock.join("\n") !== block.join("\n"))
-      fatal.push("[조립 후 대조] 끼워 넣은 자리에서 YAML 블록을 도로 못 꺼냈다 — 손으로 확인해야 한다");
-    else if (gotRest.length !== wantRest.length || gotRest.some((l, i) => l !== wantRest[i]))
-      fatal.push("[조립 후 대조] 표 밖 줄이 원본과 달라졌다 — 손으로 확인해야 한다");
+    for (const x of assembledIssues({ src, tableFrom, tableTo, tableAt, block, out })) fatal.push(x);
     if (fatal.length) out = null;
   }
-  return { feats, yaml, tableLines, warn, fatal, diffs, out };
+  return { feats, yaml, tableLines, blankLines, warn, fatal, diffs, out };
 }
 
 // 직접 실행할 때만 돈다. 이 가드가 없으면 테스트가 import 하는 순간 `process.argv[2]`(테스트 파일
@@ -236,12 +267,13 @@ export function render(text) {
 // 경로에 공백·한글이 있을 때 퍼센트 인코딩 때문에 절대 안 맞아 스크립트가 말없이 끝난다.
 const [, , path, flag] = process.argv;
 if (process.argv[1] === fileURLToPath(import.meta.url) && path) {
-  const { feats, tableLines, warn, fatal, diffs, out } = render(readFileSync(path, "utf8"));
+  const { feats, tableLines, blankLines, warn, fatal, diffs, out } = render(readFileSync(path, "utf8"));
   const chars = feats.reduce((n, f) => n + COLS.reduce((m, c) => m + (f[c] || "").length, 0), 0);
   const stage = (tag) => fatal.filter((x) => (tag === "조립" ? x.startsWith("[조립") : !x.startsWith("[조립")));
 
   console.log(path);
-  console.log(`  표 안 ${tableLines ?? 0}줄 중 기능 ${feats.length}개 · 셀 글자수 ${chars}`);
+  // 빈 줄은 따로 적는다. 합쳐 세면 `표 안 26줄 중 기능 25개` 가 되어 한 행을 놓친 것처럼 보인다.
+  console.log(`  표 안 ${tableLines ?? 0}줄 중 기능 ${feats.length}개${blankLines ? ` (사이 빈 줄 ${blankLines})` : ""} · 셀 글자수 ${chars}`);
   const early = stage("앞");
   console.log(`  표 영역·칸 복원 대조 : ${early.length ? "❌ " + early.length + "건" : "✅ 이상 없음"}`);
   for (const x of early) console.log("     " + x);
