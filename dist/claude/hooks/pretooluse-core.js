@@ -16,24 +16,71 @@ const SQL_DESTRUCTIVE = /\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+(TABLE\s+)
 // G7 변형 우회 차단: .env(.local 등)를 인코더/슬라이서로 변형해 마스킹을 우회하려는 Bash. 평문 cat은 허용(PostToolUse 마스킹이 처리).
 // example 계열(.env.example|sample|template|dist)은 제외 — collectSecrets 제외 목록과 정합(F4).
 //
-// ⚠ 판단 기준은 "위험해 보이나"가 아니라 **"마스킹을 우회하나"** 다. 평문 읽기(`cat .env`)가 통과인
-// 규칙에서 키 이름 뽑기를 막으면, 막는 게 아니라 정상 작업만 막는다.
-// **실측 2026-08-10:** 옛 판(낱말만 보는 목록)이 정상 작업을 **91번 오차단**했다. 그중
+// ⚠ **판단 축은 하나다: 이 명령을 거치면 시크릿 값 문자열이 원문 그대로 남는가.**
+// 뒤의 마스킹(`secret-scan-core.js` 의 `redact`)은 `out.split(value).join(marker)` 로 **값을 글자 그대로**
+// 찾아 지운다. 그러니 값이 원문 그대로면 뒤에서 가려지고(막을 이유 없음), 값의 글자가 달라지면 못 찾는다(막아야 함).
+// "위험해 보이나"로 판단하면 정상 작업만 막는다 — 평문 읽기(`cat .env`)가 애초에 통과인 규칙이다.
+//
+// **실측 2026-08-10:** 낱말 목록만 보던 판이 정상 작업을 **91번 오차단**했다. 그중
 //   - 24건은 `.env` 가 파일이 아니었다(`process.env` · `{{range .Config.Env}}`)
-//   - 39건은 `tr` 이 `tr -d '"'` 처럼 값 하나를 다듬는 정상 용법이었다(키 이름 뽑기가 이 규칙이 권하는 행동인데 그걸 막았다)
+//   - 39건은 `tr` 이 `tr -d '"'` 처럼 값을 안 바꾸는 용법이었다(키 이름 뽑기는 이 규칙의 안내문이 권하는 행동인데 그걸 막았다)
 //   - 11건은 `git rev-parse` 의 `rev` 처럼 명령이 아닌 자리에서 낱말만 걸렸다
-// 새 판은 같은 91건 중 58건을 풀고, 만든 표본 18건 + `cut` 필드 8종 전부 의도대로 판정한다.
-// **남은 한계(정직):** `-f2-` 처럼 값을 변수에 담는 33건은 여전히 막힌다(값 추출 자체가 이 규칙의 대상).
-// 키 이름을 `tr '\n' ' '` 로 잇는 소수는 안전한 쪽으로 과차단된다.
+// 지금 판은 같은 91건 중 60건을 풀고, 표본 38건(우회 21 + 정상 17)을 전부 의도대로 판정한다.
+//
+// 🛑 **한 번 거꾸로 만들었다(2026-08-10, pr-reviewer 가 high 로 되돌림).** 중간 판이 `tr` 을 "줄바꿈을
+// 지우면 차단"으로 잡았는데, 위 축으로 보면 정반대다 — 줄바꿈을 지워도 값은 그대로라 마스킹이 잡고,
+// 오히려 rot13·대문자화처럼 **글자를 바꾸는** 쪽이 마스킹을 벗어난다. 같은 판이 인코더를 "명령 자리"로
+// 좁히다가 백틱 · `docker exec` · `ssh` · `sh -c` · `find -exec` · `sudo` 여섯 갈래를 새로 열었다.
+// **이 규칙을 손댈 땐 먼저 `redact` 구현을 열어 축을 확인하라.**
 
 // (1) `.env` 앞에 낱말 문자가 오면 파일 이름이 아니다 — `process.env` 를 뺀다.
 const ENV_REF_RE = /(?<![A-Za-z0-9_])\.env\b(?!\.(?:example|sample|template|dist))/i;
-// (2) 인코더는 **명령 자리**(줄 처음·파이프·세미콜론·`&`·`(`·`$(` 뒤)에 있을 때만 센다.
-const ENCODER_RE = /(?:^|[|;&(]|\$\(|\n)\s*(?:base64|xxd|od|hexdump|uuencode|rev|fold|dd|openssl\s+enc)\b/;
-// (3) `cut` 은 **값 쪽 필드**를 자를 때만. `-f1`(키 이름)은 통과, `-f2`·`-f12`·`-f1,2`·`-f1-`(끝까지)은 차단.
-const CUT_VALUE_RE = /\bcut\b[^|;&\n]*-f\s*[^\s]*(?:[2-9]|\d{2,}|-)/;
-// (4) `tr` 은 **줄바꿈을 지울 때만**(파일 전체를 한 줄로 이어 마스킹을 무너뜨리는 수법).
-const TR_JOIN_RE = /\btr\b[^|;&\n]*\\[nr]/;
+// (2) 인코더는 **자리를 안 따진다**(래퍼·백틱·컨테이너·원격 실행을 다 덮어야 한다).
+//     대신 "글자로만 등장하는" 경우를 뺀다: 앞에 `=` 가 오거나 뒤에 `:`·`-` 가 붙으면 명령이 아니라
+//     값의 형식을 가리키는 문자열이다(`^APP_KEY=base64:` · `base64-format`).
+const ENCODER_RE = /(?<![=\w])\b(?:base64|xxd|hexdump|uuencode|openssl\s+enc)\b(?![:\-\w])/;
+//     `rev` 는 오차단의 유일한 원인이었다 — 하위명령 형태(`git rev-parse`·`rev-list`)만 뺀다.
+const ENCODER_REV_RE = /\brev\b(?!-)(?<!git rev)/;
+//     두 글자짜리(`od`·`dd`·`fold`)는 아무 데나 나오므로 명령 자리에서만 센다.
+const ENCODER_SHORT_RE = /(?:^|[|;&(`]|\$\(|\n)\s*(?:od|dd|fold)\b/;
+const hasEncoder = (cmd) => ENCODER_RE.test(cmd) || ENCODER_REV_RE.test(cmd) || ENCODER_SHORT_RE.test(cmd);
+
+// (3) `cut` — 잘라낸 결과에 값이 **원문 그대로** 남으면 마스킹이 잡으니 막지 않는다.
+//     열린 끝(`-f2-`)은 나머지 필드를 구분자로 다시 이어 붙여 원문이 나온다 → 통과.
+//     닫힌 지정에 2 이상이 있으면(`-f2`·`-f1,2`·`-f2-3`) 값이 잘려 마스킹을 벗어난다 → 차단.
+//     글자·바이트 자르기(`-c`·`-b`)는 언제나 값을 자른다 → 차단.
+function cutSlicesValue(cmd) {
+  for (const m of cmd.matchAll(/\bcut\b([^|;&\n]*)/g)) {
+    const args = m[1];
+    if (/(?:^|\s)(?:-[cb]|--characters|--bytes)[= ]?\S/.test(args)) return true;
+    const f = /(?:^|\s)(?:-f|--fields[= ])\s*(\S+)/.exec(args);
+    if (!f) continue;
+    const spec = f[1];
+    if (spec.endsWith("-")) continue;
+    if (/(?:^|[,-])(?:[2-9]|\d{2,})/.test(spec)) return true;
+  }
+  return false;
+}
+
+// (4) `tr` — 값의 글자를 바꾸면 마스킹이 못 찾는다. **값을 안 바꾸는 쓰임만** 통과시킨다.
+//     통과: `-d` 로 따옴표·공백·`=`·줄바꿈만 지우기(`tr -d '"'`) · 공백류를 바꾸기(`tr '\n' ' '`).
+//     차단: rot13(`tr 'A-Za-z' 'N-ZA-Mn-za-m'`) · 대문자화(`tr a-z A-Z`) · 그 밖의 문자 삭제.
+const TR_SAFE_DELETE = /^[\s='"\\nrt]*$/;
+const TR_SAFE_FROM = /^[\s\\nrt]*$/;
+function trAltersValue(cmd) {
+  for (const m of cmd.matchAll(/\btr\b([^|;&\n]*)/g)) {
+    // 명령치환 안이면 닫는 괄호가 인자에 딸려 온다: `$(... | tr -d '"')`. 떼고 본다.
+    const args = m[1].replace(/[)\s]+$/, "").trim();
+    const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|(\S+))\s*$/.exec(args);
+    const set = del && (del[1] != null ? del[1] : del[2] != null ? del[2] : del[3]);
+    if (set != null && TR_SAFE_DELETE.test(set)) continue;
+    const two = /^(?:'([^']*)'|"([^"]*)"|(\S+))\s+(?:'[^']*'|"[^"]*"|\S+)\s*$/.exec(args);
+    const from = two && (two[1] != null ? two[1] : two[2] != null ? two[2] : two[3]);
+    if (from != null && TR_SAFE_FROM.test(from)) continue;
+    return true;
+  }
+  return false;
+}
 
 // 되돌리기 불가 배포·퍼블리시 CLI(프리뷰·dry-run 제외). 탈출구는 래퍼(process.env.CHAGEUN_ALLOW_DEPLOY).
 // 한계: git push→자동배포(Vercel/Netlify 깃연동)는 못 잡음 — 텍스트 멈춤규칙 의존(래퍼 메시지에 명시).
@@ -122,7 +169,7 @@ function block(toolName, toolInput) {
     if (RM_RECURSIVE.test(cmd) && RM_DANGER_TARGET.test(cmd)) return "rm-recursive";
     if (isDeploy(cmd)) return "deploy";
     // .env를 인코딩/조각내 마스킹을 우회하려는 시도 차단(G7). 평문 cat/grep은 허용 — PostToolUse 마스킹이 처리.
-    if (ENV_REF_RE.test(cmd) && (ENCODER_RE.test(cmd) || CUT_VALUE_RE.test(cmd) || TR_JOIN_RE.test(cmd))) return "env-encoder";
+    if (ENV_REF_RE.test(cmd) && (hasEncoder(cmd) || cutSlicesValue(cmd) || trAltersValue(cmd))) return "env-encoder";
     // 파괴적 SQL은 SQL 클라이언트 명령일 때만 검사(커밋 메시지·문자열에 "DROP TABLE"이 들어간
     // 무해한 명령을 오탐하지 않도록).
     if (/\b(psql|mysql|mariadb|sqlite3|mongosh?|clickhouse-client)\b/.test(cmd)) return destructiveSql(cmd);
