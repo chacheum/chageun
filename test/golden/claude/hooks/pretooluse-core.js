@@ -85,11 +85,25 @@ function trAltersValue(cmd) {
   for (const m of cmd.matchAll(/(?<![-\w])tr\b([^|;&\n]*)/g)) {
     // 명령치환의 닫는 괄호와 리다이렉션은 인자가 아니다. 떼고 본다.
     // (`$(… | tr -d '"')` · `tr -d '\n' < .env` · `… | tr -d '=' > keys.txt`)
-    const args = m[1].replace(/\s*[<>]{1,2}\s*\S+/g, "").replace(/[)\s]+$/, "").trim();
-    const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|(\S+))\s*$/.exec(args);
+    // 🛑 **꼬리에서만 뗀다. 인자 수집을 `)` 에서 끊지 말 것.** 이 함수는 모아 온 인자 전체가
+    //   안전 패턴에 딱 맞아야(`^…$`) 통과시키는 구조라, 수집 범위를 줄이면 위험한 꼬리가
+    //   잘려 나가 "안전"으로 떨어진다. 실제로 2026-08-10 에 문자군을 `[^|;&\n)]*` 로 좁혔다가
+    //   `tr -d ')aeiou'` 가 통째로 열렸다(캡처가 `-d '` 에서 끊겨 따옴표 한 글자만 남고,
+    //   작은따옴표는 안전 문자군이라 통과). `)` 는 셸 문법 밖에도 **따옴표 안에** 올 수 있다.
+    //   바로 위 `cutSlicesValue` 는 위험한 것을 찾으면 막는 반대 구조라 같은 좁힘에도 안 열린다.
+    // 꼬리 청소가 `)` 뒤의 따옴표까지 먹는 이유: `echo "$(… | tr '\n' ' ')"` 는 괄호 **뒤에
+    //   따옴표가 더 붙어** 두 인자 형태로 안 읽혔고 정상 작업이 막혔다(실측 오차단).
+    //   중첩 명령치환(`))`)이 있어 반복(`+`)이 필요하다.
+    const args = m[1].replace(/\s*[<>]{1,2}\s*\S+/g, "").replace(/(?:\)[\s'"]*)+$/, "").trim();
+    // 따옴표 없는 인자에는 따옴표 글자가 올 수 없다(`([^'"\s]+)`). 이게 없으면 꼬리 청소가
+    // 짝을 잃은 따옴표 한 글자를 남겼을 때(`tr -d ')'` → `-d '`) 그 한 글자가 "안전한 삭제
+    // 문자군"으로 읽혀 통과한다. 짝이 안 맞는 따옴표는 안전으로 치지 않고 막는 쪽으로 떨어뜨린다.
+    const del = /^-d\s+(?:'([^']*)'|"([^"]*)"|([^'"\s]+))\s*$/.exec(args);
     const set = del && (del[1] != null ? del[1] : del[2] != null ? del[2] : del[3]);
     if (set != null && TR_SAFE_DELETE.test(set)) continue;
-    const two = /^(?:'([^']*)'|"([^"]*)"|(\S+))\s+(?:'[^']*'|"[^"]*"|\S+)\s*$/.exec(args);
+    // 아래 `two` 쪽 좁힘은 **모양을 맞춘 것**이고 현재 판정에는 영향이 없다 — `TR_SAFE_FROM` 이
+    // 공백과 `\n`·`\r`·`\t` 만 허용해 따옴표를 애초에 거부한다. 실제 봉합은 위 `del` 쪽이다.
+    const two = /^(?:'([^']*)'|"([^"]*)"|([^'"\s]+))\s+(?:'[^']*'|"[^"]*"|\S+)\s*$/.exec(args);
     const from = two && (two[1] != null ? two[1] : two[2] != null ? two[2] : two[3]);
     if (from != null && TR_SAFE_FROM.test(from)) continue;
     return true;
@@ -568,6 +582,25 @@ function isCodeTarget(p) {
   if (isScratchPath(s)) return false;        // 임시·스크래치는 어느 diff에도 안 들어감
   return true;
 }
+// 계획서 편집이 **진행 표시 토글뿐**인가(2026-08-10 사용자 결정으로 연 예외 하나).
+// 실측: 게이트를 통과한 뒤 체크박스 하나를 체크했더니 13초 만에 리마인더가 다시 떴고, 한 세션에서
+//   그 모양이 8번 반복됐다. 계획이 안 바뀌었는데 재검증을 요구하는 자리라 예외를 뒀다.
+// 범위는 딱 하나다 — Edit 의 old/new 가 `- [ ]` ↔ `- [x]` 차이뿐일 때(대소문자 무관, 그 외는 완전 동일).
+//   Write(문서 통째 교체)는 무엇이 바뀌었는지 알 수 없어 적용 안 한다. MultiEdit·NotebookEdit 도 밖이다.
+// 이 술어는 **재검증 요구만** 끈다(호출부 참조) — "계획서가 있다"는 사실까지 끄면 지난 세션
+//   계획서를 이어받아 체크만 켜는 경우에 리마인더가 통째로 사라진다. 그 계획은 검증을 한 번도
+//   안 받았을 수 있다(2026-08-10 pr-reviewer 가 잡은 자리 — 처음엔 둘을 한 자리에서 껐다).
+// `g` 는 아래 `.replace()` 전용이다(호출마다 위치가 0으로 초기화된다). **`.test()` 로 바꾸지 말 것** —
+// 모듈 전역이라 검사 위치가 호출 사이에 이어져 한 번 걸러 결과가 뒤집힌다.
+const CHECKBOX_MARK_RE = /- \[[ xX]\]/g;
+function isCheckboxToggleOnly(toolName, inp) {
+  if (String(toolName || "") !== "Edit") return false;
+  const o = inp && inp.old_string, n = inp && inp.new_string;
+  if (typeof o !== "string" || typeof n !== "string") return false;
+  // 표식은 표준형(빈 칸)으로 모은다 — 체크 상태만 지우고 나머지 글자는 손대지 않는다.
+  const norm = (s) => s.replace(CHECKBOX_MARK_RE, "- [ ]");
+  return norm(o) === norm(n);
+}
 function planReminderNeeded(objs, toolName, toolInput) {
   if (!EDIT_TOOLS_RE.test(String(toolName || ""))) return false;
   const ti = toolInput || {};
@@ -593,7 +626,24 @@ function planReminderNeeded(objs, toolName, toolInput) {
       const nm = String(b.name || ""); const inp = b.input || {};
       if (EDIT_TOOLS_RE.test(nm)) {
         const p = inp.file_path || inp.notebook_path;
-        if (isPlanDocPath(p)) { planSeen = true; validated = false; codeEdited = false; }
+        // v0.62.0: 계획서 편집이라고 다 무장시키지 않는다. 두 가지를 먼저 뺀다.
+        //   (1) 실패한 호출 — 무장만 문제가 아니라 **이미 받아 둔 게이트 통과 기록까지 지웠다.**
+        //       `erroredIds` 는 바로 아래 plan-validator 판정이 이미 쓰던 잣대인데 여기만 안 댔다.
+        //       ⚠ 두 실패는 사정이 다르다: **쓰기** 실패는 파일이 아예 없고, **편집** 실패는
+        //       파일이 있는데 안 바뀐 것이다(대개 바꿀 문장을 못 찾아서). 지금은 둘 다 통째로
+        //       건너뛰므로, 지난 세션 계획서를 이어받아 첫 편집이 실패하면 그 계획이 미검증인데도
+        //       리마인더가 안 뜬다 — **알고 받아들인 손실**이다(발생 창이 좁다). 테스트로 못 박아
+        //       뒀으니 고칠 땐 그 테스트가 빨개진다. 고친다면 (2)처럼 planSeen 만 켜면 된다.
+        //   (2) 진행 표시 토글뿐인 Edit — 계획이 안 바뀌었는데 재검증을 요구하던 자리.
+        //   (2)는 **재검증 요구만** 끈다. "계획서가 있다"(planSeen)는 사실은 그대로 켠다 —
+        //       한 자리에 겹쳐 두면 지난 세션 계획서를 이어받아 체크만 켜는 경우에 리마인더가
+        //       통째로 사라진다(그 계획은 검증을 한 번도 안 받았을 수 있다).
+        if (isPlanDocPath(p)) {
+          if (!erroredIds.has(String(b.id || ""))) {
+            planSeen = true;
+            if (!isCheckboxToggleOnly(nm, inp)) { validated = false; codeEdited = false; }
+          }
+        }
         else if (planSeen && isCodeTarget(p)) codeEdited = true;
       } else if (/^(Task|Agent)$/.test(nm)) {
         const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
