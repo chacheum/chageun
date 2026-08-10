@@ -15,8 +15,25 @@ const SQL_DESTRUCTIVE = /\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+(TABLE\s+)
 
 // G7 변형 우회 차단: .env(.local 등)를 인코더/슬라이서로 변형해 마스킹을 우회하려는 Bash. 평문 cat은 허용(PostToolUse 마스킹이 처리).
 // example 계열(.env.example|sample|template|dist)은 제외 — collectSecrets 제외 목록과 정합(F4).
-const ENV_REF_RE = /\.env\b(?!\.(?:example|sample|template|dist))/i;
-const ENCODER_RE = /\b(base64|xxd|od|hexdump|rev|tr|fold|cut|dd|uuencode|openssl\s+enc)\b/;
+//
+// ⚠ 판단 기준은 "위험해 보이나"가 아니라 **"마스킹을 우회하나"** 다. 평문 읽기(`cat .env`)가 통과인
+// 규칙에서 키 이름 뽑기를 막으면, 막는 게 아니라 정상 작업만 막는다.
+// **실측 2026-08-10:** 옛 판(낱말만 보는 목록)이 정상 작업을 **91번 오차단**했다. 그중
+//   - 24건은 `.env` 가 파일이 아니었다(`process.env` · `{{range .Config.Env}}`)
+//   - 39건은 `tr` 이 `tr -d '"'` 처럼 값 하나를 다듬는 정상 용법이었다(키 이름 뽑기가 이 규칙이 권하는 행동인데 그걸 막았다)
+//   - 11건은 `git rev-parse` 의 `rev` 처럼 명령이 아닌 자리에서 낱말만 걸렸다
+// 새 판은 같은 91건 중 58건을 풀고, 만든 표본 18건 + `cut` 필드 8종 전부 의도대로 판정한다.
+// **남은 한계(정직):** `-f2-` 처럼 값을 변수에 담는 33건은 여전히 막힌다(값 추출 자체가 이 규칙의 대상).
+// 키 이름을 `tr '\n' ' '` 로 잇는 소수는 안전한 쪽으로 과차단된다.
+
+// (1) `.env` 앞에 낱말 문자가 오면 파일 이름이 아니다 — `process.env` 를 뺀다.
+const ENV_REF_RE = /(?<![A-Za-z0-9_])\.env\b(?!\.(?:example|sample|template|dist))/i;
+// (2) 인코더는 **명령 자리**(줄 처음·파이프·세미콜론·`&`·`(`·`$(` 뒤)에 있을 때만 센다.
+const ENCODER_RE = /(?:^|[|;&(]|\$\(|\n)\s*(?:base64|xxd|od|hexdump|uuencode|rev|fold|dd|openssl\s+enc)\b/;
+// (3) `cut` 은 **값 쪽 필드**를 자를 때만. `-f1`(키 이름)은 통과, `-f2`·`-f12`·`-f1,2`·`-f1-`(끝까지)은 차단.
+const CUT_VALUE_RE = /\bcut\b[^|;&\n]*-f\s*[^\s]*(?:[2-9]|\d{2,}|-)/;
+// (4) `tr` 은 **줄바꿈을 지울 때만**(파일 전체를 한 줄로 이어 마스킹을 무너뜨리는 수법).
+const TR_JOIN_RE = /\btr\b[^|;&\n]*\\[nr]/;
 
 // 되돌리기 불가 배포·퍼블리시 CLI(프리뷰·dry-run 제외). 탈출구는 래퍼(process.env.CHAGEUN_ALLOW_DEPLOY).
 // 한계: git push→자동배포(Vercel/Netlify 깃연동)는 못 잡음 — 텍스트 멈춤규칙 의존(래퍼 메시지에 명시).
@@ -105,7 +122,7 @@ function block(toolName, toolInput) {
     if (RM_RECURSIVE.test(cmd) && RM_DANGER_TARGET.test(cmd)) return "rm-recursive";
     if (isDeploy(cmd)) return "deploy";
     // .env를 인코딩/조각내 마스킹을 우회하려는 시도 차단(G7). 평문 cat/grep은 허용 — PostToolUse 마스킹이 처리.
-    if (ENV_REF_RE.test(cmd) && ENCODER_RE.test(cmd)) return "env-encoder";
+    if (ENV_REF_RE.test(cmd) && (ENCODER_RE.test(cmd) || CUT_VALUE_RE.test(cmd) || TR_JOIN_RE.test(cmd))) return "env-encoder";
     // 파괴적 SQL은 SQL 클라이언트 명령일 때만 검사(커밋 메시지·문자열에 "DROP TABLE"이 들어간
     // 무해한 명령을 오탐하지 않도록).
     if (/\b(psql|mysql|mariadb|sqlite3|mongosh?|clickhouse-client)\b/.test(cmd)) return destructiveSql(cmd);
