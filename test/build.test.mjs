@@ -30,6 +30,8 @@ test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
     assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), s);
   assert.ok(existsSync(join(out, "skills/retrospect/SKILL.md")));
   assert.ok(existsSync(join(out, "skills/retrospect/retrospect-scan.mjs")));
+  // 스킬이 본문에서 부르는 스크립트는 빌드가 함께 옮겨야 한다(안 옮기면 스킬이 없는 파일을 부른다).
+  assert.ok(existsSync(join(out, "skills/product-map/table-to-yaml.mjs")));
   // hooks.json은 Claude env var를 그대로 유지
   assert.match(readFileSync(join(out, "hooks/hooks.json"), "utf8"), /CLAUDE_PLUGIN_ROOT/);
 });
