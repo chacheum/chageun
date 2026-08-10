@@ -4,7 +4,7 @@
 // 그래서 테스트도 "잘 옮겼나"가 아니라 "잃은 게 없나"를 본다.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { convert, toYaml, verify, render } from "../src/skills/product-map/table-to-yaml.mjs";
+import { convert, toYaml, verify, render, assembledIssues } from "../src/skills/product-map/table-to-yaml.mjs";
 
 const HEAD = "| ID | 기능명 | 설명 | 사용자 | 우선순위 | 상태 | 관련 화면 | 비고 |";
 const SEP = "|----|--------|------|--------|----------|------|-----------|------|";
@@ -109,6 +109,57 @@ test("표 영역이 비면 멈춘다 — `기능 0개 · ✅ 이상 없음` 이 
   const { fatal, out } = render(["# x", "", HEAD, SEP, "", "## 뒤"].join("\n"));
   assert.equal(out, null);
   assert.ok(fatal.some((x) => x.includes("기능 행이 0개")), fatal.join(" / "));
+});
+
+test("조립 후 대조는 실제로 실패할 수 있다 — 표 밖 줄을 망가뜨리면 잡는다", () => {
+  // 2026-08-10 2차 리뷰: 앞 판은 끼워 넣은 결과를 끼워 넣기 입력과 비교해 **어떤 입력에서도 실패할 수
+  // 없었다.** 그런데 스킬 문서는 "기계가 본다"고 약속해 사람은 눈으로 안 본다. 그래서 검사를 함수로 빼
+  // 일부러 망가뜨려 본다 — 이 테스트가 통과해야 위 4번째 겹이 검사라고 말할 수 있다.
+  const src = ["머리말", "| ID |", "| F-01 | … |", "꼬리말"];
+  const block = ["```yaml", "features: []", "```"];
+  const base = { src, tableFrom: 1, tableTo: 3, tableAt: 1, block };
+  assert.deepEqual(assembledIssues({ ...base, out: ["머리말", ...block, "꼬리말"].join("\n") }), [], "멀쩡하면 조용하다");
+
+  const dropped = assembledIssues({ ...base, out: ["머리말", ...block].join("\n") });
+  assert.equal(dropped.length, 1);
+  assert.match(dropped[0], /표 밖 줄 수가 원본과 다르다\(2 → 1\)/);
+
+  const changed = assembledIssues({ ...base, out: ["머리말", ...block, "꼬리말이 바뀜"].join("\n") });
+  assert.equal(changed.length, 1);
+  assert.match(changed[0], /표 밖 2번째 줄이 원본과 달라졌다/);
+
+  const badBlock = assembledIssues({ ...base, out: ["머리말", "```yaml", "다른 것", "```", "꼬리말"].join("\n") });
+  assert.equal(badBlock.length, 1);
+  assert.match(badBlock[0], /YAML 블록을 도로 못 꺼냈다/);
+});
+
+test("빈 줄 뒤에 ID 가 어긋난 줄이 와도 표 안으로 보고 멈춘다", () => {
+  // 앞 판은 빈 줄 다음이 **잘 생긴 기능 행**일 때만 표를 이었다. 어긋난 줄이 오면 표가 끝난 줄 알고
+  // 그 아래를 본문으로 넘겼는데, 표 밖 검사는 잘 생긴 행만 찾으므로 아무도 안 봤다(1차 high 의 좁은 통로).
+  const { out, fatal } = render(doc(
+    "| F-01 | 이름 | 설명 | u | 높음 | 완료 | 화면 | 비고 |",
+    "",
+    "| F02 | 두번째 | 설명 | u | 높음 | 완료 | 화면 | 비고 |"));
+  assert.equal(out, null);
+  assert.ok(fatal.some((x) => x.includes("F02")), fatal.join(" / "));
+});
+
+test("행이 `|` 로 안 끝나면 멈춘다 — 마지막 칸이 잘려 사라지는 자리", () => {
+  // 칸이 9개였던 밀린 행이 닫는 `|` 를 잃으면 잘린 뒤 정확히 8칸이 되어 "정상 행"으로 통과한다.
+  // 없어진 조각은 어느 대조도 못 본다 — 이미 아무 데도 없기 때문이다.
+  const { out, fatal } = render(doc("| F-12 | 알림 | 채널 | 빈도 | 사용자 | 높음 | 완료 | 설정 | 후속은 v2"));
+  assert.equal(out, null);
+  assert.ok(fatal.some((x) => x.includes("`|` 로 안 끝난다")), fatal.join(" / "));
+});
+
+test("빈 줄 뒤가 다른 표의 머리·구분선이면 거기서 표가 끝난다", () => {
+  const second = ["| ID | 의심 | 근거 |", "|---|---|---|", "| 3 | 고아 화면 | 링크 없음 |"];
+  const { out, fatal } = render([
+    "# x", "", HEAD, SEP, "| F-01 | 이름 | 설명 | u | 높음 | 완료 | 화면 | 비고 |",
+    "", ...second, "",
+  ].join("\n"));
+  assert.deepEqual(fatal, []);
+  for (const l of second) assert.ok(out.includes(l), `뒤 표가 깨졌다: ${l}`);
 });
 
 test("표 중간의 빈 줄은 기능 행이 다시 이어질 때만 표 안으로 본다", () => {
