@@ -225,8 +225,13 @@ const REASONS_SUBAGENT = {
   // 찾는데 게이트는 본 세션이 띄우므로 서브에이전트 기록엔 흔적이 없다(실측 238 레코드 중 0건) —
   // 그래서 뒤에서 도는 push는 이미 여기서 막힌다. 문제는 사람용 문구가 서브에이전트에게
   // 할 수 없는 둘(게이트 재호출·세션 재시작)을 시켜, 우회를 찾다 시간만 태운다는 것이다.
-  // **차단 조건은 그대로 두고 문구만 바꾼다.**
-  "gate-skip": "차단: push 와 PR 은 본 세션이 합니다. 뒤에서 도는 작업은 검증 게이트를 자기 기록 안에서 증명할 수 없습니다(게이트는 본 세션이 띄웁니다). **게이트를 직접 띄우지 마세요 — 만든 쪽이 자기 검사를 부르면 독립성이 깨집니다.** 커밋까지만 하고, 무엇을 커밋했는지와 브랜치 이름을 상태 보고에 적으세요. 본 세션이 게이트를 돌린 뒤 push 합니다.",
+  // 이 문구가 처음 갈라질 때는 차단 조건이 그대로였는데, v0.64.0 이 조건을 **무조건 차단**으로 바꿨다
+  // (흔적이 생기는 순간 풀리는 조건이라 — 배선은 pretooluse.js §3). 그래서 지금 이 문구가 말하는
+  // "push 와 PR 은 본 세션이 합니다"는 안내가 아니라 기계가 지키는 사실이다.
+  // v0.64.0 리뷰 2회차: 그 대신 **사람용 회복 경로**를 문구 끝에 붙인다. 훅이 본 세션을 서브에이전트로 잘못 보면
+  //   push 를 열 스위치가 하나도 없었는데, 이 저장소는 새 훅이 메인 세션을 오차단해 핫픽스를 두 번 낸
+  //   이력이 있다(v0.42.1~2). 스위치는 훅 프로세스의 환경변수라 서브에이전트가 못 켠다 — 우회로가 아니다.
+  "gate-skip": "차단: push 와 PR 은 본 세션이 합니다. 뒤에서 도는 작업은 검증 게이트를 자기 기록 안에서 증명할 수 없습니다(게이트는 본 세션이 띄웁니다). **게이트를 직접 띄우지 마세요 — 만든 쪽이 자기 검사를 부르면 독립성이 깨집니다.** 커밋까지만 하고, 무엇을 커밋했는지와 브랜치 이름을 상태 보고에 적으세요. 본 세션이 게이트를 돌린 뒤 push 합니다. — **사람에게:** 본 세션에서 이 문구가 떴다면 훅이 세션을 잘못 본 것입니다. `CHAGEUN_ALLOW_SUBAGENT_PUSH=1` 로 세션을 다시 시작하면 이 차단만 열립니다(나머지 게이트 검사는 그대로). 이 스위치는 세션 환경변수라 서브에이전트는 켤 수 없으니, 뒤에서 도는 작업은 우회로로 쓰지 마세요.",
   // v0.64.0 H-2: 위 문구가 "게이트를 직접 띄우지 마세요"라고 말로만 막던 것을 기계로도 막는다.
   //   말로만 두면 서브에이전트가 게이트를 띄워 자기 기록에 흔적을 만들고, 그 흔적으로 자기 push
   //   자물쇠를 푼다. 그래서 이 사유는 **서브에이전트 전용**이다(메인 세션엔 아예 안 걸린다).
@@ -312,6 +317,21 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 //   매핑 실패는 **불인정**(false 유지). 이름 문자열 휴리스틱(`to`에 "pr-reviewer"가 들어있으면 인정)은
 //   일부러 안 넣는다 — 게이트 통과 조건을 문자열로 열면 우회가 쉬워진다.
 //   `description`·`prompt` 내용 추정도 같은 이유로 금지(리뷰 안 거치고 뚫는 길이 된다).
+// v0.64.0 리뷰 2회차 H-1b: 위임을 **스폰 시점**으로만 계상하면 백그라운드에서 순서가 뒤집힌다 —
+//   일꾼 스폰(seq 1) → pr-reviewer 스폰(seq 2) → 그 뒤 일꾼이 파일을 고치고 끝남. 리뷰가 마지막으로
+//   보여 **검사 안 받은 코드가 도장을 달고 push** 된다. 하필 v0.64.0 이 기본으로 만든 순서다.
+//   그래서 **일꾼이 끝난 시점**도 코드 수정으로 센다(finishedImplementerHere).
+//   ⚠ 실측이 처방을 뒤집은 자리다(29개 트랜스크립트 전수): 백그라운드 스폰은 `toolUseResult.agentId`
+//   **완료 레코드를 아예 안 남긴다**(async_launched 134건 ↔ status:"completed" 86건, 교집합 **0건**).
+//   완료 레코드는 앞에 두고 기다린(foreground) 스폰만 남기는데, 그건 스폰과 같은 seq 라 계상해도
+//   값이 안 변한다. 즉 `agentId` 완료 레코드만 보는 판정은 **막으려는 그 순서에서 한 번도 안 켜진다.**
+//   실제 백그라운드 완료 신호는 둘이고, 이 저장소 실측 커버리지는 132/134(98.5%)다:
+//     (a) `<task-notification>` 블록의 `<task-id>`(user 메시지 문자열·배열 text·attachment.prompt)
+//     (b) `TaskOutput` tool_use 의 `input.task_id`
+//   (a) 를 레코드 종류로 안 거르는 이유: 이 판정은 **lastCodeEdit 만 뒤로 민다**(게이트를 닫는 방향).
+//   따옴표에 낀 문구·큐 부기가 섞여 오탐해도 결과는 "재리뷰 한 번 더"라 안전측이고, 반대로 이 문자열을
+//   지어내 게이트를 **여는** 길은 없다. 남는 구멍(정직): 일꾼이 **아직 도는 중**에 push 하면 완료 신호가
+//   없어 스폰 시점 계상만 남는다(실측 미커버 2건이 그 상태였다) — 그 구간은 push 직전 사람 승인이 마지막 방어선.
 // 남는 구멍(정직 · plan-validator high 수용): Task 스폰은 리뷰 절차가 **항상** 돌지만 SendMessage는
 //   **배달만 보장**한다. 그래서 통보성 쪽지 한 통으로도 신선도가 되살아난다. 메시지 내용 검사는 일부러
 //   안 한다 — 실제로 막혔던 메시지가 "변한 게 없으면 APPROVE 유지로 한 줄 확답해줘"였고, 어휘 목록으로
@@ -349,8 +369,7 @@ function hasPrReviewer(objs) {
   for (const o of objs) {
     const m = (o && o.message) || o;
     const c = m && m.content;
-    if (!Array.isArray(c)) continue;
-    for (const b of c) {
+    if (Array.isArray(c)) for (const b of c) {
       if (!b || b.type !== "tool_use") continue;
       seq++;
       const nm = String(b.name || "");
@@ -359,6 +378,10 @@ function hasPrReviewer(objs) {
         const sub = subagentOf(inp);
         if (/pr-reviewer/.test(sub)) lastReview = seq;
         else if (isImplementer(sub)) lastCodeEdit = seq;      // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
+      } else if (nm === "TaskOutput") {
+        // 백그라운드 결과 회수 = 그 일꾼이 끝났다는 두 번째 신호(H-1b (b)).
+        const tid = String(inp.task_id || "");
+        if (tid && isImplementer(String(agentTypeById.get(tid) || ""))) lastCodeEdit = seq;
       } else if (nm === "SendMessage") {
         const to = String(inp.to || inp.recipient || "");
         const type = to ? String(agentTypeById.get(to) || "") : "";
@@ -368,8 +391,44 @@ function hasPrReviewer(objs) {
         if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
       }
     }
+    // 일꾼이 **끝난 시점**(H-1b). 위 content 루프 **뒤**에 둔다 — 한 레코드가 리뷰 스폰과 완료 신호를
+    // 함께 들면 둘이 같은 seq 가 되어 `lastReview > lastCodeEdit` 이 거짓, 즉 막는 쪽으로 떨어진다.
+    // 앞에 두면 같은 상황에서 통과(=여는 쪽)라 방향이 뒤집힌다.
+    if (finishedImplementerHere(o, agentTypeById)) lastCodeEdit = seq;
   }
   return lastReview !== -1 && lastReview > lastCodeEdit;
+}
+
+// 한 레코드에서 "백그라운드 일꾼이 끝났다"를 읽는다(위 hasPrReviewer 머리의 H-1b 절). 순수함수.
+// 반환: 끝난 것이 구현 에이전트면 true. 타입은 호출자가 만든 agentId→type 맵으로만 판정한다
+// (이름 문자열 휴리스틱 금지 — 형제 규칙과 같은 이유).
+function finishedImplementerHere(o, agentTypeById) {
+  if (!o || typeof o !== "object") return false;
+  const typeOf = (id) => String(agentTypeById.get(String(id)) || "");
+  // (0) 앞에 두고 기다린 스폰의 완료 레코드. 실측상 스폰과 같은 seq 라 값이 안 바뀌지만,
+  //     런타임이 백그라운드에도 이 모양을 싣기 시작하는 날을 위해 함께 본다.
+  const tur = o.toolUseResult;
+  if (tur && typeof tur === "object" && tur.agentId && isImplementer(typeOf(tur.agentId))) return true;
+  // (a) <task-notification> 알림. 문자열 content · 배열 content 의 text 블록 · attachment.prompt 셋 다.
+  const m = o.message || o;
+  const c = m && m.content;
+  let txt = "";
+  if (typeof c === "string") txt = c;
+  else if (Array.isArray(c)) {
+    for (const b of c) {
+      if (typeof b === "string") txt += b + "\n";
+      else if (b && typeof b.text === "string") txt += b.text + "\n";
+    }
+  }
+  if (o.attachment && typeof o.attachment.prompt === "string") txt += o.attachment.prompt;
+  if (txt.indexOf("<task-notification>") !== -1) {
+    const re = /<task-id>([^<]+)<\/task-id>/g;
+    let hit;
+    while ((hit = re.exec(txt)) !== null) {
+      if (isImplementer(typeOf(hit[1].trim()))) return true;
+    }
+  }
+  return false;
 }
 
 // P3: git push 감지(게이트 생략 검사용) — git 다음이 플래그류뿐일 때만 push 서브커맨드로 인정
