@@ -170,12 +170,27 @@ const MAX_PARENT_HOPS = 64;             // pid chains are shallow; also a cycle 
 // opts.net: parseSsNet() output, or null/absent when sockets could not be listed.
 // opts.minAgeMs: override MIN_PROCESS_AGE_MS. Only a finite number >= 0 is honoured;
 //   anything else falls back to the default, so a typo can never widen the net.
+//   🛑 The CALLER must reject the empty string before calling: Number("") is 0, not NaN,
+//   so an env var exported with no value would slip through as "no age requirement".
+// opts.onlyUnder: a folder. When set, ONLY processes whose cwd is at or below it are
+//   eligible at all. This is the fence the integration test stands behind — without it
+//   a lowered minAgeMs turns a test run into a machine-wide sweep. Non-string/blank =
+//   no fence (normal operation).
 // Returns [{ pid, reason }] sorted by pid, de-duped, capped. reason: "deleted" | "idle".
 function selectReapableDetailed(procs, ownUid, opts) {
   opts = opts || {};
   const selfPid = opts.selfPid;
   const minAgeMs = Number.isFinite(opts.minAgeMs) && opts.minAgeMs >= 0
     ? opts.minAgeMs : MIN_PROCESS_AGE_MS;
+  const onlyUnder = typeof opts.onlyUnder === "string" ? opts.onlyUnder.trim() : "";
+  // Applies to BOTH branches, not just the idle one: a fence that leaks on any path is
+  // not a fence. The " (deleted)" suffix is stripped so the deleted branch compares the
+  // real folder it used to live in.
+  const insideFence = (p) => {
+    if (!onlyUnder) return true;
+    const cwd = typeof p.cwd === "string" ? p.cwd.replace(/ \(deleted\)$/, "").trim() : "";
+    return cwd ? pathCovers(onlyUnder, cwd) : false;
+  };
   if (!Array.isArray(procs)) return [];
 
   const byPid = new Map();
@@ -279,6 +294,7 @@ function selectReapableDetailed(procs, ownUid, opts) {
 
   for (const p of procs) {
     if (!eligible(p)) continue;
+    if (!insideFence(p)) continue;
     if (!isDevServer(p.comm, p.cmdline)) continue;
     if (isDeleted(p.cwd)) {
       reasons.set(p.pid, "deleted");
