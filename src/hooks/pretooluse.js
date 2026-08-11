@@ -12,6 +12,10 @@ const os = require("os");
 const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
+// ⚠ 이 require 가 실패하면 **PreToolUse 하드 차단 전부가 한꺼번에 꺼진다**(모듈 로드 시점 예외는
+//   아래 stdin 핸들러 밖이라 어떤 try/catch 도 못 잡는다). 배포판에 실리는지는 매니페스트
+//   `components.hooks` 가 정하고, test/build.test.mjs 의 existsSync 한 줄이 그 그물이다.
+const { unknownToolNotice, unknownToolMessage } = require("./tool-ledger-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -573,8 +577,36 @@ process.stdin.on("end", () => {
               additionalContext: "차근 리마인더: 구현 에이전트에 위임하려는데 이번 세션에 chageun:routing 스킬을 아직 로드하지 않았습니다. 규칙상 서브에이전트 위임(병렬 포함) 전 로드가 필수입니다(코어 '모델·실행 라우팅'). 지금 Skill 도구로 로드해 라우팅 표·병렬 위임 규칙을 확인한 뒤 위임하세요.",
             },
           }));
+          // ⚠ v0.65.0 F-29: 이 절이 그동안 이 깃발을 **안 세우고 있었다**(확인함). 세 축이 같은 꼬리에
+          //   알림을 붙이는 판이라 그대로 두면 여기서 stdout 을 쓴 뒤 아래 §4.9 가 **두 번째 write** 를
+          //   내고, 뒤엣것이 무시되거나 JSON 이 깨진다. 깃발 규율은 이 파일의 기존 계약이다(:319 주석).
+          reminderEmitted = true;
         }
       } catch (_) { /* 리마인더 실패는 조용히 무시 */ }
+    }
+
+    // 4.9) 목록 밖 도구 알림(soft · v0.65.0 F-29 층3). **가장 낮은 우선순위** — "그 밖에 할 말이
+    //    없을 때"만 나간다. 상황판(F-27)이 자기 안내를 붙일 때 이 순서를 전제한다.
+    //    🛑 **어떤 경우에도 exit 2 를 내지 않는다.** 모르는 도구를 막으면 판올림마다 사용자 작업이
+    //    멈춘다(이 저장소의 최대 실패 양식은 오차단이다). 자체 try/catch 로 격리해 예외가 무인
+    //    fail-closed catch 로 새지 않게 한다 — 알림 실패가 park 사유가 되면 안 된다.
+    //    🛑 **세션 dedup 을 하지 않는다.** 상태 파일이 없어 못 하기도 하고(결정 1번: 파일 안 만듦),
+    //    안 하는 편이 낫다 — 같은 도구가 다시 쓰이면 다시 알린다. dedup 이 없으니 **소음의 유일한
+    //    방어선은 스폰꼴 열쇠 목록**이고, 그래서 거기서 `code`·`script` 를 뺐다(tool-ledger-core.js).
+    //    비용: 집합 조회 1번. 파일도 트랜스크립트도 안 읽는다.
+    if (!reminderEmitted) {
+      try {
+        const unknown = unknownToolNotice(name, ti);
+        if (unknown && unknown.spawnShaped) {
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              additionalContext: unknownToolMessage(unknown.name),
+            },
+          }));
+          reminderEmitted = true;
+        }
+      } catch (_) { /* 알림 실패가 차단 사유가 되지는 않는다 */ }
     }
   } catch (_) {
     // 무인: 판정 중 예외 = 불확실 = 안전측(park). 유인: 기존대로 fail-open(사람이 백스톱).

@@ -195,6 +195,18 @@ test("F-29 층3: 스폰꼴이 아닌 새 도구와 코드 칸을 든 MCP 도구�
   assert.equal(contextOf(mcp), "", "MCP 도구 이름은 사용자마다 달라 씨앗 목록이 원리적으로 못 따라간다");
 });
 
+test("F-29 층3: 씨앗 목록에 MCP 도구 이름이 하나도 없다", () => {
+  // 씨앗은 **이 하네스가 내는 이름**만 덮는다. MCP 도구 이름은 사용자마다 달라 원리적으로 못 따라가고,
+  //   실기록 census 에서 옮겨 담으면 **공개 플러그인에 이 컴퓨터의 도구 이름이 박힌다.**
+  //   test/identifier-leak.test.mjs 는 픽스처를 보지 이 상수를 안 봐서 이 칸이 따로 필요하다.
+  const { KNOWN_TOOLS } = require(join(HOOKS_DIR, "tool-ledger-core.js"));
+  const mcp = [...KNOWN_TOOLS].filter((n) => n.startsWith("mcp__"));
+  assert.deepEqual(mcp, [], "씨앗은 sdk-tools.d.ts 에서만 뽑는다(census 는 대조용)");
+  assert.ok(KNOWN_TOOLS.has("Read") && KNOWN_TOOLS.has("Edit") && KNOWN_TOOLS.has("Write"),
+    "선언의 스키마 이름(FileRead·FileEdit·FileWrite)이 아니라 실제로 오는 이름을 담아야 한다");
+  assert.ok(!KNOWN_TOOLS.has("FileRead"), "스키마 이름으로 오기 시작하면 그날은 알림이 뜨는 편이 맞다");
+});
+
 // ── Step 6: 사본 없음 불변식 ───────────────────────────────────────────────
 // 🛑 이 칸이 빨개졌을 때 옳은 대응은 **검사를 느슨하게 고치는 것이 아니라** 새로 생긴
 //    정규식 사본을 지우는 것이다. 빨간불을 푸는 가장 쉬운 길이 검사를 넓히는 것이고,
