@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 // R6 (Anthropic 강연 백로그): 게이트 모델이 조용히 노화해 일꾼보다 약해지는 걸 막는다.
 // 설계 의도 = "검토 대상보다 최소 같거나 강한 독립 심판". 이 파일 머리의 정적 검사 두 가지:
 //   1. 게이트(plan-validator·pr-reviewer)는 지정된 최상위 모델을 쓴다.
-//   2. 일꾼(code-implementer)은 게이트보다 강한 티어가 아니다(심판≥일꾼).
+//   2. 일꾼(아래 WORKER_AGENTS 전부)은 게이트보다 강한 티어가 아니다(심판≥일꾼).
 // (이 둘이 전부가 아니다 — 아래 `런타임 강등 가드` 블록에 등급 순서 불변식·하한 래칫·호출 파라미터
 //  강등 차단이 더 있다. 여기만 읽고 "이 파일은 frontmatter만 본다"로 넘기면 사본이 또 늘어난다.)
 // 테스트가 볼 수 없는 것: 살아있는 메인 세션 모델(어떤 테스트도 이걸 못 읽는다). 사용자가 게이트 티어 위
@@ -53,13 +53,21 @@ test("게이트(plan-validator·pr-reviewer)는 최상위 모델을 쓴다 — R
   }
 });
 
-test("일꾼(code-implementer)은 게이트보다 강한 티어가 아니다 — 심판≥일꾼", () => {
-  const worker = modelOf("code-implementer.md");
-  assert.ok(TIER[worker], `code-implementer 모델 '${worker}'이 TIER 표에 없음 — 새 모델이면 TIER에 추가하라`);
-  assert.ok(
-    TIER[worker] <= TIER[TOP_TIER],
-    `code-implementer(${worker})가 게이트(${TOP_TIER})보다 강함 — 심판이 일꾼보다 약함(R6가 막으려는 역전).`
-  );
+// 일꾼 목록은 **배열 한 곳**에 모은다. 예전엔 `modelOf("code-implementer.md")` 한 줄이라 파일 이름이
+// 박혀 있었고, 일꾼이 하나 늘자(`deep-implementer`, v0.64.0) 그 새 일꾼이 검사 밖으로 조용히 빠졌다.
+// 하필 **판단 걸린 일**을 최상위 모델로 맡는 쪽이라, 여기가 뚫리면 심판이 일꾼보다 약해지는
+// 바로 그 역전이 가장 위험한 자리에서 성립한다.
+const WORKER_AGENTS = ["code-implementer.md", "deep-implementer.md"];
+
+test("일꾼(code-implementer·deep-implementer)은 게이트보다 강한 티어가 아니다 — 심판≥일꾼", () => {
+  for (const file of WORKER_AGENTS) {
+    const worker = modelOf(file);
+    assert.ok(TIER[worker], `${file} 모델 '${worker}'이 TIER 표에 없음 — 새 모델이면 TIER에 추가하라`);
+    assert.ok(
+      TIER[worker] <= TIER[TOP_TIER],
+      `심판이 일꾼보다 약함: ${file}(${worker})가 게이트(${TOP_TIER})보다 강함 — R6가 막으려는 역전.`
+    );
+  }
 });
 
 test("lockstep: core 등급표의 게이트 기본 모델 == 각 agent frontmatter의 model:", () => {
