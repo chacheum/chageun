@@ -265,14 +265,34 @@ let raw = "";
 process.stdin.on("data", (d) => { raw += d; });
 process.stdin.on("end", () => {
   const UNATTENDED = process.env.CHAGEUN_UNATTENDED === "1";
+  // 🛑 `name` 선언을 try **밖**으로 올린다(v0.65.0 F-29). 파일 끝 무인 fail-closed catch 가 이 값을
+  //   봐야 하는데, try 안 선언이면 그 자리에서 ReferenceError 가 나고 catch 안에서 난 예외는 아무도
+  //   안 잡아 훅이 비정상 종료한다 — **무인 park 이 통과로 뒤집힌다.** 대입 자리는 아래 그대로 두고
+  //   형도 안 바꾼다(소비자들은 이미 String(name||"") 로 감싸 쓴다).
+  let name;
   try {
     const input = JSON.parse(raw);
-    const name = input.tool_name;
+    name = input.tool_name;
     const ti = input.tool_input || {};
     IS_SUBAGENT = !!input.agent_type;   // v0.42: 사람 전용 탈출구 안내를 서브에이전트에 주지 않기 위함
     // v0.65.0 F-29: 스폰 판정은 **한 곳**에서 한 번만 낸다(사본 금지 · pretooluse-core.js spawnIntent).
     //   null | { kind:"opaque"|"readable", via:"name"|"shape", agentType }. 순수 판정이라 여기서 미리 내도 싸다.
     const spawn = spawnIntent(name, ti);
+
+    // v0.65.0 F-29(결정 3번 · **사용자**가 정했다 2026-08-11): **무인 범위는 안 넓힌다.**
+    //   뜻은 딱 하나다 — 그물을 넓혀 무인에 **새로 도달하게 된** 차단만 무인에서 안 켠다.
+    //   🛑 **기존에 이미 무인에서 돌던 차단을 끄라는 뜻이 아니다.** 그래서 무인 **전용** 판정
+    //   네 곳(§0 STOP·통과표 · §0.5 예산·워치독 · §2 unattendedBlock·u-pr · 파일 끝 바깥 catch)만
+    //   옛 매처 집합 안에서 돈다. 세는 호출 수가 그대로라 **무인 예산 소진 속도가 v0.65.0 전과
+    //   정확히 같다.**
+    //   🛑 **그 밖의 판정은 넓힌 범위 그대로다**(리뷰 격리 · base block · 게이트 모델 · 계획 규모 ·
+    //   게이트 스폰 · **불투명 통로 차단** · 신선도 · 색 · 컴포넌트 · 리마인더). 여기까지 좁히면
+    //   **무인이 유인보다 헐거워진다** — 무인 서브에이전트만 Workflow 를 자유롭게 쓰게 되어
+    //   결정 4번과 정면으로 어긋난다. **무인은 유인보다 느슨해질 수 없다**는 것이 이 저장소의 규율이다.
+    //   🛑 그래서 무인 갈래를 **함수 머리에서 통째로 조기 종료**하는 모양으로 짜지 말 것.
+    //   그렇게 짜도 (가)·(나) 칸과 965건 재생이 전부 초록이라, 그 실수만 잡는 칸을 따로 뒀다:
+    //   test/hook-net.test.mjs 의 무인 (다).
+    const UNATTENDED_SCOPED = UNATTENDED && LEGACY_UNATTENDED_SCOPE.test(String(name || ""));
 
     // 0-pre) 리뷰 에이전트 격리(Claude 서브에이전트 한정 — 순수 문자열·fail-closed).
     //   transcript·fs 접근 없이 훅 초반에 판정. 판정 예외 시 안전측 차단(ra-error). agent_type은
@@ -284,14 +304,16 @@ process.stdin.on("end", () => {
       if (raHit) return deny(raHit, false);
     }
 
-    // 0) 무인 게이트: 정지 요청 or preflight 통과표 없음 → 모든 도구 park(fail-closed).
-    if (UNATTENDED) {
+    // 0) 무인 게이트: 정지 요청 or preflight 통과표 없음 → park(fail-closed).
+    //    v0.65.0: **옛 집합만.** 넓힌 범위에서 돌면 무인 세션이 전보다 자주 멈춘다(사용자가 거부한 방향).
+    if (UNATTENDED_SCOPED) {
       if (stopRequested()) return deny("u-stop", true);
       if (!validPreflightToken()) return deny("u-no-preflight", true);
     }
 
     // 0.5) 무인 예산·워치독: 매 호출 카운트+시각 검사. 초과/헛돎 → park. commit은 진전.
-    if (UNATTENDED) {
+    //    v0.65.0: **옛 집합만** — 세는 호출 수가 그대로라 소진 속도가 v0.65.0 전과 정확히 같다.
+    if (UNATTENDED_SCOPED) {
       const rt = readRuntime();
       if (rt.corrupt) return deny("u-error", true); // 손상 시 시계 리셋 대신 안전 park
       const { state, reason } = budgetStep(rt.state || null, Date.now(), isGitCommit(name, ti), BUDGET);
@@ -413,10 +435,20 @@ process.stdin.on("end", () => {
     //   열어야 할 정당한 경우는 "게이트는 본 세션이 띄운다"로 이미 덮인다.
     //   deny 의 두 번째 인자가 **항상 false** 인 이유는 0-pre(ra-*)와 같다: 이 문구는 무인이냐가 아니라
     //   서브에이전트라는 자리에서 나온 것이라, 무인 park 문구로 바꾸면 무엇이 왜 막혔는지가 사라진다.
-    if (subagentGateSpawn(input.agent_type, name, ti)) return deny("subagent-gate-spawn", false);
+    //   v0.65.0 F-29: 이 판정이 사유를 **두 가지**로 낸다(게이트 스폰 · 불투명 통로). 돌려받은 키를
+    //   그대로 쓴다 — 예전처럼 키를 여기 박아 두면 새 사유를 더해도 문구가 안 갈려서, 막힌 쪽은
+    //   무엇에 막혔는지 모른 채 엉뚱한 회복(게이트를 안 띄우면 되겠지)을 시도한다.
+    {
+      const sgs = subagentGateSpawn(input.agent_type, name, ti);
+      if (sgs) return deny(sgs, false);
+    }
 
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
-    if (UNATTENDED) {
+    //    v0.65.0: **옛 집합만** — "새로 도달한 차단"이 사는 자리가 여기다(u-mcp-write 등).
+    //    표본 쌍으로 재는 이유: `mcp__…__create_branch` 는 옛 매처에 부분일치하고
+    //    `mcp__…__create_file` 은 안 한다. **같은 규칙·다른 도달 여부**라, 예외가 규칙 단위가 아니라
+    //    **도달 단위**로 잡혔다는 증거가 된다(무인 (가)·(나) 칸).
+    if (UNATTENDED_SCOPED) {
       if (isPrCreate(name, ti)) return deny("u-pr", true);
       const uhit = unattendedBlock(name, ti, { worktreeRoot: ctlRoot(), criteriaPath: process.env.CHAGEUN_CRITERIA_FILE });
       if (uhit) return deny(uhit, true);
@@ -546,7 +578,14 @@ process.stdin.on("end", () => {
     }
   } catch (_) {
     // 무인: 판정 중 예외 = 불확실 = 안전측(park). 유인: 기존대로 fail-open(사람이 백스톱).
-    if (UNATTENDED) { process.stderr.write(reasonForUnattended("u-error")); process.exit(2); }
+    // 🛑 v0.65.0: 여기서 조건을 **뒤집어** 적는다. 그냥 `옛 집합.test(name)` 으로 쓰면
+    //   **fail-closed 가 fail-open 으로 뒤집힌다** — 이 catch 가 잡는 **대표 경우가 입력 JSON
+    //   파싱 실패**이고, 그때는 도구 이름이 아예 없다. 빈 이름은 옛 집합에 안 맞아 통과해 버리는데
+    //   **지금은 park 하는 자리**다. 규칙 한 문장: **"도구 이름을 못 읽었으면 옛 집합에 있는 것으로 본다."**
+    //   검사 = test/hook-net.test.mjs 의 무인 (라).
+    if (UNATTENDED && (!name || LEGACY_UNATTENDED_SCOPE.test(String(name)))) {
+      process.stderr.write(reasonForUnattended("u-error")); process.exit(2);
+    }
   }
   process.exit(0);
 });
