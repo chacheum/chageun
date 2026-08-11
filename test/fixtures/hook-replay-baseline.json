@@ -1,0 +1,77 @@
+{
+ "note": "옛 훅(main) 전수 재생 결과. 새 훅이 이 수치와 같아야 한다.",
+ "ref": "7f652a34d17432033a945aeacdd3f5b2ab0a65bc",
+ "sessions": 27,
+ "fixtures": 940,
+ "replayed": 940,
+ "exit0": 940,
+ "exit2": 0,
+ "other": 0,
+ "byTool": {
+  "Read": {
+   "calls": 617,
+   "exit0": 617,
+   "exit2": 0
+  },
+  "Skill": {
+   "calls": 58,
+   "exit0": 58,
+   "exit2": 0
+  },
+  "SendMessage": {
+   "calls": 109,
+   "exit0": 109,
+   "exit2": 0
+  },
+  "AskUserQuestion": {
+   "calls": 51,
+   "exit0": 51,
+   "exit2": 0
+  },
+  "ToolSearch": {
+   "calls": 38,
+   "exit0": 38,
+   "exit2": 0
+  },
+  "WebFetch": {
+   "calls": 32,
+   "exit0": 32,
+   "exit2": 0
+  },
+  "Workflow": {
+   "calls": 3,
+   "exit0": 3,
+   "exit2": 0
+  },
+  "WebSearch": {
+   "calls": 23,
+   "exit0": 23,
+   "exit2": 0
+  },
+  "EnterWorktree": {
+   "calls": 1,
+   "exit0": 1,
+   "exit2": 0
+  },
+  "ExitWorktree": {
+   "calls": 1,
+   "exit0": 1,
+   "exit2": 0
+  },
+  "Artifact": {
+   "calls": 2,
+   "exit0": 2,
+   "exit2": 0
+  },
+  "SendUserFile": {
+   "calls": 4,
+   "exit0": 4,
+   "exit2": 0
+  },
+  "mcp__claude-in-chrome__tabs_context_mcp": {
+   "calls": 1,
+   "exit0": 1,
+   "exit2": 0
+  }
+ }
+}
