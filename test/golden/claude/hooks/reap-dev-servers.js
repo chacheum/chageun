@@ -27,7 +27,9 @@ function readUptimeSec() {
 // Listening/established TCP sockets with their owning pids. null → we could not look,
 // which the core treats as "everything has clients" (so nothing is reaped for idleness).
 // `ss` may sit outside a hook's PATH, hence the explicit fallbacks.
-const SS_PATHS = ["ss", "/usr/sbin/ss", "/sbin/ss", "/usr/bin/ss"];
+// Absolute paths FIRST: this output decides whether a process lives or dies, so a bare
+// name resolved through PATH must not win over the real binary.
+const SS_PATHS = ["/usr/sbin/ss", "/sbin/ss", "/usr/bin/ss", "ss"];
 function readNet() {
   for (const bin of SS_PATHS) {
     try {
@@ -106,24 +108,67 @@ function stillDeleted(pid) {
   } catch (_) { return false; }
 }
 
+// A dev server's command line can carry a token or password as an argument, and this
+// notice goes straight into the session transcript. Reuse the repo's own secret rule
+// rather than inventing a second one. Required lazily and fail-open: a diagnostic line
+// must never be the reason a session start breaks.
+function maskCmd(s) {
+  let isSecret;
+  try { ({ isSecret } = require("./secret-scan-core.js")); } catch (_) { return s; }
+  return String(s).split(/\s+/).map((tok) => {
+    const eq = tok.indexOf("=");
+    const key = eq > 0 ? tok.slice(0, eq) : "";
+    const val = eq > 0 ? tok.slice(eq + 1) : tok;
+    if (!val) return tok;
+    try { if (isSecret(key, val)) return (eq > 0 ? tok.slice(0, eq + 1) : "") + "***"; } catch (_) {}
+    return tok;
+  }).join(" ");
+}
+
+// Blocking pause with no child process and no async — this hook is synchronous by design.
+function sleepSync(ms) {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch (_) {}
+}
+
 function main() {
   if (process.platform !== "linux") return; // /proc semantics assumed (WSL/Linux)
+  // OFF switch, same shape as the repo's other dangerous actions (CHAGEUN_ALLOW_DEPLOY,
+  // CHAGEUN_SKIP_GATE_CHECK, CHAGEUN_SKIP_DESIGN_LINT). This one kills other people's
+  // processes, so it needs an escape hatch more than any of them — a developer who
+  // starts dev servers by hand in a terminal is "ownerless" by our rules and would
+  // otherwise have no way to opt out short of editing the plugin.
+  if (String(process.env.CHAGEUN_SKIP_REAP || "") === "1") return;
 
   let ownUid = null;
   try { if (typeof process.getuid === "function") ownUid = process.getuid(); } catch (_) {}
 
   const uptimeSec = readUptimeSec();
   const procs = scanProc(uptimeSec);
-  const opts = { selfPid: process.pid, net: readNet() };
+  // Age threshold override. Its reason for existing is the integration test: without it
+  // the kill wiring can only be exercised by waiting two hours, so it stayed untested.
+  // Raising it (e.g. 6h) is a safe user knob; lowering it makes the reaper more eager.
+  const minAgeMs = Number(process.env.CHAGEUN_REAP_MIN_AGE_MS);
+  const opts = { selfPid: process.pid, net: readNet(), minAgeMs };
   let targets = selectReapableDetailed(procs, ownUid, opts);
   if (!targets.length) return;
 
-  // A browser tab opened in the second between the socket snapshot and the kill would
-  // make an "idle" verdict wrong, so idle victims must survive a SECOND, fresh socket
-  // reading. (Folder-deleted victims need no such confirmation.)
+  // Idle victims must survive a SECOND socket reading taken after a REAL pause.
+  // 🛑 The pause is the whole point. Before, the two readings sat ~50ms apart (one list
+  // walk), so nothing could happen in between and the "confirmation" confirmed nothing —
+  // a comment claimed it covered a 1-second race it could not reach. A dev client that
+  // dropped its connection and is retrying (sleep/resume, a frozen background tab waking)
+  // typically reconnects within a couple of seconds; this window gives it that chance.
+  // It costs 2s of session start ONLY when something is about to be killed, which is rare.
+  // What it still does NOT cover: a client that stays disconnected — see `noClients`.
+  // (Folder-deleted victims need no such confirmation.)
+  const RECHECK_PAUSE_MS = 2000;
   if (targets.some((t) => t.reason === "idle")) {
+    sleepSync(RECHECK_PAUSE_MS);
     const again = new Set(
-      selectReapableDetailed(procs, ownUid, { selfPid: process.pid, net: readNet() }).map((t) => t.pid)
+      // Same opts as the first pass except for a FRESH socket reading — if the threshold
+      // differed between the two passes the confirmation would be meaningless.
+      selectReapableDetailed(procs, ownUid, { selfPid: process.pid, net: readNet(), minAgeMs })
+        .map((t) => t.pid)
     );
     targets = targets.filter((t) => t.reason === "deleted" || again.has(t.pid));
     if (!targets.length) return;
@@ -141,17 +186,20 @@ function main() {
     // (Fable5 finding 4) include each victim's cmdline and WHY it was picked, so a wrong
     // kill is diagnosable after the fact (the /proc entry is gone once killed).
     // Synchronous write so the notice survives process exit.
-    const why = { deleted: "작업 폴더 삭제됨", idle: "접속 0·주인 세션 없음·2시간+" };
+    // "켜진 지" not "조용한 지": the age is process lifetime, not idle time (see core).
+    const why = { deleted: "작업 폴더 삭제됨", idle: "접속 0·주인 세션 없음·켜진 지 2시간+" };
     const lines = killed.map((t) => {
       const p = byPid.get(t.pid);
-      const cmd = p ? String(p.cmdline || p.comm || "").slice(0, 120) : "";
+      const cmd = p ? maskCmd(String(p.cmdline || p.comm || "")).slice(0, 120) : "";
       return "  [PID " + t.pid + "] " + (why[t.reason] || t.reason) + " — " + cmd;
     });
     try {
       fs.writeSync(
         1,
+        // "회수했습니다" claimed a completed exit we never confirm — SIGTERM is a request.
         "차근: 안 쓰는 개발 서버 " + killed.length +
-        "개를 정리해 메모리를 회수했습니다.\n" + lines.join("\n") + "\n"
+        "개에 정리 신호를 보냈습니다. (끄지 않으려면 CHAGEUN_SKIP_REAP=1)\n" +
+        lines.join("\n") + "\n"
       );
     } catch (_) {}
   }

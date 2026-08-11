@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   isDevServer, isDevLauncher, isDeleted, selectReapable, MAX_KILL,
-  isClaudeSession, parseSsNet, parseStat, ageMsFromStat, selectReapableDetailed, IDLE_MIN_AGE_MS,
+  isClaudeSession, parseSsNet, parseStat, ageMsFromStat, selectReapableDetailed, MIN_PROCESS_AGE_MS,
   pathCovers,
 } = require("../src/hooks/reap-dev-servers-core.js");
 
@@ -212,8 +212,8 @@ test("pathCovers: 세그먼트 경계까지 확인한다", () => {
 });
 
 test("놀고 있는 개발 서버: 2시간이 안 됐으면 안 끈다", () => {
-  assert.deepEqual(pick([vite({ ageMs: IDLE_MIN_AGE_MS - 1 })], { net: net() }), []);
-  assert.deepEqual(pick([vite({ ageMs: IDLE_MIN_AGE_MS })], { net: net() }), [700]);
+  assert.deepEqual(pick([vite({ ageMs: MIN_PROCESS_AGE_MS - 1 })], { net: net() }), []);
+  assert.deepEqual(pick([vite({ ageMs: MIN_PROCESS_AGE_MS })], { net: net() }), [700]);
 });
 
 test("놀고 있는 개발 서버: 나이를 모르면(ageMs 없음) 안 끈다", () => {
@@ -325,4 +325,110 @@ test("parseSsNet: 실제 ss -H -tanp 출력에서 LISTEN·ESTAB 과 pid 를 뽑�
 test("parseSsNet: 한 소켓을 여러 프로세스가 쥐면 전부 센다", () => {
   const line = "LISTEN 0 511 *:3000 *:* users:((\"node\",pid=11,fd=30),(\"node\",pid=12,fd=30))";
   assert.deepEqual(parseSsNet(line).listen, [{ pid: 11, port: 3000 }, { pid: 12, port: 3000 }]);
+});
+
+// ── 통합: 훅 파일을 통째로 돌린다 (선택 → 죽이기 배선) ────────────────────────
+//
+// 위 검사들은 전부 판정 함수(core)만 부른다. 그런데 **위험은 core 에 없다** — 두 번째
+// 접속 확인 · pid 재사용 가드 · `process.kill` 은 지금까지 한 줄도 안 시험됐다.
+// 이 저장소는 "검사는 초록인데 검사와 멈춤 사이 배선이 틀린" 사고를 이미 겪었다.
+// 선례: test/pretooluse.test.mjs 가 훅 파일을 spawnSync 로 통째로 돌린다.
+//
+// 🛑 이 검사는 **진짜 프로세스를 죽인다.** 그래서 희생자를 우리가 직접 만든다 —
+// 임시 폴더에 가짜 vite 를 놓고, 그걸 detached 로 띄워 부모를 init 으로 만든다
+// (그래야 "주인 없음"이 된다). 남의 프로세스는 건드리지 않는다.
+import { spawnSync } from "node:child_process";
+import nfs from "node:fs";
+import nos from "node:os";
+import npath from "node:path";
+import nnet from "node:net";
+
+const HOOK = npath.join(process.cwd(), "src", "hooks", "reap-dev-servers.js");
+const linux = process.platform === "linux";
+
+function runHook(env) {
+  return spawnSync(process.execPath, [HOOK], {
+    encoding: "utf8", timeout: 20000,
+    env: { ...process.env, ...env },
+  });
+}
+
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const waitGone = (pid, ms) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (!alive(pid)) return true; spawnSync("sleep", ["0.1"]); }
+  return !alive(pid);
+};
+
+/** 가짜 개발 서버 하나. 포트를 하나 열고 가만히 있는다. 부모는 init 이 된다. */
+function startVictim() {
+  const dir = nfs.mkdtempSync(npath.join(nos.tmpdir(), "chageun-reap-"));
+  const fake = npath.join(dir, "node_modules", "vite", "bin");
+  nfs.mkdirSync(fake, { recursive: true });
+  const script = npath.join(fake, "vite.js");
+  nfs.writeFileSync(script, "require('net').createServer().listen(0,'127.0.0.1',function(){" +
+    "require('fs').writeFileSync(process.argv[2], String(this.address().port));});" +
+    "setInterval(function(){}, 1e9);\n");
+  const portFile = npath.join(dir, "port");
+  const pidFile = npath.join(dir, "pid");
+  // 🛑 두 번 갈라 낳는다(double fork). `detached: true` 만으로는 **부모가 안 바뀐다** —
+  // 낳은 쪽이 살아 있는 동안 ppid 는 그대로라, 부모 사슬을 타면 검사 프로세스 → 그 위의
+  // claude 세션이 나와 "주인 있음"이 된다. 중간 프로세스를 곧바로 죽여야 init 이 받는다.
+  spawnSync(process.execPath, ["-e",
+    "const cp=require('child_process');const fs=require('fs');" +
+    "const c=cp.spawn(process.argv[1],[process.argv[2],process.argv[3]]," +
+    "{cwd:process.argv[4],detached:true,stdio:'ignore'});c.unref();" +
+    "fs.writeFileSync(process.argv[5],String(c.pid));",
+    process.execPath, script, portFile, dir, pidFile,
+  ], { stdio: "ignore" });
+  const end = Date.now() + 5000;
+  while (Date.now() < end && !nfs.existsSync(portFile)) spawnSync("sleep", ["0.05"]);
+  const port = Number(nfs.readFileSync(portFile, "utf8"));
+  const pid = Number(nfs.readFileSync(pidFile, "utf8"));
+  return { pid, port, dir };
+}
+function cleanup(v) {
+  try { process.kill(v.pid, "SIGKILL"); } catch {}
+  try { nfs.rmSync(v.dir, { recursive: true, force: true }); } catch {}
+}
+
+test("훅 통합: 끄는 스위치가 켜지면 아무것도 안 죽인다", { skip: !linux }, () => {
+  const v = startVictim();
+  try {
+    const r = runHook({ CHAGEUN_SKIP_REAP: "1", CHAGEUN_REAP_MIN_AGE_MS: "0" });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout.trim(), "", "스위치가 켜졌는데 뭔가 출력했다");
+    assert.ok(alive(v.pid), "스위치가 켜졌는데 죽였다");
+  } finally { cleanup(v); }
+});
+
+test("훅 통합: 접속이 붙어 있으면 안 죽인다", { skip: !linux }, async () => {
+  const v = startVictim();
+  const conn = nnet.connect(v.port, "127.0.0.1");
+  try {
+    await new Promise((ok, no) => { conn.once("connect", ok); conn.once("error", no); });
+    const r = runHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" });
+    assert.equal(r.status, 0);
+    assert.ok(alive(v.pid), "붙어 있는 접속이 있는데 죽였다");
+  } finally { conn.destroy(); cleanup(v); }
+});
+
+// 이 한 건이 "실제로 죽는다"를 보는 유일한 검사다. 환경 때문에 판정이 안 서면
+// **조용히 통과시키지 않고** 무엇 때문에 못 봤는지 말하고 실패시킨다.
+test("훅 통합: 주인 없고 접속 없고 문턱을 넘으면 실제로 죽는다", { skip: !linux }, () => {
+  const v = startVictim();
+  let killedIt = false;
+  try {
+    const r = runHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" });
+    assert.equal(r.status, 0);
+    killedIt = waitGone(v.pid, 5000);
+    assert.ok(
+      killedIt,
+      "가짜 개발 서버가 안 죽었다. 배선이 끊겼거나, 이 기계에서 주인 판정이 늘 '주인 있음'으로 " +
+      "떨어지는 것이다(살아 있는 claude 세션의 작업 폴더를 하나라도 못 읽으면 그렇게 된다). " +
+      "훅 출력: " + JSON.stringify(r.stdout.slice(0, 300))
+    );
+    assert.match(r.stdout, /정리 신호를 보냈습니다/);
+    assert.match(r.stdout, /CHAGEUN_SKIP_REAP=1/, "끄는 법을 안내문에 안 적었다");
+  } finally { if (!killedIt) cleanup(v); else { try { nfs.rmSync(v.dir, { recursive: true, force: true }); } catch {} } }
 });
