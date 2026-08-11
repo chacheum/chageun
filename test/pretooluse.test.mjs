@@ -879,6 +879,9 @@ test("H-1b hasPrReviewer: 리뷰 뒤에 일꾼이 끝나면 stale(false) — 백
   }
 });
 
+// ⚠ 정직 고지(리뷰 3회차): 이 검사와 바로 아래 검사는 **finishedImplementerHere 를 통째로 꺼도 초록이다**
+// (실측으로 확인). 둘 다 "막지 말아야 할 것을 막지 않는다"를 지키는 과차단 가드라 그게 정상이고, 그래서
+// 기능이 실제로 일하는지는 증명하지 못한다. 그 증명은 위 stale 검사와 아래 foreground 검사가 한다.
 test("H-1b hasPrReviewer: 일꾼 완료 → 리뷰 순서는 안 막는다(과차단 확인)", () => {
   const objs = [
     BG_SPAWN("tu_1", "chageun:deep-implementer"), BG_LAUNCHED("tu_1", "aWORKER"),
@@ -1004,31 +1007,25 @@ test("H-2 서브에이전트 push·PR: 신선한 리뷰 흔적이 있어도 항�
   assert.equal(call(gitPush, SUB, { ...env, CHAGEUN_SKIP_GATE_CHECK: "1" }).status, 2,
     "사람용 탈출구가 서브에이전트의 push 를 열면 안 된다");
 
-  // v0.64.0 리뷰 2회차: 훅이 본 세션을 서브에이전트로 잘못 보면 push 를 열 스위치가 하나도 없었다.
-  //   이 저장소는 새 훅이 메인 세션을 오차단해 핫픽스를 두 번 낸 이력이 있다(v0.42.1~2).
-  //   전용 스위치를 두되, **자리만 열고 신선도 검사는 그대로 받는다**(SKIP_GATE 재사용과 갈리는 지점).
-  const OPEN = { ...env, CHAGEUN_ALLOW_SUBAGENT_PUSH: "1" };
-  assert.equal(call(gitPush, SUB, OPEN).status, 0, "전용 스위치를 켜도 안 열리면 회복 경로가 없다");
-  const stale = join(dir, "stale.jsonl");
-  writeFileSync(stale, [review, edit].map((o) => JSON.stringify(o)).join("\n") + "\n");  // 리뷰 뒤 수정
-  const r = spawnSync(process.execPath, [HOOK], {
-    input: JSON.stringify({ tool_name: "Bash", tool_input: gitPush, transcript_path: stale, ...SUB }),
-    env: OPEN, encoding: "utf8",
-  });
-  assert.equal(r.status, 2, "스위치가 신선도 검사까지 함께 끄면 안 된다(자리만 여는 스위치)");
-  assert.equal(call(gitPush, SUB, { ...OPEN, CHAGEUN_UNATTENDED: "1" }).status, 2,
-    "무인에서는 켤 사람이 없다 — 스위치를 무시해야 한다");
+  // v0.64.0 리뷰 2회차가 전용 회복 스위치(CHAGEUN_ALLOW_SUBAGENT_PUSH)를 넣었고 **3회차가 뺐다.**
+  //   스위치를 켜면 이 자리가 신선도 검사로 떨어지는데, 그 검사는 게이트 호출이 **실제로 실행됐는지**를
+  //   안 본다 — PreToolUse 가 막은 호출도 트랜스크립트엔 tool_use 로 남아 "리뷰 흔적"이 된다.
+  //   즉 스위치를 켠 세션에서 서브에이전트가 게이트를 부르려다 막히기만 해도 자기 자물쇠가 풀린다.
+  //   이 단언은 **다음 사람이 같은 스위치를 도로 넣는 것**을 잡는다.
+  assert.equal(call(gitPush, SUB, { ...env, CHAGEUN_ALLOW_SUBAGENT_PUSH: "1" }).status, 2,
+    "환경변수 하나로 서브에이전트 push 가 열리면 안 된다(회복 스위치 재도입 금지)");
   rmSync(dir, { recursive: true, force: true });
 });
 
-// 스위치가 있어도 문구가 안 알려주면 못 찾는다. 회복 경로는 **사람에게** 말해야 하고,
-// 서브에이전트에게는 "네가 켤 수 있는 것이 아니다"까지 같이 말해야 우회를 안 찾는다.
-test("H-2 서브에이전트 push 문구에 사람용 회복 경로가 붙어 있다", () => {
+// 문구는 **없는 스위치를 안내하면 안 된다** — 오차단당한 쪽이 켤 수 없는 것을 찾다 시간만 태운다
+// (배포 문구에서 이미 겪은 그것). 대신 회복 수단이 "사람에게 알린다" 하나뿐임을 정확히 적는다.
+test("H-2 서브에이전트 push 문구: 없는 스위치를 안내하지 않고, 사람에게 알리라고 적혀 있다", () => {
   const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
   const msg = reasonFor("gate-skip", true);
-  assert.ok(msg.includes("CHAGEUN_ALLOW_SUBAGENT_PUSH=1"), "회복 스위치 이름이 없으면 못 찾는다");
+  assert.ok(!/CHAGEUN_ALLOW_SUBAGENT_PUSH/.test(msg), "빠진 스위치를 계속 안내하면 막다른 길로 보낸다");
   assert.ok(msg.includes("사람에게"), "누구에게 하는 말인지 없으면 서브에이전트가 자기 지시로 읽는다");
-  assert.ok(/서브에이전트는 켤 수 없/.test(msg), "우회로로 쓰지 말라는 못박음이 있어야 한다");
+  assert.ok(/이 차단을 여는 스위치는 없습니다/.test(msg), "스위치가 없다는 사실이 없으면 우회를 찾는다");
+  assert.ok(/사람에게 알리세요/.test(msg), "회복 경로(사람에게 알린다)가 없으면 막다른 길이다");
 });
 
 // 같은 구멍의 나머지 반쪽: 흔적을 만들지 못하게 게이트 스폰 자체를 막는다.
