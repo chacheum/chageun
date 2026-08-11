@@ -9,7 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, approvedDesignVariant, planScaleBlock, approvedBigPlan } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
 
@@ -400,6 +400,18 @@ process.stdin.on("end", () => {
       }
     }
 
+    // 1.7) 서브에이전트의 게이트 스폰 차단(v0.64.0 H-2). 재료는 1.5와 같지만(Task/Agent + subagent_type)
+    //   **자리는 계획 규모 가드(1.6) 뒤**다. 앞에 두면 서브에이전트의 plan-validator 호출이 여기서
+    //   먼저 끊겨 1.6 의 서브에이전트 갈래(`humanCanApprove` 의 `!IS_SUBAGENT` · REASONS_SUBAGENT의
+    //   "plan-size")가 통째로 도달 불가가 된다 — 그 층은 이 차단이 나중에 느슨해질 때를 위한 백스톱이라
+    //   살려 둔다. 큰 계획을 든 호출은 1.6 이 이미 더 자세히(잰 줄 수까지) 세우고, 나머지 게이트 호출을
+    //   여기서 세운다. 둘 다 "멈추고 본 세션에 BLOCKED 로 올려라"로 끝나 방향이 같다.
+    //   탈출구 없음 — 켤 수 있는 사람이 이 자리에 없고(서브에이전트는 세션 환경변수를 못 만든다),
+    //   열어야 할 정당한 경우는 "게이트는 본 세션이 띄운다"로 이미 덮인다.
+    //   deny 의 두 번째 인자가 **항상 false** 인 이유는 0-pre(ra-*)와 같다: 이 문구는 무인이냐가 아니라
+    //   서브에이전트라는 자리에서 나온 것이라, 무인 park 문구로 바꾸면 무엇이 왜 막혔는지가 사라진다.
+    if (subagentGateSpawn(input.agent_type, name, ti)) return deny("subagent-gate-spawn", false);
+
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
     if (UNATTENDED) {
       if (isPrCreate(name, ti)) return deny("u-pr", true);
@@ -410,6 +422,21 @@ process.stdin.on("end", () => {
     // 3) 게이트 생략 감지(P3: git push 포함 — 무인은 위 2)의 u-push가 선행 차단이라 유인 전용 확장):
     //    무인 모드는 SKIP 탈출구(CHAGEUN_SKIP_GATE_CHECK)를 무시.
     if (isPrCreate(name, ti) || isPush(name, ti)) {
+      // v0.64.0 H-2: 서브에이전트는 **트랜스크립트와 무관하게 항상** 막는다. 전에는 "자기 기록에
+      //   pr-reviewer 흔적이 없어서" 막혔는데, 그건 조건이라 흔적이 생기는 순간 풀린다(스스로 게이트를
+      //   띄우거나, 게이트가 자기 기록에 남는 경로가 생기거나). 이 자리 문구는 이미 "push 와 PR 은 본
+      //   세션이 합니다"라는 조건 없는 단정이니 기계도 조건 없이 만든다.
+      //   사람용 탈출구(CHAGEUN_SKIP_GATE_CHECK)보다 앞에 둔다 — 그 스위치는 "게이트 검사를 건너뛴다"는
+      //   뜻이지 "push 를 뒤에서 돌게 한다"는 뜻이 아니고, 사람은 본 세션에서 그대로 push 할 수 있다.
+      //   v0.64.0 리뷰 2회차가 여기에 전용 회복 스위치(CHAGEUN_ALLOW_SUBAGENT_PUSH)를 넣었고,
+      //   **3회차가 도로 뺐다.** 스위치를 켠 세션에서는 이 자리가 아래 신선도 검사로 떨어지는데,
+      //   그 검사(prReviewerRan)는 게이트 호출이 **실제로 실행됐는지**(tool_result 의 is_error)를 안 본다.
+      //   PreToolUse 가 막은 호출도 트랜스크립트에는 tool_use 로 남는다. 그래서 스위치를 켠 세션에서
+      //   서브에이전트가 (a) 코드를 고치고 (b) 게이트를 부르려다 1.7 에 막히고 (c) 그 막힌 시도가
+      //   "리뷰 흔적"이 되어 (d) push 가 통과한다 — 이 절이 막으려던 바로 그 사고가 되살아난다.
+      //   회복 경로는 스위치가 아니라 **사람**이다(문구 끝 안내: 본 세션인데 이게 떴으면 사람에게 알린다).
+      //   다시 넣으려면 hasPrReviewer 가 is_error 를 보게 하는 일이 **먼저**다.
+      if (IS_SUBAGENT) return deny("gate-skip", UNATTENDED);
       if (UNATTENDED || process.env.CHAGEUN_SKIP_GATE_CHECK !== "1") {
         if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
       }
@@ -494,7 +521,7 @@ process.stdin.on("end", () => {
       } catch (_) { /* 리마인더 실패는 조용히 무시 */ }
     }
 
-    // 4.5) routing 리마인더(soft, batch6): code-implementer 첫 위임 직전 chageun:routing
+    // 4.5) routing 리마인더(soft, batch6): 구현 에이전트 첫 위임 직전 chageun:routing
     //    스킬 미로드 → 리마인더 1회 주입. P1과 동일하게 자체 try/catch로 격리(예외가 무인
     //    fail-closed catch로 새어 park가 되지 않게 — plan-validator medium 반영). needle 조기
     //    탈출은 못 쓴다(부재가 신호) — Agent 스폰은 드물어 전체 파싱 비용 수용.
@@ -505,7 +532,7 @@ process.stdin.on("end", () => {
           process.stdout.write(JSON.stringify({
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
-              additionalContext: "차근 리마인더: code-implementer에 위임하려는데 이번 세션에 chageun:routing 스킬을 아직 로드하지 않았습니다. 규칙상 서브에이전트 위임(병렬 포함) 전 로드가 필수입니다(코어 '모델·실행 라우팅'). 지금 Skill 도구로 로드해 라우팅 표·병렬 위임 규칙을 확인한 뒤 위임하세요.",
+              additionalContext: "차근 리마인더: 구현 에이전트에 위임하려는데 이번 세션에 chageun:routing 스킬을 아직 로드하지 않았습니다. 규칙상 서브에이전트 위임(병렬 포함) 전 로드가 필수입니다(코어 '모델·실행 라우팅'). 지금 Skill 도구로 로드해 라우팅 표·병렬 위임 규칙을 확인한 뒤 위임하세요.",
             },
           }));
         }

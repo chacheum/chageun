@@ -138,7 +138,7 @@ The workflow turns on automatically when a new session starts — no config file
 
 - `rules/operating-rules.md` — 워크플로우 본체(세션 시작 시 자동 적용)
 - `skills/` — referencing(레퍼런스) · product-map(명세+IA) · design-system(디자인 규칙) · monitoring(정기 점검) · security-scan(보안 스캔)
-- `agents/` — plan-validator(계획 게이트) · pr-reviewer(코드 게이트) · code-implementer(기계적 구현)
+- `agents/` — plan-validator(계획 게이트) · pr-reviewer(코드 게이트) · code-implementer(기계적 구현) · deep-implementer(판단 걸린 구현)
 - `hooks/finish-work.js` — 약속-미실행 차단 훅(Stop hook)
 
 ## 라이선스 / License

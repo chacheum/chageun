@@ -221,6 +221,34 @@ function block(toolName, toolInput) {
 const REASONS_SUBAGENT = {
   "plan-size": "차단: 계획서가 3,000줄을 넘습니다. **이 크기가 실패한다는 뜻이 아닙니다** — 이 크기부터는 게이트도 사람도 통으로 못 읽어 **검증 결과를 믿기 어려워 사람이 정합니다**(이 구간에도 잘 끝난 계획이 있습니다). **서브에이전트는 이 승인을 받을 수 없습니다**(화면 질문은 사람만 답합니다). 본 세션에 BLOCKED 로 보고하고 멈추세요 — 보고에 **이 메시지 맨 끝 `잰 파일`의 이름과 줄 수를 그대로 옮기세요**(본 세션은 그 숫자로 일을 쪼갤지 이 크기로 갈지 정합니다).",
   "deploy": "차단(배포는 되돌리기 어려움): **서브에이전트는 배포를 승인할 수 없습니다.** 이 탈출구는 사람이 세션을 시작할 때만 켤 수 있고(명령 앞에 환경변수를 붙여도 안 켜집니다), 운영 배포 승인은 사람이 내릴 판단입니다. 지금 작업을 멈추고(park) 본 세션에 **BLOCKED**로 보고하세요 — 무엇을 배포하려 했는지, 왜 필요한지, 사전 점검에서 확인한 것을 함께 적으세요.",
+  // gate-skip도 같은 모양의 헛돌기다. 신선도 게이트는 **자기 트랜스크립트 안에서** pr-reviewer 흔적을
+  // 찾는데 게이트는 본 세션이 띄우므로 서브에이전트 기록엔 흔적이 없다(실측 238 레코드 중 0건) —
+  // 그래서 뒤에서 도는 push는 이미 여기서 막힌다. 문제는 사람용 문구가 서브에이전트에게
+  // 할 수 없는 둘(게이트 재호출·세션 재시작)을 시켜, 우회를 찾다 시간만 태운다는 것이다.
+  // 이 문구가 처음 갈라질 때는 차단 조건이 그대로였는데, v0.64.0 이 조건을 **무조건 차단**으로 바꿨다
+  // (흔적이 생기는 순간 풀리는 조건이라 — 배선은 pretooluse.js §3). 그래서 지금 이 문구가 말하는
+  // "push 와 PR 은 본 세션이 합니다"는 안내가 아니라 기계가 지키는 사실이다.
+  // v0.64.0 리뷰 2회차가 여기에 **회복 스위치 안내**(CHAGEUN_ALLOW_SUBAGENT_PUSH)를 붙였고, 3회차가 뺐다.
+  //   스위치를 켜면 이 차단이 신선도 검사로 떨어지는데, 그 검사는 게이트 호출이 **실제로 실행됐는지**를
+  //   안 봐서 막힌 호출도 리뷰 흔적으로 세어진다 — 서브에이전트가 자기 자물쇠를 푸는 길이 되살아난다
+  //   (배선 쪽 설명은 pretooluse.js §3). 그래서 **회복 수단은 사람뿐**이고, 문구도 그렇게만 적는다.
+  //   없는 스위치를 안내하면 오차단당한 쪽이 켤 수 없는 것을 찾다 시간만 태운다(deploy 문구에서 겪은 그것).
+  // 리뷰 4회차가 그 끝문장 둘을 고쳤다. **이 stderr 를 읽는 쪽은 차단당한 서브에이전트다**(deny 는
+  //   stderr 로 쓰고 exit 2 로 그 호출을 막는다 — pretooluse.js 의 deny). 그래서 회복 안내는 두 조건을 함께 만족해야 한다.
+  //   (1) **그 상황에서 실제로 열리는 문**이어야 한다. 3회차 문구는 "사람이 본 세션에서 직접 push"라 했는데,
+  //       이 문구가 뜬 상태는 IS_SUBAGENT 무조건 차단이라 본 세션 push 가 같은 차단에 또 걸린다(CHAGEUN_SKIP_GATE_CHECK
+  //       도 이 줄 뒤라 못 연다). 훅은 **Claude 가 부르는 도구 호출**에만 걸리므로, 실제로 되는 길은
+  //       화면 밖 터미널에서 사람이 직접 push 하거나 차근을 잠시 끄는 것 둘뿐이다.
+  //   (2) **읽는 쪽이 따라 할 수 있는 우회를 안내하면 안 된다.** 3회차 문구의 "훅을 고칩니다"는 서브에이전트도
+  //       할 수 있는 일이고(훅은 호출마다 파일에서 새로 읽혀 고치는 즉시 차단이 사라진다), 그 파일은 보통
+  //       프로젝트 트리 밖이라 diff 에도 안 남는다. 유인 서브에이전트엔 PROTECTED 경로 가드가 안 걸린다(무인 전용).
+  //       2회차에 있던 못박음("우회로로 쓰지 마세요")이 3회차에 스위치와 함께 지워졌던 자리라, 못박음과
+  //       그것을 잡는 단언(test/pretooluse.test.mjs 의 "H-2 서브에이전트 push 문구" 검사)을 함께 되살린다.
+  "gate-skip": "차단: push 와 PR 은 본 세션이 합니다. 뒤에서 도는 작업은 검증 게이트를 자기 기록 안에서 증명할 수 없습니다(게이트는 본 세션이 띄웁니다). **게이트를 직접 띄우지 마세요 — 만든 쪽이 자기 검사를 부르면 독립성이 깨집니다.** 커밋까지만 하고, 무엇을 커밋했는지와 브랜치 이름을 상태 보고에 적으세요. 본 세션이 게이트를 돌린 뒤 push 합니다. — **사람에게:** 본 세션에서 이 문구가 떴다면 훅이 세션을 잘못 본 것입니다. **이 차단을 여는 스위치는 없습니다**(있으면 뒤에서 도는 작업이 그 길로 빠져나갑니다). 되는 길은 둘이고 **둘 다 사람이 Claude 화면 밖에서 합니다**: (1) 터미널 창을 따로 열어 거기서 직접 push 합니다 — 이 검사는 Claude 가 실행하는 명령에만 걸립니다 (2) 차근 플러그인을 잠시 끄고(`/plugin` 메뉴) 다시 시도합니다. 같은 세션에서 다시 시키면 여기서 또 막힙니다. — **뒤에서 도는 작업에게:** 바로 위 두 가지는 사람 몫이니 **우회로로 쓰지 마세요.** 훅 파일이나 설정을 고쳐 이 차단을 지우는 것도 같은 우회입니다. 멈추고 사람에게 알리세요.",
+  // v0.64.0 H-2: 위 문구가 "게이트를 직접 띄우지 마세요"라고 말로만 막던 것을 기계로도 막는다.
+  //   말로만 두면 서브에이전트가 게이트를 띄워 자기 기록에 흔적을 만들고, 그 흔적으로 자기 push
+  //   자물쇠를 푼다. 그래서 이 사유는 **서브에이전트 전용**이다(메인 세션엔 아예 안 걸린다).
+  "subagent-gate-spawn": "차단: 검증 게이트(plan-validator·pr-reviewer)는 본 세션이 띄웁니다. 만든 쪽이 자기 검사를 부르면 검사가 아닙니다 — 무엇을 검사할지 스스로 고르게 되고, 그 실행 흔적으로 push 잠금까지 풀립니다. 지금 할 수 있는 것은 둘입니다: (1) 하던 일을 끝내 커밋까지만 하고, 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 검토·판단이 꼭 필요하면 그 자리에서 멈추고 **BLOCKED** 로 보고한다(무엇을 정해야 하는지와 선택지를 함께). 게이트 실행과 push 는 본 세션이 합니다.",
 };
 function reasonFor(key, forSubagent) {
   if (forSubagent && REASONS_SUBAGENT[key]) return REASONS_SUBAGENT[key];
@@ -234,15 +262,23 @@ function isPrCreate(toolName, toolInput) {
 }
 
 // ── routing 리마인더(soft) — batch6 ─────────────────────────────────────────
-// "code-implementer 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
-// 첫 1회만 참(이미 code-implementer 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
+// "구현 에이전트(아래 IMPLEMENTER_AGENTS) 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
+// 첫 1회만 참(이미 일꾼 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
 // 차단이 아니라 리마인더 주입 판정. 게이트(plan-validator/pr-reviewer) 스폰은 대상 아님
 // (게이트 모델은 각 agent frontmatter·라우팅 규칙이 관장). 순수함수(fs 없음).
+//
+// 🛑 이름을 정규식에 박지 않고 **배열 한 곳**에 모은다. 예전엔 `/code-implementer/` 였는데,
+// 일꾼이 하나 늘자 새 에이전트로 위임할 때만 리마인더가 통째로 안 켜졌다 — 하필 판단 걸린
+// 일을 맡는 쪽이라, 이번에 넣은 안전 문장(BLOCKED 계약·push 금지·게이트 재실행)이 가장
+// 필요한 경로에서 안 걸렸다. 정규식에 갈래를 붙이는 방식은 다음 사람이 한쪽만 고쳐도
+// 조용히 통과하므로, 아래 두 자리(스폰 판정·이미-위임 판정)가 **같은 배열**을 쓰게 한다.
+const IMPLEMENTER_AGENTS = ["code-implementer", "deep-implementer"];
+const isImplementer = (who) => IMPLEMENTER_AGENTS.some((n) => String(who).indexOf(n) !== -1);
 const AGENT_TOOLS_RE = /^(Task|Agent)$/;
 function subagentOf(inp) { return String((inp && (inp.subagent_type || inp.agentType || inp.agent_type)) || ""); }
 function routingReminderNeeded(objs, toolName, toolInput) {
   if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return false;
-  if (!/code-implementer/.test(subagentOf(toolInput))) return false;
+  if (!isImplementer(subagentOf(toolInput))) return false;
   if (!Array.isArray(objs)) return false;
   for (const o of objs) {
     const m = (o && o.message) || o; const c = m && m.content;
@@ -251,7 +287,7 @@ function routingReminderNeeded(objs, toolName, toolInput) {
       if (!b || b.type !== "tool_use") continue;
       const nm = String(b.name || "");
       if (nm === "Skill" && /routing/.test(String((b.input && b.input.skill) || ""))) return false; // 로드됨
-      if (AGENT_TOOLS_RE.test(nm) && /code-implementer/.test(subagentOf(b.input))) return false; // 이미 위임 시작(1회 보장)
+      if (AGENT_TOOLS_RE.test(nm) && isImplementer(subagentOf(b.input))) return false; // 이미 위임 시작(1회 보장)
     }
   }
   return true;
@@ -262,6 +298,18 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 // (Edit/Write류, 문서 제외 — isCodeTarget)이 있으면 stale(false): 검토 안 받은 코드가
 // 검토 딱지를 달고 나가지 않게(🙋 합의: 문서 수정은 무효화 안 함 · 재검토 1회 강제 수용).
 // 한계(자인): Bash(sed·리다이렉션)로 고친 파일은 lastCodeEdit에 안 잡힌다 — 얇은 그물. 순수함수(fs 없음).
+// v0.64.0 H-1: **구현 에이전트 스폰도 코드 수정으로 센다.** 구현을 서브에이전트에 맡기면 메인
+//   기록엔 Task 한 줄만 남아 Edit/Write 가 0 이 되고, 리뷰 뒤에 파일이 바뀌어도 push 가 그대로
+//   통과했다(v0.64.0 이 그 위임을 **기본 경로**로 만들었으므로 반드시 닫아야 하는 자리다).
+//   판정은 위 `isImplementer`(IMPLEMENTER_AGENTS 배열) 한 곳을 공유한다 — 정규식에 이름을 박으면
+//   일꾼이 늘 때 한쪽만 고쳐져 조용히 통과한다(같은 사고가 라우팅 리마인더에서 이미 났다).
+//   이어부르기(SendMessage)도 같이 센다: 백그라운드 일꾼에게 "이것도 고쳐줘"를 보내면 파일이 바뀐다.
+//   맞바꾼 것(합의): **아무것도 안 고친 위임 뒤에도 재리뷰가 강제된다.** 스폰 시점 계상이라
+//   결과를 안 보기 때문이다(바로 아래 '남는 구멍'의 Task 스폰 계상과 같은 방향). 이 파일은 같은
+//   종류의 과차단(문서 수정 뒤 재검토 1회)을 이미 합의로 수용했다.
+//   좁힘(정직): 일꾼 이름 목록 **밖**의 에이전트(general-purpose·Explore 등)로 고친 것은 안 잡힌다.
+//   탐색·조사 위임은 읽기 전용이고 흔해서, 모든 스폰을 코드 수정으로 세면 정상 작업이 재리뷰를
+//   반복한다. 위 Bash 자인과 같은 등급의 얇은 그물이다.
 // v0.43.1: `SendMessage`로 같은 게이트를 이어 불러 재검토한 것도 리뷰 흔적으로 인정한다.
 //   그 전엔 Task/Agent 스폰만 세서, 재검토를 했는데도 "리뷰 없음"으로 **정당한 push가 두 번 막혔다**
 //   (2026-08-02 v0.42.0·v0.42.2). SendMessage의 input엔 subagent_type이 없고 대상 id(`to`)만 있다.
@@ -282,6 +330,25 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 //   매핑 실패는 **불인정**(false 유지). 이름 문자열 휴리스틱(`to`에 "pr-reviewer"가 들어있으면 인정)은
 //   일부러 안 넣는다 — 게이트 통과 조건을 문자열로 열면 우회가 쉬워진다.
 //   `description`·`prompt` 내용 추정도 같은 이유로 금지(리뷰 안 거치고 뚫는 길이 된다).
+// v0.64.0 리뷰 2회차 H-1b: 위임을 **스폰 시점**으로만 계상하면 백그라운드에서 순서가 뒤집힌다 —
+//   일꾼 스폰(seq 1) → pr-reviewer 스폰(seq 2) → 그 뒤 일꾼이 파일을 고치고 끝남. 리뷰가 마지막으로
+//   보여 **검사 안 받은 코드가 도장을 달고 push** 된다. 하필 v0.64.0 이 기본으로 만든 순서다.
+//   그래서 **일꾼이 끝난 시점**도 코드 수정으로 센다(finishedImplementerHere).
+//   ⚠ 실측이 처방을 뒤집은 자리다(29개 트랜스크립트 전수): 백그라운드 스폰은 `toolUseResult.agentId`
+//   **완료 레코드를 아예 안 남긴다**. 근거는 **전부 백그라운드로 띄운 세션 4개**다 — 그 세션들의
+//   `agentId` 레코드는 전부 `status:"async_launched"` 이고 개수가 스폰 수와 같으며(98/99·16/16·1/1·1/1),
+//   `status:"completed"` 레코드는 **0건**이다(섞인 세션에서도 completed 수 = foreground 스폰 수).
+//   ⚠ 옛 근거였던 "async_launched 134 ↔ completed 86, 교집합 0건"은 **아무것도 증명하지 않는다**
+//   (서로 다른 종류의 레코드를 겹쳐 본 셈 — 애초에 겹칠 수 없다). 결론은 같지만 근거를 바꿔 적는다.
+//   완료 레코드는 앞에 두고 기다린(foreground) 스폰만 남기는데, 그건 스폰과 같은 seq 라 계상해도
+//   값이 안 변한다. 즉 `agentId` 완료 레코드만 보는 판정은 **막으려는 그 순서에서 한 번도 안 켜진다.**
+//   실제 백그라운드 완료 신호는 둘이고, 이 저장소 실측 커버리지는 132/134(98.5%)다:
+//     (a) `<task-notification>` 블록의 `<task-id>`(user 메시지 문자열·배열 text·attachment.prompt)
+//     (b) `TaskOutput` tool_use 의 `input.task_id`
+//   (a) 를 레코드 종류로 안 거르는 이유: 이 판정은 **lastCodeEdit 만 뒤로 민다**(게이트를 닫는 방향).
+//   따옴표에 낀 문구·큐 부기가 섞여 오탐해도 결과는 "재리뷰 한 번 더"라 안전측이고, 반대로 이 문자열을
+//   지어내 게이트를 **여는** 길은 없다. 남는 구멍(정직): 일꾼이 **아직 도는 중**에 push 하면 완료 신호가
+//   없어 스폰 시점 계상만 남는다(실측 미커버 2건이 그 상태였다) — 그 구간은 push 직전 사람 승인이 마지막 방어선.
 // 남는 구멍(정직 · plan-validator high 수용): Task 스폰은 리뷰 절차가 **항상** 돌지만 SendMessage는
 //   **배달만 보장**한다. 그래서 통보성 쪽지 한 통으로도 신선도가 되살아난다. 메시지 내용 검사는 일부러
 //   안 한다 — 실제로 막혔던 메시지가 "변한 게 없으면 APPROVE 유지로 한 줄 확답해줘"였고, 어휘 목록으로
@@ -319,24 +386,68 @@ function hasPrReviewer(objs) {
   for (const o of objs) {
     const m = (o && o.message) || o;
     const c = m && m.content;
-    if (!Array.isArray(c)) continue;
-    for (const b of c) {
+    if (Array.isArray(c)) for (const b of c) {
       if (!b || b.type !== "tool_use") continue;
       seq++;
       const nm = String(b.name || "");
       const inp = b.input || {};
       if (/^(Task|Agent)$/.test(nm)) {
-        const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
+        const sub = subagentOf(inp);
         if (/pr-reviewer/.test(sub)) lastReview = seq;
+        else if (isImplementer(sub)) lastCodeEdit = seq;      // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
+      } else if (nm === "TaskOutput") {
+        // 백그라운드 결과 회수 = 그 일꾼이 끝났다는 두 번째 신호(H-1b (b)).
+        const tid = String(inp.task_id || "");
+        if (tid && isImplementer(String(agentTypeById.get(tid) || ""))) lastCodeEdit = seq;
       } else if (nm === "SendMessage") {
         const to = String(inp.to || inp.recipient || "");
-        if (to && /pr-reviewer/.test(agentTypeById.get(to) || "")) lastReview = seq;
+        const type = to ? String(agentTypeById.get(to) || "") : "";
+        if (/pr-reviewer/.test(type)) lastReview = seq;
+        else if (isImplementer(type)) lastCodeEdit = seq;      // 이어부르기로 더 고치게 시킨 것도 같다
       } else if (EDIT_TOOLS_RE.test(nm)) {
         if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
       }
     }
+    // 일꾼이 **끝난 시점**(H-1b). 위 content 루프 **뒤**에 둔다 — 한 레코드가 리뷰 스폰과 완료 신호를
+    // 함께 들면 둘이 같은 seq 가 되어 `lastReview > lastCodeEdit` 이 거짓, 즉 막는 쪽으로 떨어진다.
+    // 앞에 두면 같은 상황에서 통과(=여는 쪽)라 방향이 뒤집힌다.
+    if (finishedImplementerHere(o, agentTypeById)) lastCodeEdit = seq;
   }
   return lastReview !== -1 && lastReview > lastCodeEdit;
+}
+
+// 한 레코드에서 "백그라운드 일꾼이 끝났다"를 읽는다(위 hasPrReviewer 머리의 H-1b 절). 순수함수.
+// 반환: 끝난 것이 구현 에이전트면 true. 타입은 호출자가 만든 agentId→type 맵으로만 판정한다
+// (이름 문자열 휴리스틱 금지 — 형제 규칙과 같은 이유).
+function finishedImplementerHere(o, agentTypeById) {
+  if (!o || typeof o !== "object") return false;
+  const typeOf = (id) => String(agentTypeById.get(String(id)) || "");
+  // (0) `toolUseResult.agentId` 를 든 레코드. **`status` 를 안 보므로 백그라운드 스폰 순간
+  //     (`async_launched`)에도 켜진다** — 그건 스폰과 같은 seq 라 값이 안 바뀌어 무해하다(정직 고지:
+  //     이 자리는 "완료만" 보지 않는다). 노리는 것은 앞에 두고 기다린 스폰의 완료 레코드이고,
+  //     런타임이 백그라운드에도 완료 레코드를 싣기 시작하는 날 이 줄이 그대로 받는다.
+  const tur = o.toolUseResult;
+  if (tur && typeof tur === "object" && tur.agentId && isImplementer(typeOf(tur.agentId))) return true;
+  // (a) <task-notification> 알림. 문자열 content · 배열 content 의 text 블록 · attachment.prompt 셋 다.
+  const m = o.message || o;
+  const c = m && m.content;
+  let txt = "";
+  if (typeof c === "string") txt = c;
+  else if (Array.isArray(c)) {
+    for (const b of c) {
+      if (typeof b === "string") txt += b + "\n";
+      else if (b && typeof b.text === "string") txt += b.text + "\n";
+    }
+  }
+  if (o.attachment && typeof o.attachment.prompt === "string") txt += o.attachment.prompt;
+  if (txt.indexOf("<task-notification>") !== -1) {
+    const re = /<task-id>([^<]+)<\/task-id>/g;
+    let hit;
+    while ((hit = re.exec(txt)) !== null) {
+      if (isImplementer(typeOf(hit[1].trim()))) return true;
+    }
+  }
+  return false;
 }
 
 // P3: git push 감지(게이트 생략 검사용) — git 다음이 플래그류뿐일 때만 push 서브커맨드로 인정
@@ -1074,6 +1185,21 @@ function gateModelBlock(toolName, toolInput) {
   return a < w ? "gate-model-downgrade" : null;
 }
 
+// v0.64.0 H-2: **서브에이전트는 게이트를 못 띄운다.**
+// 서브에이전트의 push 차단은 원래 "자기 기록에 pr-reviewer 흔적이 없어서" 성립했다. 그러면
+// 서브에이전트가 스스로 pr-reviewer 를 띄우는 순간 흔적이 생겨 자기 자물쇠가 풀린다(래퍼의 push
+// 차단을 조건 없이 만든 것이 반쪽이고, 흔적을 만들 길을 막는 이것이 나머지 반쪽이다).
+// 독립성 근거는 그것과 별개로도 선다 — 만든 쪽이 자기 검사 범위를 고르면 검사가 아니다
+// (routing '위임과 BLOCKED 계약' 5항 · 두 구현 에이전트 계약의 "게이트를 직접 부르지 않는다").
+// 막는 범위는 **게이트 스폰만**이다. 중첩 스폰 전반(조사·탐색 위임)은 텍스트 계약이 막고 여기선 안 센다
+//   — 기계 차단을 넓히면 무엇이 정상 작업인지 판정할 근거가 없다(과차단이 조용한 우회를 부른다).
+// 판정 재료는 도구 이름과 `subagent_type` 뿐이라 fs·트랜스크립트가 필요 없다(순수함수).
+function subagentGateSpawn(agentType, toolName, toolInput) {
+  if (!agentType) return null;                               // 메인 세션은 대상 아님
+  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
+  return gateOf(subagentOf(toolInput)) ? "subagent-gate-spawn" : null;
+}
+
 // 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
 // 질문 문구는 사용자 언어가 달라도 되며, 보이는 키와 두 번째 선택이라는 구조만 고정한다.
 // v0.53.0: 계획 규모 가드도 같은 승인 방식을 쓴다. 키만 다르므로 **본문을 공유 헬퍼로 뽑았다**
@@ -1173,4 +1299,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };

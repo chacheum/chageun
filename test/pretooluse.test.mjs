@@ -530,6 +530,20 @@ test("routing 리마인더: 게이트·다른 서브에이전트 스폰엔 침�
   assert.equal(routingReminderNeeded([], "Task", { subagent_type: "chageun:pr-reviewer" }), false);
   assert.equal(routingReminderNeeded([], "Bash", { command: "ls" }), false, "Agent 도구가 아니면 침묵");
 });
+test("routing 리마인더: deep-implementer 위임에도 켜진다", () => {
+  const spawnDI = { subagent_type: "chageun:deep-implementer", prompt: "구현" };
+  assert.equal(routingReminderNeeded([], "Task", spawnDI), true);
+});
+// 🛑 의도된 침묵이다. 이름을 배열 한 벌로 합쳤으므로, 한 세션에서 code-implementer 를 먼저
+// 띄우면 그 뒤 deep-implementer 위임에는 리마인더가 안 뜬다. "첫 위임 전에만 알린다"(1회 보장)를
+// 지키는 쪽으로 의식하고 고른 절충이고, 이 테스트가 그 의도를 못 박는다 — 없으면 나중에 누가
+// 버그로 보고 뒤집어 매 위임마다 잔소리가 붙는다.
+test("routing 리마인더: code-implementer 를 먼저 띄운 뒤 deep-implementer 는 침묵(1회 보장 · 의도)", () => {
+  const objs = [TU("Task", spawnCI)];
+  const spawnDI = { subagent_type: "chageun:deep-implementer", prompt: "구현" };
+  assert.equal(routingReminderNeeded(objs, "Task", spawnDI), false,
+    "이름 배열이 한 벌이라 두 번째 위임에는 안 뜬다. 잔소리를 막는 쪽으로 고른 절충이다");
+});
 test("routing 리마인더: 다른 스킬 로드는 로드로 안 침(routing만)", () => {
   const objs = [{ message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill: "chageun:finish-check" } }] } }];
   assert.equal(routingReminderNeeded(objs, "Task", spawnCI), true);
@@ -794,6 +808,126 @@ test("S7 hasPrReviewer: 한 묶음에 결과가 둘 이상이면 조인하지 �
   assert.equal(hasPrReviewer(objs), false, "모호한 묶음에서 조인해 게이트가 열렸다");
 });
 
+// ── v0.64.0 H-1: 위임으로 고친 코드도 신선도를 깬다 ──────────────────────────
+// 신선도 판정은 트랜스크립트의 Edit/Write 만 "코드 수정"으로 셌다. 구현을 서브에이전트에
+// 맡기면 메인 기록엔 Task 한 줄만 남아 편집 흔적이 0 이 되고, 리뷰 뒤에 파일이 바뀌어도
+// push 가 통과했다. v0.64.0 이 그 위임을 **기본 경로**로 만들었으므로 스폰 자체를 그 시점의
+// 코드 수정으로 계상한다.
+// 맞바꾼 것(합의): 아무것도 안 고친 위임 뒤에도 재리뷰가 강제된다 — 이 파일이 이미 같은 종류의
+// 과차단(문서 수정 뒤 재검토 1회)을 수용한 전례가 있어 같은 방향으로 받아들인다.
+test("H-1 hasPrReviewer: 리뷰 → 구현 에이전트 스폰 → stale(false)", () => {
+  for (const worker of ["chageun:code-implementer", "deep-implementer", "chageun:deep-implementer"]) {
+    const objs = [
+      TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+      TU("Task", { subagent_type: worker }),
+    ];
+    assert.equal(hasPrReviewer(objs), false,
+      worker + ": 위임분은 메인 기록에 Edit 가 없어 신선도가 스스로 안 깨진다");
+  }
+  // 이어부르기(SendMessage)도 같은 길이다 — 백그라운드 일꾼에게 "더 고쳐줘"를 보내면 파일이 바뀐다.
+  const bg = [
+    BG_SPAWN("tu_1", "chageun:deep-implementer"), BG_LAUNCHED("tu_1", "aWORKER"),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    TU("SendMessage", { to: "aWORKER", message: "이 지적도 고쳐줘" }),
+  ];
+  assert.equal(hasPrReviewer(bg), false, "리뷰 뒤 일꾼에게 보낸 추가 지시가 신선도를 안 깼다");
+});
+
+test("H-1 hasPrReviewer: 리뷰 뒤 아무 일도 없으면 통과(과차단 아님)", () => {
+  const objs = [
+    TU("Task", { subagent_type: "chageun:deep-implementer" }),
+    TU("Edit", { file_path: "src/app.js" }),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "리뷰가 마지막이면 신선하다 — 위임 계상이 리뷰까지 무효화하면 안 된다");
+});
+
+// ── v0.64.0 리뷰 2회차 H-1b: 일꾼이 **끝난 시점**도 코드 수정으로 센다 ────────────────────
+// 스폰 시점만 찍으면 백그라운드에서 순서가 뒤집힌다: 일꾼 스폰(seq 1) → 리뷰 스폰(seq 2) →
+// 그 뒤 일꾼이 파일을 고치고 끝남. 리뷰가 마지막으로 보여 검사 안 받은 코드가 push 된다.
+//
+// ⚠ 아래 레코드 모양은 **실측**이다(2026-08-11, 이 저장소 트랜스크립트 전수). 백그라운드 스폰은
+// `toolUseResult.agentId` 완료 레코드를 **안 남기고**, 실제 완료 신호는 `<task-notification>` 알림과
+// `TaskOutput` 이다. **근거와 세어 본 숫자는 코어 주석 한 곳에만 둔다**(src/hooks/pretooluse-core.js 의
+// hasPrReviewer 위) — 여기에 옮겨 적지 않는다. 옛 근거였던 "async_launched 134 ↔ completed 86,
+// 교집합 0건"은 코어 주석에서 **철회**됐는데(서로 겹칠 수 없는 두 종류를 겹쳐 본 셈) 이 자리에만
+// 남아, 한 저장소가 같은 숫자를 두고 서로 다른 말을 했다(리뷰 4회차 지적).
+// 모양을 손으로 지어내면 이 검사는 배선만 증명하고 진짜 구멍은 그대로 열린다.
+const BG_NOTIFY_ATTACH = (agentId, status = "completed") => ({
+  type: "attachment",
+  attachment: { type: "queued_command", prompt:
+    `<task-notification>\n<task-id>${agentId}</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n`
+    + `<status>${status}</status>\n<summary>Agent "일꾼" finished</summary>\n</task-notification>` },
+});
+const BG_NOTIFY_TEXT = (agentId) => ({ type: "user", message: { role: "user",
+  content: `<task-notification>\n<task-id>${agentId}</task-id>\n<status>completed</status>\n</task-notification>` } });
+
+test("H-1b hasPrReviewer: 리뷰 뒤에 일꾼이 끝나면 stale(false) — 백그라운드 실측 신호 3종", () => {
+  const finish = {
+    "알림(attachment)": BG_NOTIFY_ATTACH("aWORKER"),
+    "알림(user 문자열)": BG_NOTIFY_TEXT("aWORKER"),
+    "TaskOutput 회수": TU("TaskOutput", { task_id: "aWORKER", block: true }),
+  };
+  for (const [label, done] of Object.entries(finish)) {
+    const objs = [
+      BG_SPAWN("tu_1", "chageun:deep-implementer"), BG_LAUNCHED("tu_1", "aWORKER"),
+      TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+      done,
+    ];
+    assert.equal(hasPrReviewer(objs), false,
+      label + ": 리뷰 뒤에 끝난 일꾼의 편집이 검사 도장을 달고 나간다");
+  }
+});
+
+// ⚠ 정직 고지(리뷰 3회차): 이 검사와 바로 아래 검사는 **finishedImplementerHere 를 통째로 꺼도 초록이다**
+// (실측으로 확인). 둘 다 "막지 말아야 할 것을 막지 않는다"를 지키는 과차단 가드라 그게 정상이고, 그래서
+// 기능이 실제로 일하는지는 증명하지 못한다. 그 증명은 위 stale 검사와 아래 foreground 검사가 한다.
+test("H-1b hasPrReviewer: 일꾼 완료 → 리뷰 순서는 안 막는다(과차단 확인)", () => {
+  const objs = [
+    BG_SPAWN("tu_1", "chageun:deep-implementer"), BG_LAUNCHED("tu_1", "aWORKER"),
+    BG_NOTIFY_ATTACH("aWORKER"),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "정상 순서(완료 → 리뷰)까지 막으면 재리뷰가 영영 안 끝난다");
+});
+
+// 완료 신호는 **타입 맵**으로만 판정한다. 리뷰어·탐색 에이전트의 완료 알림이 코드 수정으로 세어지면
+// 정상 작업이 매번 재리뷰를 물게 된다(H-1 의 '읽기 위임은 안 깬다'와 같은 좁힘).
+test("H-1b hasPrReviewer: 리뷰어·탐색 에이전트의 완료 알림은 신선도를 안 깬다", () => {
+  const objs = [
+    BG_SPAWN("tu_1", "general-purpose"), BG_LAUNCHED("tu_1", "aSCOUT"),
+    BG_SPAWN("tu_2", "chageun:pr-reviewer"), BG_LAUNCHED("tu_2", "aREVIEWER"),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    BG_NOTIFY_ATTACH("aSCOUT"),
+    BG_NOTIFY_ATTACH("aREVIEWER"),
+    BG_NOTIFY_ATTACH("aUNKNOWN"),           // 맵에 없는 id — 이름 추측으로 열거나 닫지 않는다
+    TU("TaskOutput", { task_id: "aREVIEWER" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "일꾼이 아닌 에이전트의 완료가 신선도를 깼다");
+});
+
+// 앞에 두고 기다린(foreground) 스폰의 완료 레코드도 함께 본다. 실측상 스폰과 같은 seq 라 값이
+// 안 바뀌지만, 런타임이 백그라운드에도 이 모양을 싣기 시작하는 날을 위해 배선해 둔다.
+test("H-1b hasPrReviewer: foreground 완료 레코드도 코드 수정으로 센다", () => {
+  const objs = [
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    AGENT_DONE("aFG", "chageun:code-implementer"),
+  ];
+  assert.equal(hasPrReviewer(objs), false, "리뷰 뒤에 놓인 일꾼 완료 레코드가 안 세어졌다");
+});
+
+// 남는 구멍(정직): 일꾼 이름 목록(IMPLEMENTER_AGENTS) 밖의 에이전트로 코드를 고치면 안 잡힌다.
+// 이 술어는 원래 얇은 그물이다(Bash sed 로 고친 파일도 안 잡힌다는 같은 자인이 core 주석에 있다).
+// 여기서 목록을 "모든 서브에이전트"로 넓히지 않는 이유는 탐색·조사 위임(읽기 전용)이 흔해서다.
+test("H-1 hasPrReviewer: 탐색 위임(읽기)은 신선도를 안 깬다 — 알려진 좁힘", () => {
+  const objs = [
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Task", { subagent_type: "general-purpose" }),
+    TU("Task", { subagent_type: "Explore" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "읽기 위임까지 막으면 정상 작업이 재리뷰를 반복한다");
+});
+
 // ── P3 push 감지 ──
 test("S3 isPush: 순수 삭제 push는 게이트 대상 아님 · 결합 명령은 발동(세그먼트 판정)", () => {
   const p = (command) => isPush("Bash", { command });
@@ -843,6 +977,86 @@ test("push 게이트 wiring: 리뷰 없음·stale → exit 2 / fresh·SKIP env �
   r = spawnSync(process.execPath, [HOOK], { input: push(T([edit])), env: { ...env, CHAGEUN_SKIP_GATE_CHECK: "1" }, encoding: "utf8" });
   rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, "탈출구 유지");
+});
+
+// ── v0.64.0 H-2: 서브에이전트의 push·PR 은 조건 없이 막는다 ──────────────────
+// 전에는 "자기 기록에 pr-reviewer 흔적이 없어서" 막혔다. 그러면 서브에이전트가 스스로
+// pr-reviewer 를 띄우는 순간 흔적이 생겨 자기 자물쇠가 풀린다. 안내 문구는 이미
+// "push 와 PR 은 본 세션이 합니다"라는 조건 없는 단정이라 기계도 조건 없이 만든다.
+test("H-2 서브에이전트 push·PR: 신선한 리뷰 흔적이 있어도 항상 막힌다", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = tmpDir("subagent-push-");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  const review = { message: { role: "assistant", content: [{ type: "tool_use", name: "Task", input: { subagent_type: "chageun:pr-reviewer" } }] } };
+  const edit = { message: { role: "assistant", content: [{ type: "tool_use", name: "Edit", input: { file_path: "src/app.js" } }] } };
+  const tpath = join(dir, "fresh.jsonl");
+  writeFileSync(tpath, [edit, review].map((o) => JSON.stringify(o)).join("\n") + "\n");  // 신선한 리뷰
+  const call = (tool_input, extra, e = env) => spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: "Bash", tool_input, transcript_path: tpath, ...extra }),
+    env: e, encoding: "utf8",
+  });
+  const gitPush = { command: "git push origin main" };
+  const prCreate = { command: "gh pr create --fill" };
+  const SUB = { agent_type: "chageun:deep-implementer" };
+
+  assert.equal(call(gitPush, {}).status, 0, "대조군: 메인 세션은 신선한 리뷰면 통과");
+  const sub = call(gitPush, SUB);
+  assert.equal(sub.status, 2, "서브에이전트가 리뷰 흔적으로 자기 자물쇠를 풀었다");
+  assert.match(sub.stderr, /본 세션/, "서브에이전트용 문구여야 한다");
+  assert.equal(call(prCreate, SUB).status, 2, "PR 생성도 같다");
+  assert.equal(call(gitPush, SUB, { ...env, CHAGEUN_SKIP_GATE_CHECK: "1" }).status, 2,
+    "사람용 탈출구가 서브에이전트의 push 를 열면 안 된다");
+
+  // v0.64.0 리뷰 2회차가 전용 회복 스위치(CHAGEUN_ALLOW_SUBAGENT_PUSH)를 넣었고 **3회차가 뺐다.**
+  //   스위치를 켜면 이 자리가 신선도 검사로 떨어지는데, 그 검사는 게이트 호출이 **실제로 실행됐는지**를
+  //   안 본다 — PreToolUse 가 막은 호출도 트랜스크립트엔 tool_use 로 남아 "리뷰 흔적"이 된다.
+  //   즉 스위치를 켠 세션에서 서브에이전트가 게이트를 부르려다 막히기만 해도 자기 자물쇠가 풀린다.
+  //   이 단언은 **다음 사람이 같은 스위치를 도로 넣는 것**을 잡는다.
+  assert.equal(call(gitPush, SUB, { ...env, CHAGEUN_ALLOW_SUBAGENT_PUSH: "1" }).status, 2,
+    "환경변수 하나로 서브에이전트 push 가 열리면 안 된다(회복 스위치 재도입 금지)");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// 문구는 **없는 스위치를 안내하면 안 된다** — 오차단당한 쪽이 켤 수 없는 것을 찾다 시간만 태운다
+// (배포 문구에서 이미 겪은 그것). 대신 회복 수단이 "사람에게 알린다" 하나뿐임을 정확히 적는다.
+//
+// 리뷰 4회차가 여기에 단언 둘을 더 걸었다. 이 stderr 는 **차단당한 서브에이전트**가 읽는다.
+//  (1) 회복 안내가 **그 상황에서 막혀 있는 문**을 가리키면 안 된다. 3회차 문구의 "사람이 본 세션에서
+//      직접 push"는 IS_SUBAGENT 무조건 차단에 그대로 다시 걸린다(바로 위 검사가 그 사실을 증명한다).
+//      실제로 열리는 문은 화면 밖 터미널과 차근 끄기 둘뿐이라, 그 둘이 문구에 있어야 한다.
+//  (2) **읽는 쪽이 따라 할 수 있는 우회를 안내하면 안 된다.** 훅 파일 편집은 서브에이전트도 할 수 있고
+//      (훅은 호출마다 파일에서 새로 읽힌다) 보통 트리 밖이라 diff 에도 안 남는다 — 기계 가드가 없다.
+//      2회차의 못박음("우회로로 쓰지 마세요")과 그것을 잡던 단언이 3회차에 스위치와 함께 지워졌던 자리다.
+test("H-2 서브에이전트 push 문구: 없는 스위치를 안내하지 않고, 사람에게 알리라고 적혀 있다", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("gate-skip", true);
+  assert.ok(!/CHAGEUN_ALLOW_SUBAGENT_PUSH/.test(msg), "빠진 스위치를 계속 안내하면 막다른 길로 보낸다");
+  assert.ok(msg.includes("사람에게"), "누구에게 하는 말인지 없으면 서브에이전트가 자기 지시로 읽는다");
+  assert.ok(/이 차단을 여는 스위치는 없습니다/.test(msg), "스위치가 없다는 사실이 없으면 우회를 찾는다");
+  assert.ok(/사람에게 알리세요/.test(msg), "회복 경로(사람에게 알린다)가 없으면 막다른 길이다");
+  assert.ok(/우회로로 쓰지 마세요/.test(msg), "우회로로 쓰지 말라는 못박음이 있어야 한다");
+  assert.ok(/훅 파일이나 설정을 고쳐/.test(msg), "훅 편집이 우회라는 못박음이 없으면 그 길이 열려 있다");
+  assert.ok(/Claude 화면 밖에서/.test(msg) && /터미널 창을 따로 열어/.test(msg),
+    "회복 경로가 화면 밖 터미널임을 안 적으면 같은 차단에 다시 걸린다");
+  assert.ok(/차근 플러그인을 잠시 끄고/.test(msg), "두 번째 회복 경로(차근 끄기)가 없으면 길이 하나뿐이다");
+});
+
+// 같은 구멍의 나머지 반쪽: 흔적을 만들지 못하게 게이트 스폰 자체를 막는다.
+test("H-2 서브에이전트는 게이트를 띄우지 못한다(메인은 그대로)", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  const call = (subagent_type, extra) => spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: "Task", tool_input: { subagent_type, prompt: "검토해줘" }, ...extra }),
+    env, encoding: "utf8",
+  });
+  const SUB = { agent_type: "chageun:deep-implementer" };
+  for (const gate of ["pr-reviewer", "chageun:pr-reviewer", "plan-validator", "honclwd:plan-validator"]) {
+    const r = call(gate, SUB);
+    assert.equal(r.status, 2, gate + ": 만든 쪽이 자기 검사를 불렀다");
+    assert.match(r.stderr, /게이트/, "무엇이 막혔는지 알려야 한다");
+    assert.equal(call(gate, {}).status, 0, gate + ": 메인 세션의 게이트 호출까지 막으면 안 된다");
+  }
+  assert.equal(call("chageun:code-implementer", SUB).status, 0, "게이트가 아닌 스폰은 이 규칙 밖(기계 차단은 게이트만)");
 });
 
 // ── P7 무인 egress 차단(외부 데이터 전송) — localhost는 허용, substring 우회 방어 ──
@@ -1160,9 +1374,38 @@ test("배포 차단 문구: 서브에이전트는 켤 수 없는 스위치 대�
 });
 test("배포 차단 문구: 변형이 없는 사유는 기존 문구 그대로(회귀 방지)", () => {
   const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
-  for (const k of ["force-push", "rm-recursive", "gate-skip", "sql-destructive", "ra-bash"]) {
+  // gate-skip은 이 목록에 있었는데 Task 2.6에서 **일부러** 변형을 갖게 됐다(아래 전용 검사로 옮김).
+  // 변형이 생긴 사유를 여기 남겨 두면 "변형 없음"을 뒤집힌 채로 지키는 셈이라 뺀다.
+  for (const k of ["force-push", "rm-recursive", "sql-destructive", "ra-bash"]) {
     assert.equal(reasonFor(k, true), reasonFor(k, false), k + ": 서브에이전트 변형 없음");
   }
+});
+
+// ── Task 2.6: 게이트 미통과 push 문구를 서브에이전트에게는 다르게 준다 ──────────
+// 실측: 신선도 게이트는 **자기 트랜스크립트 안에서** pr-reviewer 실행 흔적을 찾는데, 게이트는
+// 본 세션이 띄우므로 서브에이전트 기록에는 흔적이 없다(238 레코드 중 0건). 그래서 서브에이전트의
+// push는 이미 gate-skip으로 막힌다 — 문제는 그 문구가 사람용이라는 것뿐이다. 사람용 문구는
+// 서브에이전트가 할 수 없는 두 가지를 시킨다: (1) pr-reviewer에게 재검토 요청(서브에이전트는
+// 게이트를 띄우면 안 된다) (2) 세션을 환경변수로 다시 시작(서브에이전트는 세션을 못 만든다).
+// 이때는 차단 조건을 안 건드리고 문구만 갈랐다. **v0.64.0 에서 조건도 바뀌었다** — 트랜스크립트
+// 흔적과 무관하게 서브에이전트의 push·PR 을 무조건 막는다(아래 "H-2" 블록). 그래서 이 블록의
+// 검사 범위는 "문구"이고, "조건은 그대로"는 더 이상 사실이 아니다.
+test("게이트 미통과 push 문구: 메인 세션은 종전 안내 그대로(회귀 방지)", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("gate-skip", false);
+  assert.ok(msg.includes("재검토를 요청"), "사람은 게이트를 다시 띄울 수 있다");
+  assert.ok(msg.includes("CHAGEUN_SKIP_GATE_CHECK=1"), "사람은 세션을 그렇게 시작할 수 있다");
+});
+test("게이트 미통과 push 문구: 서브에이전트는 할 수 없는 일 대신 커밋+보고 지시를 받는다", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("gate-skip", true);
+  assert.notEqual(msg, reasonFor("gate-skip", false), "사람용과 같은 문구면 고친 것이 없다");
+  assert.ok(!msg.includes("CHAGEUN_SKIP_GATE_CHECK=1"), "서브에이전트는 세션을 시작할 수 없다");
+  assert.ok(!msg.includes("재검토를 요청"), "서브에이전트가 게이트를 띄우면 독립성이 깨진다");
+  assert.ok(msg.includes("게이트를 직접 띄우지 마세요"), "하지 말 것을 명시해야 우회를 안 찾는다");
+  assert.ok(msg.includes("커밋"), "실제로 할 수 있는 일(커밋)을 알려야 한다");
+  assert.ok(msg.includes("브랜치"), "본 세션이 이어받으려면 브랜치 이름이 필요하다");
+  assert.ok(/본 세션이 게이트를 돌린 뒤 push/.test(msg), "push는 본 세션 몫임을 못박는다");
 });
 
 // ── F-11: 공용 component 경계의 실제 AskUserQuestion 승인 기록 ─────────────
