@@ -26,6 +26,13 @@ test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
     assert.ok(existsSync(join(out, "agents", a + ".md")), "게이트/일꾼 에이전트 누락: " + a);
   assert.ok(existsSync(join(out, "hooks/finish-work.js")), "Stop 훅 누락");
   assert.ok(existsSync(join(out, "hooks/pretooluse.js")), "PreToolUse 하드블록 누락");
+  // 🛑 이 한 줄이 **유일한 그물**이다(v0.65.0 F-29). pretooluse.js 의 최상위 require 는 **모듈 로드
+  //   시점**에 던지고, 그 예외는 stdin 핸들러 밖이라 파일 안의 어떤 try/catch 도 못 잡는다 —
+  //   매니페스트 복사 목록에서 이 파일이 빠지면 **PreToolUse 하드 차단 전부**(force-push · rm -rf ·
+  //   deploy · env-encoder · gate-skip · 서브에이전트 차단 · 색 · 컴포넌트 · 무인 park)가 한꺼번에
+  //   꺼진다. **소스에서는 초록, 배포판에서만 죽는다.** 골든 트리 비교도 못 잡는다(매니페스트에
+  //   없으면 dist 와 골든에 둘 다 없어 비교가 초록이다).
+  assert.ok(existsSync(join(out, "hooks/tool-ledger-core.js")), "F-29 층3 코어 누락 — 배포판에서 pretooluse.js 가 로드 시점에 죽는다");
   for (const s of ["referencing", "product-map", "design-system", "monitoring", "security-scan"])
     assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), s);
   assert.ok(existsSync(join(out, "skills/retrospect/SKILL.md")));
