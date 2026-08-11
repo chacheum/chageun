@@ -29,6 +29,19 @@ const SECTION_LABELS = [
 
 const MISC_LABELS = ["위험 없음", "달라진 것 N건", "진행 보고", "🙋 확인 필요", "별도 심판 게이트 없음", "동작 검증 안 됨"];
 
+// 안전 tie-break 의 두 축을 각각 앵커한다. 제목 앵커(SECTION_LABELS)는 절이 통째로 사라져야만
+// 반응해서, 문장 안의 안전 조각이 조용히 빠지는 것을 못 잡는다(v0.64.0 이 이 문장을 고치며 발견).
+const TIEBREAK_ANCHORS = [
+  "Safety tie-break",   // 절 안의 그 문장 자체
+  "Never Sonnet",       // 모델 축 바닥. 이게 빠지면 판단 걸린 일이 Sonnet 으로 샌다
+  "report BLOCKED",     // 위임 축 안전판. 이게 빠지면 뒤에서 도는 일이 혼자 정한다
+  "delegated fixes: re-run manually", // 5차 HIGH-1: 위임분 예외. 이게 빠지면 코어가 다시
+                        // "훅이 다 강제한다"로 읽혀, 메인이 검사 안 받은 코드를 그냥 push 한다
+];
+test("안전 tie-break 의 모델 축과 위임 축이 둘 다 살아 있다", () => {
+  for (const s of TIEBREAK_ANCHORS) assert.ok(RULES.includes(s), `누락: ${s}`);
+});
+
 test("훅 seed 한국어 라벨이 규칙에 존재(영어화 후 소실 금지)", () => {
   for (const s of HOOK_SEEDS) assert.ok(RULES.includes(s), `누락: ${s}`);
 });

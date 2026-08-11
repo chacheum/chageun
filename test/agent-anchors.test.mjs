@@ -11,6 +11,7 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 const prReviewer = readFileSync(join(SRC, "agents", "pr-reviewer.md"), "utf8");
 const planValidator = readFileSync(join(SRC, "agents", "plan-validator.md"), "utf8");
 const codeImplementer = readFileSync(join(SRC, "agents", "code-implementer.md"), "utf8");
+const deepImplementer = readFileSync(join(SRC, "agents", "deep-implementer.md"), "utf8");
 
 const PR_MARKERS = [
   "medium만 있고",              // APPROVE 조건 단서(사용자 동의)
@@ -88,6 +89,13 @@ const PV_MARKERS = [
 const CI_MARKERS = [ // code-implementer(감사 지적: 마커 0개 → 표류 못잡음)
   "판단이 중요한 결정",          // 보안·권한·동시성 결정은 직접 처리 말고 에스컬레이션
   "받아쓰지 말고 BLOCKED",       // 백로그 D: 민감면에 안전 결정 빠지면 받아쓰기 금지, 한쪽만 지워지는 표류 방어
+  "push 하지 않는다",            // v0.64.0: push 는 메인 전용. 지워지면 서브가 시간을 태우고 우회를 찾는다
+  "push 전에 메인 세션이 게이트를 다시 돌린다", // v0.64.0 H-2: 위임분은 메인 기록에 안 남아
+                                 // 신선도가 스스로 안 깨진다. 이 줄이 유일한 방어라 지우면 검사 안 받은
+                                 // 코드가 검사 도장을 달고 나간다
+  "시크릿(키·토큰·비밀번호·접속문자열)을 코드·설정에 박지 않는다", // v0.64.0 리뷰 3회차: 코어의 시크릿
+                                 // 규칙은 **본 세션에만** 주입된다 — 형제(deep-implementer)에만 넣고
+                                 // 여기를 빼면 "한 호출부만 고쳐 형제가 남는" 이 저장소 단골 자리가 된다
 ];
 
 test("pr-reviewer 핵심 판정 문구가 살아 있다", () => {
@@ -106,6 +114,53 @@ test("code-implementer 핵심 안전 문구가 살아 있다", () => {
   for (const m of CI_MARKERS) {
     assert.ok(codeImplementer.includes(m), `code-implementer.md에 누락: ${m}`);
   }
+});
+
+const routingSkill = readFileSync(join(SRC, "skills", "routing", "SKILL.md"), "utf8");
+// :18 은 한 줄에 문장이 넷 붙어 있다. 그중 하나만 고치다 줄을 통째로 갈면 나머지가 조용히 사라지는데,
+// routing 스킬 본문을 지키는 검사가 이 저장소에 하나도 없었다(v0.64.0 이 이 줄을 고치며 발견).
+const ROUTING_MARKERS = [
+  "그래서 일꾼 등급으로 내려 부르지 않는다",   // 게이트 모델 바닥. 빠지면 심판이 일꾼 등급으로 내려간다
+  "최종 리뷰는 인라인이 아니라 위의 pr-reviewer 게이트다", // 인라인 자기검토가 게이트를 대신하는 것 방어
+  "`code-implementer`(**Sonnet** 고정)",       // 기계적 구현의 등급 고정
+  // v0.64.0: 이 두 줄은 **문서끼리 어긋났던 자리**다(라우팅은 중첩 스폰을 허용한다고 적고,
+  // deep-implementer 계약은 금지한다고 적었다). 한쪽만 고치면 다시 갈라지므로 앵커로 못 박는다.
+  "중첩 스폰은 안 한다",                        // 게이트 스폰 기계 차단과 같은 방향(텍스트가 더 넓다)
+  "위임 중인 파일은 메인이 인라인으로 건드리지 않는다", // 같은 파일 동시 수정 = 한쪽 편집이 조용히 덮임
+];
+test("routing '누가 무엇을 맡나' 절의 안전 문장이 살아 있다", () => {
+  for (const m of ROUTING_MARKERS)
+    assert.ok(routingSkill.includes(m), `routing/SKILL.md에 누락: ${m}`);
+});
+
+// 서브에이전트 `description` 은 나중에 사용자 화면에 그대로 뜨는 **이름**이라 짧아야 한다.
+// 길면 잘려서 무슨 일이 도는지 안 보인다(실측: `계획서…` · `P…`). 이 줄이 지워지면
+// 다시 개발자용 식별자처럼 길게 짓게 된다.
+test("routing 에 서브에이전트 이름(description) 길이 규칙이 살아 있다", () => {
+  assert.ok(routingSkill.includes("한국어 15자 안쪽"),
+    "routing/SKILL.md에 누락: description 길이 규칙(한국어 15자 안쪽)");
+});
+
+// deep-implementer 는 **판단 걸린 일**을 뒤에서 맡는다. 그래서 code-implementer 와 달리
+// "혼자 정하지 않는다"가 존재 이유이고, 아래 여덟 줄이 그 계약의 전부다.
+const DI_MARKERS = [
+  "model: opus",                       // 최상위 고정. 이게 이 에이전트의 존재 이유다
+  "BLOCKED",                           // 결정 지점에서 멈추는 계약
+  "혼자 정하지 않는다",                  // 판단을 대신 내리지 않는다
+  "게이트를 직접 부르지 않는다",           // 만든 쪽이 자기 검사 범위를 고르지 못하게
+  "push 하지 않는다",                    // push 는 메인 전용
+  "push 전에 메인 세션이 게이트를 다시 돌린다", // 위임분은 메인 기록에 안 남아 신선도가
+                                         // 스스로 안 깨진다. 이 줄이 유일한 방어다
+  "같은 파일을 동시에 건드릴 위험",          // v0.64.0: 백그라운드 동시 편집 경고. code-implementer 에만
+                                         // 있고 여기 빠져 있었다 — 뒤에서 여럿 돌 때 한쪽 편집이 조용히 덮인다
+  "시크릿(키·토큰·비밀번호·접속문자열)을 코드·설정에 박지 않는다", // v0.64.0 리뷰 2회차: 코어의 시크릿 규칙은 **본
+                                         // 세션에만** 주입된다. v0.64.0 이 민감면 구현을 그 규칙이 안 닿는
+                                         // 서브에이전트로 보내므로, 이 줄이 여기서 유일한 방어다
+];
+
+test("deep-implementer 핵심 안전 문구가 살아 있다", () => {
+  for (const m of DI_MARKERS)
+    assert.ok(deepImplementer.includes(m), `deep-implementer.md에 누락: ${m}`);
 });
 
 // 다이어트 가드: 하네스가 자동 주입하는 메모리 설명서 중복이 되돌아오지 않게 한다.
