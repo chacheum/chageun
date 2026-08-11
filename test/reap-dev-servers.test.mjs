@@ -350,9 +350,17 @@ const linux = process.platform === "linux";
 // 나이 조건이 사라져, 울타리가 없으면 이 검사가 **그 기계의 진짜 개발 서버**까지 훑는다
 // (2회차 리뷰가 잡은 구멍 — `npm test` 만 돌려도 남의 서버가 죽을 수 있었다).
 // 울타리는 스프레드 **뒤**에 둔다 — 앞에 두면 env 에 같은 키가 들어올 때 덮인다.
+// 반대로 `CHAGEUN_SKIP_REAP` 중화값은 스프레드 **앞**에 둔다 — 스위치를 일부러 켜는
+// 검사가 이겨야 하기 때문이다. 이게 없으면 README 권고대로 셸에 스위치를 켜 둔 사람이
+// `npm test` 를 돌렸을 때 "실제로 죽는다" 검사가 **엉뚱한 원인을 지목하며** 빨개진다.
 function hookEnv(env, fence) {
-  if (!fence) throw new Error("울타리 없이 훅을 부르지 않는다");
-  return { ...process.env, ...env, CHAGEUN_REAP_ONLY_UNDER: fence };
+  // 있냐만 보면 부족하다. `"/"` 는 pathCovers 규칙상 **울타리가 없는 것과 같고**,
+  // 홈 폴더를 넘기면 문턱 0 과 겹쳐 그 사람의 진짜 개발 서버를 훑는다(2회차 사고 재현).
+  const tmp = nos.tmpdir() + npath.sep;
+  if (!fence || !String(fence).startsWith(tmp)) {
+    throw new Error("울타리는 임시 폴더(" + tmp + ") 아래여야 한다: " + fence);
+  }
+  return { ...process.env, CHAGEUN_SKIP_REAP: "", ...env, CHAGEUN_REAP_ONLY_UNDER: fence };
 }
 function runHook(env, fence) {
   return spawnSync(process.execPath, [HOOK], {
@@ -462,6 +470,7 @@ test("훅 통합: 늦게 붙은 접속도 살린다 (2초 멈춤이 없으면 �
   const v = startVictim();
   let conn = null;
   try {
+    const t0 = Date.now();
     const child = spawnHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" }, v.dir);
     let code = null;
     const done = new Promise((ok) => child.once("exit", (c) => { code = c; ok(); }));
@@ -473,7 +482,16 @@ test("훅 통합: 늦게 붙은 접속도 살린다 (2초 멈춤이 없으면 �
     await new Promise((ok, no) => { conn.once("connect", ok); conn.once("error", no); });
     await done;
     assert.ok(alive(v.pid), "멈춤 뒤 다시 읽었는데도 죽였다 — 두 번째 확인이 안 돈다");
-    assert.equal(code, 0, "훅이 정상 종료하지 않았다(다른 이유로 아무것도 안 골랐을 수 있다)");
+    // 🛑 이 줄이 이 검사의 알맹이다. 위의 "1.1초 뒤에 살아 있나"만으로는 헛통과가 셋 남는다
+    // — 느린 기계에서 첫 패스가 1.1초를 넘기거나, sleepSync 가 실패해 대상이 걸러지거나,
+    // 애초에 아무것도 안 골랐을 때. 셋 다 아무도 안 죽여서 초록으로 지나간다.
+    // 그래서 "살아 있나"가 아니라 **"훅이 2초를 실제로 썼나"** 를 잰다. 멈춤이 없으면
+    // 훅은 0.1초 안에 끝나므로 위 셋이 전부 빨개진다.
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed >= 2000, "훅이 " + elapsed + "ms 만에 끝났다 — 2초 멈춤을 안 썼다는 뜻이다");
+    // 종료코드는 훅 파일이 로드 단계에서 깨졌는지만 본다(main 은 try/catch 로 감싼
+    // fail-open 이라 아무것도 안 골라도 0 이다 — 위 elapsed 가 그쪽을 담당한다).
+    assert.equal(code, 0, "훅 파일이 로드 단계에서 깨졌다");
   } finally { if (conn) conn.destroy(); cleanup(v); }
 });
 
