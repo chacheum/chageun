@@ -530,6 +530,20 @@ test("routing 리마인더: 게이트·다른 서브에이전트 스폰엔 침�
   assert.equal(routingReminderNeeded([], "Task", { subagent_type: "chageun:pr-reviewer" }), false);
   assert.equal(routingReminderNeeded([], "Bash", { command: "ls" }), false, "Agent 도구가 아니면 침묵");
 });
+test("routing 리마인더: deep-implementer 위임에도 켜진다", () => {
+  const spawnDI = { subagent_type: "chageun:deep-implementer", prompt: "구현" };
+  assert.equal(routingReminderNeeded([], "Task", spawnDI), true);
+});
+// 🛑 의도된 침묵이다. 이름을 배열 한 벌로 합쳤으므로, 한 세션에서 code-implementer 를 먼저
+// 띄우면 그 뒤 deep-implementer 위임에는 리마인더가 안 뜬다. "첫 위임 전에만 알린다"(1회 보장)를
+// 지키는 쪽으로 의식하고 고른 절충이고, 이 테스트가 그 의도를 못 박는다 — 없으면 나중에 누가
+// 버그로 보고 뒤집어 매 위임마다 잔소리가 붙는다.
+test("routing 리마인더: code-implementer 를 먼저 띄운 뒤 deep-implementer 는 침묵(1회 보장 · 의도)", () => {
+  const objs = [TU("Task", spawnCI)];
+  const spawnDI = { subagent_type: "chageun:deep-implementer", prompt: "구현" };
+  assert.equal(routingReminderNeeded(objs, "Task", spawnDI), false,
+    "이름 배열이 한 벌이라 두 번째 위임에는 안 뜬다. 잔소리를 막는 쪽으로 고른 절충이다");
+});
 test("routing 리마인더: 다른 스킬 로드는 로드로 안 침(routing만)", () => {
   const objs = [{ message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill: "chageun:finish-check" } }] } }];
   assert.equal(routingReminderNeeded(objs, "Task", spawnCI), true);
