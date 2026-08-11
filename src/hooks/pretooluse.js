@@ -9,7 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
 
@@ -270,6 +270,9 @@ process.stdin.on("end", () => {
     const name = input.tool_name;
     const ti = input.tool_input || {};
     IS_SUBAGENT = !!input.agent_type;   // v0.42: 사람 전용 탈출구 안내를 서브에이전트에 주지 않기 위함
+    // v0.65.0 F-29: 스폰 판정은 **한 곳**에서 한 번만 낸다(사본 금지 · pretooluse-core.js spawnIntent).
+    //   null | { kind:"opaque"|"readable", via:"name"|"shape", agentType }. 순수 판정이라 여기서 미리 내도 싸다.
+    const spawn = spawnIntent(name, ti);
 
     // 0-pre) 리뷰 에이전트 격리(Claude 서브에이전트 한정 — 순수 문자열·fail-closed).
     //   transcript·fs 접근 없이 훅 초반에 판정. 판정 예외 시 안전측 차단(ra-error). agent_type은
@@ -525,7 +528,10 @@ process.stdin.on("end", () => {
     //    스킬 미로드 → 리마인더 1회 주입. P1과 동일하게 자체 try/catch로 격리(예외가 무인
     //    fail-closed catch로 새어 park가 되지 않게 — plan-validator medium 반영). needle 조기
     //    탈출은 못 쓴다(부재가 신호) — Agent 스폰은 드물어 전체 파싱 비용 수용.
-    if (!reminderEmitted && /^(Task|Agent)$/.test(String(name || ""))) {
+    //    v0.65.0: 판정을 spawnIntent 로 옮겼다. **`readable` 일 때만** 이 절에 들어간다 —
+    //    `spawnIntent !== null` 로 적으면 `Workflow` 호출에서도 여기 들어와 트랜스크립트 전체를
+    //    파싱한다(실측 400ms대). 불투명 통로는 무엇을 띄우는지 못 읽으니 라우팅 판정이 성립하지 않는다.
+    if (!reminderEmitted && spawn && spawn.kind === "readable") {
       try {
         const objs = readTranscriptIfMentions(input.transcript_path, "");
         if (objs && routingReminderNeeded(objs, name, ti)) {
