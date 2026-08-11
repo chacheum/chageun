@@ -275,10 +275,66 @@ function isPrCreate(toolName, toolInput) {
 const IMPLEMENTER_AGENTS = ["code-implementer", "deep-implementer"];
 const isImplementer = (who) => IMPLEMENTER_AGENTS.some((n) => String(who).indexOf(n) !== -1);
 const AGENT_TOOLS_RE = /^(Task|Agent)$/;
+// 차근이 **무엇을 띄우는지 못 읽는** 통로. 각본은 문자열 이어붙이기·계산값·외부 파일(scriptPath)·
+//   재개(resumeFromRunId)로 올 수 있어 정적 해석이 못 버틴다. REPL 은 임의 코드에 상태까지 유지된다.
+const OPAQUE_SPAWN_TOOLS_RE = /^(Workflow|REPL)$/;
 function subagentOf(inp) { return String((inp && (inp.subagent_type || inp.agentType || inp.agent_type)) || ""); }
+
+// ── 스폰 판정 단일 출처(v0.65.0 F-29) ───────────────────────────────────────
+// 이 파일은 같은 실패를 이미 겪었다(바로 위 IMPLEMENTER_AGENTS 주석): 판정을 정규식에 박으면
+//   갈래가 늘 때 한쪽만 고쳐져 조용히 통과한다. 그래서 스폰 판정도 **여기 한 곳**에 모은다.
+//   🛑 새로 스폰 판정이 필요하면 정규식을 새로 적지 말고 이 함수를 부르라.
+//
+// 🛑 **판정 순서가 곧 안전이다. opaque 를 먼저 본다.** 두 조건은 겹친다 —
+//   `Workflow({script:"…", agentType:"chageun:pr-reviewer"})` 는 이름으로는 opaque,
+//   입력 칸으로는 readable 이다. readable 이 이기면 **입력 칸 하나로 아래 불변식이 우회되어**
+//   못 읽는 통로가 읽히는 통로 행세를 한다. 이름이 Workflow·REPL 이면 입력에 무엇이 있든 opaque.
+//
+// 🛑 **readable 을 via 로 쪼개는 이유.** `via:"shape"`(입력 칸)는 **아무 도구 이름에나 붙일 수 있다** —
+//   호출하는 쪽이 칸 하나를 얹으면 그만이다. 그래서 성질 판정은 **게이트를 닫는 데만** 쓸 수 있고,
+//   여는 데 쓰면 이름 문자열로 게이트를 여는 것과 위험이 같다. 이 파일이 그 금지를 이미 적어 뒀고
+//   (hasPrReviewer 머리의 "이름 문자열 휴리스틱은 일부러 안 넣는다"), `via` 는 그 금지를
+//   **기계가 셀 수 있는 한 칸**으로 만든 것이다. 불변식은 한 줄이다:
+//   **`lastReview`(게이트를 여는 쓰기)를 미는 것은 `via:"name"` 뿐이고, `via:"shape"` 와 `opaque` 는
+//     `lastCodeEdit`(닫는 방향)에만 쓴다.**
+//   ⚠ 이 문장은 무조건이 아니라 **이 함수가 덮는 범위 안에서만** 참이다. 런타임이 직접 실은
+//     `toolUseResult.agentType` 은 도구 이름을 한 번도 안 거치고 맵에 오른다(hasPrReviewer 1패스) —
+//     그 길은 이 함수 밖이고 v0.65.0 이 만든 것도 아니다.
+//
+// 왜 성질만으로는 안 되나(실측): 이 저장소에서 실제로 관측된 유일한 `Workflow` 호출의 입력은
+//   `{name, args}` 였고 **`script` 칸이 없었다.** 그래서 "입력에 각본이 있으면 스폰"은 실제 표본을
+//   놓친다. `name` 은 너무 흔한 칸이라 신호가 못 된다. 이 문장이 없으면 다음 사람이 이름 목록을
+//   "정리"하다 구멍을 되살린다.
+//
+// 반환: null | { kind:"opaque"|"readable", via:"name"|"shape", agentType }. 순수함수(fs 없음).
+function spawnIntent(toolName, toolInput) {
+  const nm = String(toolName || "");
+  if (OPAQUE_SPAWN_TOOLS_RE.test(nm)) return { kind: "opaque", via: "name", agentType: "" };
+  if (AGENT_TOOLS_RE.test(nm)) return { kind: "readable", via: "name", agentType: subagentOf(toolInput) };
+  // 값이 빈 칸은 스폰으로 안 본다 — 이름을 못 얻으면 어느 소비자도 판정을 못 하고(gateOf·isImplementer
+  //   전부 거짓), 그 상태를 readable 로 올리면 "판정된 스폰"으로 잘못 읽힌다.
+  const shaped = subagentOf(toolInput);
+  return shaped ? { kind: "readable", via: "shape", agentType: shaped } : null;
+}
+
+// 🛑 이것은 정규식 리터럴이 아니라 `hooks.claude.json` **옛 매처 문자열의 복사본**이다(239자).
+//   안의 `Task|Agent` 는 `spawnIntent` 판정과 **무관하다** — 사본 검사(성공 기준 7)의 명시적 예외다.
+// 왜 있나: v0.65.0 이 매처를 `""`(모든 도구)로 넓혔는데, **무인 모드는 안 넓히기로 사용자가 정했다**
+//   (2026-08-11). 넓혀서 **새로 도달하게 된** 차단만 무인에서 안 켜는 것이지, 기존에 무인에서 돌던
+//   차단을 끄라는 뜻이 아니다. 그 차이를 정확히 그 옛 범위로 잡는다.
+// 왜 문자열 + new RegExp 인가: (1) 옛 매처는 **부분일치**로 돌았다 — `^…$` 를 붙이면
+//   `mcp__…__create_branch` 가 `create_branch` 로 걸리던 것이 안 걸려 예외 범위가 뒤바뀐다.
+//   (2) 정규식 리터럴로 적으면 위 사본 검사에 걸린다(이 문자열의 꼬리가 `…|Task|Agent` 다).
+// ⚠ 이 값은 손으로 옮겨 적은 것이 아니라 그 JSON 에서 그대로 복사했다. 한 토큰이 빠지면 예외 범위가
+//   조용히 좁아져 무인 park 이 늘고, 반대로 늘리면 무인이 유인보다 헐거워진다.
+const LEGACY_UNATTENDED_SCOPE = new RegExp("Bash|Write|Edit|MultiEdit|NotebookEdit|execute_sql|apply_migration|deploy_edge_function|delete_branch|create_branch|merge_branch|reset_branch|rebase_branch|restore_project|pause_project|create_project|delete_project|confirm_cost|Task|Agent");
+
 function routingReminderNeeded(objs, toolName, toolInput) {
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return false;
-  if (!isImplementer(subagentOf(toolInput))) return false;
+  // 넓힌 범위에서 `readable` 만 본다(`via` 는 안 가린다 — 리마인더는 게이트를 여는 판정이 아니다).
+  //   불투명 통로는 무엇을 띄우는지 못 읽으니 라우팅 리마인더 판정 자체가 성립하지 않는다.
+  const si = spawnIntent(toolName, toolInput);
+  if (!si || si.kind !== "readable") return false;
+  if (!isImplementer(si.agentType)) return false;
   if (!Array.isArray(objs)) return false;
   for (const o of objs) {
     const m = (o && o.message) || o; const c = m && m.content;
@@ -287,7 +343,8 @@ function routingReminderNeeded(objs, toolName, toolInput) {
       if (!b || b.type !== "tool_use") continue;
       const nm = String(b.name || "");
       if (nm === "Skill" && /routing/.test(String((b.input && b.input.skill) || ""))) return false; // 로드됨
-      if (AGENT_TOOLS_RE.test(nm) && isImplementer(subagentOf(b.input))) return false; // 이미 위임 시작(1회 보장)
+      const prev = spawnIntent(nm, b.input);
+      if (prev && prev.kind === "readable" && isImplementer(prev.agentType)) return false; // 이미 위임 시작(1회 보장)
     }
   }
   return true;
@@ -363,8 +420,15 @@ function hasPrReviewer(objs) {
   for (const o of objs) {
     const c = ((o && o.message) || o || {}).content;
     if (Array.isArray(c)) for (const b of c) {
-      if (b && b.type === "tool_use" && AGENT_TOOLS_RE.test(String(b.name || "")) && b.id) {
-        typeByToolUseId.set(String(b.id), subagentOf(b.input)); // 키 목록은 형제 함수와 한 벌(사본 금지)
+      // 🛑 **이 자리는 v0.65.0 에서 "안 넓히는 것"이 고치는 것이다.** 이 맵은 toolUseResult.agentId 와
+      //   조인돼 SendMessage 로 `lastReview`(게이트를 **여는** 쓰기)까지 이어진다(아래 패스2). 성질
+      //   (`via:"shape"`)까지 올리면 `아무도구({agentType:"chageun:pr-reviewer"})` 한 줄이 쪽지 한 통을
+      //   거쳐 **리뷰 도장**이 된다 — 직접 쓰기만 막으면 이 길이 그대로 남는다.
+      //   ⚑ **이 한 줄이 이번 판의 자물쇠다**: `via:"shape"` 를 남겨 둔 판단이 여기에 기대고 있다.
+      //   회귀 칸 = test/hook-net.test.mjs 의 (d) 와 "1패스 맵은 via:\"name\" 전용이다".
+      const si1 = b && b.type === "tool_use" ? spawnIntent(b.name, b.input) : null;
+      if (si1 && si1.kind === "readable" && si1.via === "name" && b.id) {
+        typeByToolUseId.set(String(b.id), si1.agentType); // 키 목록은 spawnIntent 와 한 벌(사본 금지)
       }
     }
     const tur = o && o.toolUseResult;
@@ -391,11 +455,11 @@ function hasPrReviewer(objs) {
       seq++;
       const nm = String(b.name || "");
       const inp = b.input || {};
-      if (/^(Task|Agent)$/.test(nm)) {
-        const sub = subagentOf(inp);
-        if (/pr-reviewer/.test(sub)) lastReview = seq;
-        else if (isImplementer(sub)) lastCodeEdit = seq;      // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
-      } else if (nm === "TaskOutput") {
+      // ⚠ **아는 도구를 먼저 가른다.** 스폰 판정을 앞에 두면, 아는 도구가 우연히 스폰꼴 칸을 달고 온
+      //   경우(`Edit({file_path, agentType:"x"})`)에 그 도구의 자기 계상(여기서는 isCodeTarget)이
+      //   통째로 건너뛰어진다 — **여는 방향**이다. 이름 집합이 서로 겹치지 않으므로 순서를 바꿔도
+      //   오늘 있는 도구들의 판정은 한 칸도 안 변한다.
+      if (nm === "TaskOutput") {
         // 백그라운드 결과 회수 = 그 일꾼이 끝났다는 두 번째 신호(H-1b (b)).
         const tid = String(inp.task_id || "");
         if (tid && isImplementer(String(agentTypeById.get(tid) || ""))) lastCodeEdit = seq;
@@ -406,6 +470,28 @@ function hasPrReviewer(objs) {
         else if (isImplementer(type)) lastCodeEdit = seq;      // 이어부르기로 더 고치게 시킨 것도 같다
       } else if (EDIT_TOOLS_RE.test(nm)) {
         if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
+      } else {
+        // v0.65.0 F-29: 스폰 통로. **닫는 쪽으로만 움직인다** — 이 비대칭이 설계의 전부다.
+        const si = spawnIntent(nm, inp);
+        if (si && si.kind === "opaque") {
+          // 불투명 통로(Workflow·REPL): 각본이 코드를 통째로 고쳤을 수 있으므로 **코드 수정으로 센다.**
+          //   🛑 `lastReview` 는 **어떤 경우에도 안 민다.** 그래서 불투명 통로로 게이트를 강등해
+          //   띄워도 그 리뷰는 리뷰로 안 쳐지고, **강등해서 얻는 것이 없다** — 각본 내용을 한 줄도
+          //   안 읽고 그 경로가 죽는다. 결정 2번(2026-08-11): 메인 세션에서도 센다. 실측 빈도가
+          //   0.015% 라 재검토 비용이 사실상 0이고, 안 세면 v0.64.0 이 막 닫은 자리가 다른 이름으로 열린다.
+          //   ⚠ 조건부다: 런타임이 각본 결과에 agentType 을 싣기 시작하면 위 1패스의 런타임 표기
+          //   가지로 맵이 채워져 이 문장이 그날 거짓이 된다(T0 실측 기준 오늘은 0건). 그때 무엇을
+          //   좁힐지는 **사람이 정한다**.
+          lastCodeEdit = seq;
+        } else if (si && si.via === "name") {
+          if (/pr-reviewer/.test(si.agentType)) lastReview = seq;
+          else if (isImplementer(si.agentType)) lastCodeEdit = seq; // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
+        } else if (si && isImplementer(si.agentType)) {
+          // `via:"shape"` = 입력 칸으로만 잡힌 스폰. 호출하는 쪽이 칸 하나로 만들어 낼 수 있으므로
+          //   **닫는 쪽에만** 쓴다(일꾼이면 코드 수정 계상). 리뷰어여도 여기서는 아무 일도 안 한다 —
+          //   그것이 `아무도구({agentType:"chageun:pr-reviewer"})` 한 줄이 리뷰 도장이 되는 것을 막는다.
+          lastCodeEdit = seq;
+        }
       }
     }
     // 일꾼이 **끝난 시점**(H-1b). 위 content 루프 **뒤**에 둔다 — 한 레코드가 리뷰 스폰과 완료 신호를
@@ -637,8 +723,12 @@ function bigPlanKey(rel, lines) {
 //   앞선 두 번의 문턱 설계가 측정 스크립트를 `planPathsInPrompt` 대신 느슨한 정규식으로 짜서 만든
 //   **없는 빈 구간** 위에 있었다는 것은 사실이고, 그대로 유효하다.
 function planScaleBlock(toolName, toolInput, opts) {
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
-  if (gateOf(subagentOf(toolInput)) !== "plan-validator") return null;
+  // v0.65.0: `readable` 이면 판정한다(`via` 는 안 가린다 — 이 가드는 **닫는 쪽**이라 넓혀도
+  //   게이트가 안 열리고, 오히려 성질 통로로 띄운 게이트에도 크기 가드가 돈다).
+  //   불투명 통로는 무엇을 띄우는지 못 읽어 판정 재료가 없다.
+  const si = spawnIntent(toolName, toolInput);
+  if (!si || si.kind !== "readable") return null;
+  if (gateOf(si.agentType) !== "plan-validator") return null;
   const readFile = opts && opts.readFile;
   if (typeof readFile !== "function") return null;
 
@@ -756,9 +846,14 @@ function planReminderNeeded(objs, toolName, toolInput) {
           }
         }
         else if (planSeen && isCodeTarget(p)) codeEdited = true;
-      } else if (/^(Task|Agent)$/.test(nm)) {
-        const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
-        if (planSeen && /plan-validator/.test(sub) && !erroredIds.has(String(b.id || ""))) validated = true;
+      } else {
+        // v0.65.0 F-29: **`via:"name"` 일 때만** "검증됨"으로 친다. 이 판정은 리마인더를 **끄는**
+        //   쪽(= 여는 쪽)이라, 성질까지 넓히면 `아무도구({agentType:"plan-validator"})` 한 줄이
+        //   계획 검증 리마인더를 끈다 — 검증을 한 번도 안 받은 계획이 조용히 구현으로 들어간다.
+        //   키 목록은 손으로 다시 적지 않고 spawnIntent 와 한 벌로 쓴다(사본 금지).
+        const si = spawnIntent(nm, inp);
+        if (si && si.kind === "readable" && si.via === "name"
+            && planSeen && /plan-validator/.test(si.agentType) && !erroredIds.has(String(b.id || ""))) validated = true;
       }
     }
   }
@@ -1173,9 +1268,14 @@ function gateOf(agentType) {
 // 오차단 0 요건: 모델 미명시(상속) 통과 · 게이트 아닌 에이전트 통과 · 동급 이상 통과 ·
 // **등급표에 없는 값 통과(fail-open)** — 모르는 값을 막으면 오차단이고, 이건 백스톱이지 유일 방어선이 아니다.
 function gateModelBlock(toolName, toolInput) {
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
+  // v0.65.0: `readable` 이면 본다(`via` 는 안 가린다 — **닫는 쪽**이라 넓혀도 게이트가 안 열린다).
+  //   불투명 통로는 무엇을 어떤 모델로 띄우는지 못 읽어 여기서 판정이 성립하지 않는다.
+  //   그 구멍은 이 함수가 아니라 신선도 불변식이 무해화한다(hasPrReviewer 의 opaque 가지:
+  //   각본으로 게이트를 강등해 띄워도 그 리뷰가 리뷰로 안 쳐져 push 가 여전히 막힌다).
+  const si = spawnIntent(toolName, toolInput);
+  if (!si || si.kind !== "readable") return null;
   const inp = toolInput || {};
-  const gate = gateOf(subagentOf(inp));
+  const gate = gateOf(si.agentType);
   if (!gate) return null;
   const asked = String(inp.model || "").toLowerCase();
   if (!asked) return null;                                   // 미명시 = frontmatter 상속 → 정상
@@ -1196,8 +1296,10 @@ function gateModelBlock(toolName, toolInput) {
 // 판정 재료는 도구 이름과 `subagent_type` 뿐이라 fs·트랜스크립트가 필요 없다(순수함수).
 function subagentGateSpawn(agentType, toolName, toolInput) {
   if (!agentType) return null;                               // 메인 세션은 대상 아님
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
-  return gateOf(subagentOf(toolInput)) ? "subagent-gate-spawn" : null;
+  const si = spawnIntent(toolName, toolInput);
+  if (!si) return null;
+  // `via` 는 안 가린다 — **닫는 쪽**이라 넓혀도 게이트가 안 열린다. 성질 통로로 게이트를 띄우는 것도 막힌다.
+  return gateOf(si.agentType) ? "subagent-gate-spawn" : null;
 }
 
 // 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
@@ -1299,4 +1401,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE };
