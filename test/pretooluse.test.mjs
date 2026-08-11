@@ -1174,9 +1174,36 @@ test("배포 차단 문구: 서브에이전트는 켤 수 없는 스위치 대�
 });
 test("배포 차단 문구: 변형이 없는 사유는 기존 문구 그대로(회귀 방지)", () => {
   const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
-  for (const k of ["force-push", "rm-recursive", "gate-skip", "sql-destructive", "ra-bash"]) {
+  // gate-skip은 이 목록에 있었는데 Task 2.6에서 **일부러** 변형을 갖게 됐다(아래 전용 검사로 옮김).
+  // 변형이 생긴 사유를 여기 남겨 두면 "변형 없음"을 뒤집힌 채로 지키는 셈이라 뺀다.
+  for (const k of ["force-push", "rm-recursive", "sql-destructive", "ra-bash"]) {
     assert.equal(reasonFor(k, true), reasonFor(k, false), k + ": 서브에이전트 변형 없음");
   }
+});
+
+// ── Task 2.6: 게이트 미통과 push 문구를 서브에이전트에게는 다르게 준다 ──────────
+// 실측: 신선도 게이트는 **자기 트랜스크립트 안에서** pr-reviewer 실행 흔적을 찾는데, 게이트는
+// 본 세션이 띄우므로 서브에이전트 기록에는 흔적이 없다(238 레코드 중 0건). 그래서 서브에이전트의
+// push는 이미 gate-skip으로 막힌다 — 문제는 그 문구가 사람용이라는 것뿐이다. 사람용 문구는
+// 서브에이전트가 할 수 없는 두 가지를 시킨다: (1) pr-reviewer에게 재검토 요청(서브에이전트는
+// 게이트를 띄우면 안 된다) (2) 세션을 환경변수로 다시 시작(서브에이전트는 세션을 못 만든다).
+// **차단 조건은 안 건드린다.** 여기서 고치는 것은 문구뿐이다.
+test("게이트 미통과 push 문구: 메인 세션은 종전 안내 그대로(회귀 방지)", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("gate-skip", false);
+  assert.ok(msg.includes("재검토를 요청"), "사람은 게이트를 다시 띄울 수 있다");
+  assert.ok(msg.includes("CHAGEUN_SKIP_GATE_CHECK=1"), "사람은 세션을 그렇게 시작할 수 있다");
+});
+test("게이트 미통과 push 문구: 서브에이전트는 할 수 없는 일 대신 커밋+보고 지시를 받는다", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("gate-skip", true);
+  assert.notEqual(msg, reasonFor("gate-skip", false), "사람용과 같은 문구면 고친 것이 없다");
+  assert.ok(!msg.includes("CHAGEUN_SKIP_GATE_CHECK=1"), "서브에이전트는 세션을 시작할 수 없다");
+  assert.ok(!msg.includes("재검토를 요청"), "서브에이전트가 게이트를 띄우면 독립성이 깨진다");
+  assert.ok(msg.includes("게이트를 직접 띄우지 마세요"), "하지 말 것을 명시해야 우회를 안 찾는다");
+  assert.ok(msg.includes("커밋"), "실제로 할 수 있는 일(커밋)을 알려야 한다");
+  assert.ok(msg.includes("브랜치"), "본 세션이 이어받으려면 브랜치 이름이 필요하다");
+  assert.ok(/본 세션이 게이트를 돌린 뒤 push/.test(msg), "push는 본 세션 몫임을 못박는다");
 });
 
 // ── F-11: 공용 component 경계의 실제 AskUserQuestion 승인 기록 ─────────────
