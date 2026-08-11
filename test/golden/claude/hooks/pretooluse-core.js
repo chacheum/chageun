@@ -227,6 +227,10 @@ const REASONS_SUBAGENT = {
   // 할 수 없는 둘(게이트 재호출·세션 재시작)을 시켜, 우회를 찾다 시간만 태운다는 것이다.
   // **차단 조건은 그대로 두고 문구만 바꾼다.**
   "gate-skip": "차단: push 와 PR 은 본 세션이 합니다. 뒤에서 도는 작업은 검증 게이트를 자기 기록 안에서 증명할 수 없습니다(게이트는 본 세션이 띄웁니다). **게이트를 직접 띄우지 마세요 — 만든 쪽이 자기 검사를 부르면 독립성이 깨집니다.** 커밋까지만 하고, 무엇을 커밋했는지와 브랜치 이름을 상태 보고에 적으세요. 본 세션이 게이트를 돌린 뒤 push 합니다.",
+  // v0.64.0 H-2: 위 문구가 "게이트를 직접 띄우지 마세요"라고 말로만 막던 것을 기계로도 막는다.
+  //   말로만 두면 서브에이전트가 게이트를 띄워 자기 기록에 흔적을 만들고, 그 흔적으로 자기 push
+  //   자물쇠를 푼다. 그래서 이 사유는 **서브에이전트 전용**이다(메인 세션엔 아예 안 걸린다).
+  "subagent-gate-spawn": "차단: 검증 게이트(plan-validator·pr-reviewer)는 본 세션이 띄웁니다. 만든 쪽이 자기 검사를 부르면 검사가 아닙니다 — 무엇을 검사할지 스스로 고르게 되고, 그 실행 흔적으로 push 잠금까지 풀립니다. 지금 할 수 있는 것은 둘입니다: (1) 하던 일을 끝내 커밋까지만 하고, 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 검토·판단이 꼭 필요하면 그 자리에서 멈추고 **BLOCKED** 로 보고한다(무엇을 정해야 하는지와 선택지를 함께). 게이트 실행과 push 는 본 세션이 합니다.",
 };
 function reasonFor(key, forSubagent) {
   if (forSubagent && REASONS_SUBAGENT[key]) return REASONS_SUBAGENT[key];
@@ -240,7 +244,7 @@ function isPrCreate(toolName, toolInput) {
 }
 
 // ── routing 리마인더(soft) — batch6 ─────────────────────────────────────────
-// "code-implementer 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
+// "구현 에이전트(아래 IMPLEMENTER_AGENTS) 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
 // 첫 1회만 참(이미 일꾼 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
 // 차단이 아니라 리마인더 주입 판정. 게이트(plan-validator/pr-reviewer) 스폰은 대상 아님
 // (게이트 모델은 각 agent frontmatter·라우팅 규칙이 관장). 순수함수(fs 없음).
@@ -276,6 +280,18 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 // (Edit/Write류, 문서 제외 — isCodeTarget)이 있으면 stale(false): 검토 안 받은 코드가
 // 검토 딱지를 달고 나가지 않게(🙋 합의: 문서 수정은 무효화 안 함 · 재검토 1회 강제 수용).
 // 한계(자인): Bash(sed·리다이렉션)로 고친 파일은 lastCodeEdit에 안 잡힌다 — 얇은 그물. 순수함수(fs 없음).
+// v0.64.0 H-1: **구현 에이전트 스폰도 코드 수정으로 센다.** 구현을 서브에이전트에 맡기면 메인
+//   기록엔 Task 한 줄만 남아 Edit/Write 가 0 이 되고, 리뷰 뒤에 파일이 바뀌어도 push 가 그대로
+//   통과했다(v0.64.0 이 그 위임을 **기본 경로**로 만들었으므로 반드시 닫아야 하는 자리다).
+//   판정은 위 `isImplementer`(IMPLEMENTER_AGENTS 배열) 한 곳을 공유한다 — 정규식에 이름을 박으면
+//   일꾼이 늘 때 한쪽만 고쳐져 조용히 통과한다(같은 사고가 라우팅 리마인더에서 이미 났다).
+//   이어부르기(SendMessage)도 같이 센다: 백그라운드 일꾼에게 "이것도 고쳐줘"를 보내면 파일이 바뀐다.
+//   맞바꾼 것(합의): **아무것도 안 고친 위임 뒤에도 재리뷰가 강제된다.** 스폰 시점 계상이라
+//   결과를 안 보기 때문이다(바로 아래 '남는 구멍'의 Task 스폰 계상과 같은 방향). 이 파일은 같은
+//   종류의 과차단(문서 수정 뒤 재검토 1회)을 이미 합의로 수용했다.
+//   좁힘(정직): 일꾼 이름 목록 **밖**의 에이전트(general-purpose·Explore 등)로 고친 것은 안 잡힌다.
+//   탐색·조사 위임은 읽기 전용이고 흔해서, 모든 스폰을 코드 수정으로 세면 정상 작업이 재리뷰를
+//   반복한다. 위 Bash 자인과 같은 등급의 얇은 그물이다.
 // v0.43.1: `SendMessage`로 같은 게이트를 이어 불러 재검토한 것도 리뷰 흔적으로 인정한다.
 //   그 전엔 Task/Agent 스폰만 세서, 재검토를 했는데도 "리뷰 없음"으로 **정당한 push가 두 번 막혔다**
 //   (2026-08-02 v0.42.0·v0.42.2). SendMessage의 input엔 subagent_type이 없고 대상 id(`to`)만 있다.
@@ -340,11 +356,14 @@ function hasPrReviewer(objs) {
       const nm = String(b.name || "");
       const inp = b.input || {};
       if (/^(Task|Agent)$/.test(nm)) {
-        const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
+        const sub = subagentOf(inp);
         if (/pr-reviewer/.test(sub)) lastReview = seq;
+        else if (isImplementer(sub)) lastCodeEdit = seq;      // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
       } else if (nm === "SendMessage") {
         const to = String(inp.to || inp.recipient || "");
-        if (to && /pr-reviewer/.test(agentTypeById.get(to) || "")) lastReview = seq;
+        const type = to ? String(agentTypeById.get(to) || "") : "";
+        if (/pr-reviewer/.test(type)) lastReview = seq;
+        else if (isImplementer(type)) lastCodeEdit = seq;      // 이어부르기로 더 고치게 시킨 것도 같다
       } else if (EDIT_TOOLS_RE.test(nm)) {
         if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
       }
@@ -1088,6 +1107,21 @@ function gateModelBlock(toolName, toolInput) {
   return a < w ? "gate-model-downgrade" : null;
 }
 
+// v0.64.0 H-2: **서브에이전트는 게이트를 못 띄운다.**
+// 서브에이전트의 push 차단은 원래 "자기 기록에 pr-reviewer 흔적이 없어서" 성립했다. 그러면
+// 서브에이전트가 스스로 pr-reviewer 를 띄우는 순간 흔적이 생겨 자기 자물쇠가 풀린다(래퍼의 push
+// 차단을 조건 없이 만든 것이 반쪽이고, 흔적을 만들 길을 막는 이것이 나머지 반쪽이다).
+// 독립성 근거는 그것과 별개로도 선다 — 만든 쪽이 자기 검사 범위를 고르면 검사가 아니다
+// (routing '위임과 BLOCKED 계약' 5항 · 두 구현 에이전트 계약의 "게이트를 직접 부르지 않는다").
+// 막는 범위는 **게이트 스폰만**이다. 중첩 스폰 전반(조사·탐색 위임)은 텍스트 계약이 막고 여기선 안 센다
+//   — 기계 차단을 넓히면 무엇이 정상 작업인지 판정할 근거가 없다(과차단이 조용한 우회를 부른다).
+// 판정 재료는 도구 이름과 `subagent_type` 뿐이라 fs·트랜스크립트가 필요 없다(순수함수).
+function subagentGateSpawn(agentType, toolName, toolInput) {
+  if (!agentType) return null;                               // 메인 세션은 대상 아님
+  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
+  return gateOf(subagentOf(toolInput)) ? "subagent-gate-spawn" : null;
+}
+
 // 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
 // 질문 문구는 사용자 언어가 달라도 되며, 보이는 키와 두 번째 선택이라는 구조만 고정한다.
 // v0.53.0: 계획 규모 가드도 같은 승인 방식을 쓴다. 키만 다르므로 **본문을 공유 헬퍼로 뽑았다**
@@ -1187,4 +1221,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
