@@ -842,6 +842,77 @@ test("H-1 hasPrReviewer: 리뷰 뒤 아무 일도 없으면 통과(과차단 아
   assert.equal(hasPrReviewer(objs), true, "리뷰가 마지막이면 신선하다 — 위임 계상이 리뷰까지 무효화하면 안 된다");
 });
 
+// ── v0.64.0 리뷰 2회차 H-1b: 일꾼이 **끝난 시점**도 코드 수정으로 센다 ────────────────────
+// 스폰 시점만 찍으면 백그라운드에서 순서가 뒤집힌다: 일꾼 스폰(seq 1) → 리뷰 스폰(seq 2) →
+// 그 뒤 일꾼이 파일을 고치고 끝남. 리뷰가 마지막으로 보여 검사 안 받은 코드가 push 된다.
+//
+// ⚠ 아래 레코드 모양은 **실측**이다(2026-08-11, 이 저장소 트랜스크립트 29개 전수). 백그라운드
+// 스폰은 `toolUseResult.agentId` 완료 레코드를 **안 남긴다** — `status:"async_launched"` 134건과
+// `status:"completed"` 86건의 agentId 교집합이 **0건**이고, 완료 레코드는 앞에 두고 기다린
+// (foreground) 스폰만 남긴다. 그래서 완료 레코드만 보는 판정은 이 테스트가 막으려는 순서에서
+// 한 번도 안 켜진다. 실제 신호는 `<task-notification>` 알림과 `TaskOutput` 이고, 둘을 합친
+// 커버리지가 132/134(98.5%)였다(미커버 2건 = 트랜스크립트가 끝날 때까지 아직 돌던 일꾼).
+// 모양을 손으로 지어내면 이 검사는 배선만 증명하고 진짜 구멍은 그대로 열린다.
+const BG_NOTIFY_ATTACH = (agentId, status = "completed") => ({
+  type: "attachment",
+  attachment: { type: "queued_command", prompt:
+    `<task-notification>\n<task-id>${agentId}</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n`
+    + `<status>${status}</status>\n<summary>Agent "일꾼" finished</summary>\n</task-notification>` },
+});
+const BG_NOTIFY_TEXT = (agentId) => ({ type: "user", message: { role: "user",
+  content: `<task-notification>\n<task-id>${agentId}</task-id>\n<status>completed</status>\n</task-notification>` } });
+
+test("H-1b hasPrReviewer: 리뷰 뒤에 일꾼이 끝나면 stale(false) — 백그라운드 실측 신호 3종", () => {
+  const finish = {
+    "알림(attachment)": BG_NOTIFY_ATTACH("aWORKER"),
+    "알림(user 문자열)": BG_NOTIFY_TEXT("aWORKER"),
+    "TaskOutput 회수": TU("TaskOutput", { task_id: "aWORKER", block: true }),
+  };
+  for (const [label, done] of Object.entries(finish)) {
+    const objs = [
+      BG_SPAWN("tu_1", "chageun:deep-implementer"), BG_LAUNCHED("tu_1", "aWORKER"),
+      TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+      done,
+    ];
+    assert.equal(hasPrReviewer(objs), false,
+      label + ": 리뷰 뒤에 끝난 일꾼의 편집이 검사 도장을 달고 나간다");
+  }
+});
+
+test("H-1b hasPrReviewer: 일꾼 완료 → 리뷰 순서는 안 막는다(과차단 확인)", () => {
+  const objs = [
+    BG_SPAWN("tu_1", "chageun:deep-implementer"), BG_LAUNCHED("tu_1", "aWORKER"),
+    BG_NOTIFY_ATTACH("aWORKER"),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "정상 순서(완료 → 리뷰)까지 막으면 재리뷰가 영영 안 끝난다");
+});
+
+// 완료 신호는 **타입 맵**으로만 판정한다. 리뷰어·탐색 에이전트의 완료 알림이 코드 수정으로 세어지면
+// 정상 작업이 매번 재리뷰를 물게 된다(H-1 의 '읽기 위임은 안 깬다'와 같은 좁힘).
+test("H-1b hasPrReviewer: 리뷰어·탐색 에이전트의 완료 알림은 신선도를 안 깬다", () => {
+  const objs = [
+    BG_SPAWN("tu_1", "general-purpose"), BG_LAUNCHED("tu_1", "aSCOUT"),
+    BG_SPAWN("tu_2", "chageun:pr-reviewer"), BG_LAUNCHED("tu_2", "aREVIEWER"),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    BG_NOTIFY_ATTACH("aSCOUT"),
+    BG_NOTIFY_ATTACH("aREVIEWER"),
+    BG_NOTIFY_ATTACH("aUNKNOWN"),           // 맵에 없는 id — 이름 추측으로 열거나 닫지 않는다
+    TU("TaskOutput", { task_id: "aREVIEWER" }),
+  ];
+  assert.equal(hasPrReviewer(objs), true, "일꾼이 아닌 에이전트의 완료가 신선도를 깼다");
+});
+
+// 앞에 두고 기다린(foreground) 스폰의 완료 레코드도 함께 본다. 실측상 스폰과 같은 seq 라 값이
+// 안 바뀌지만, 런타임이 백그라운드에도 이 모양을 싣기 시작하는 날을 위해 배선해 둔다.
+test("H-1b hasPrReviewer: foreground 완료 레코드도 코드 수정으로 센다", () => {
+  const objs = [
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    AGENT_DONE("aFG", "chageun:code-implementer"),
+  ];
+  assert.equal(hasPrReviewer(objs), false, "리뷰 뒤에 놓인 일꾼 완료 레코드가 안 세어졌다");
+});
+
 // 남는 구멍(정직): 일꾼 이름 목록(IMPLEMENTER_AGENTS) 밖의 에이전트로 코드를 고치면 안 잡힌다.
 // 이 술어는 원래 얇은 그물이다(Bash sed 로 고친 파일도 안 잡힌다는 같은 자인이 core 주석에 있다).
 // 여기서 목록을 "모든 서브에이전트"로 넓히지 않는 이유는 탐색·조사 위임(읽기 전용)이 흔해서다.
@@ -932,7 +1003,32 @@ test("H-2 서브에이전트 push·PR: 신선한 리뷰 흔적이 있어도 항�
   assert.equal(call(prCreate, SUB).status, 2, "PR 생성도 같다");
   assert.equal(call(gitPush, SUB, { ...env, CHAGEUN_SKIP_GATE_CHECK: "1" }).status, 2,
     "사람용 탈출구가 서브에이전트의 push 를 열면 안 된다");
+
+  // v0.64.0 리뷰 2회차: 훅이 본 세션을 서브에이전트로 잘못 보면 push 를 열 스위치가 하나도 없었다.
+  //   이 저장소는 새 훅이 메인 세션을 오차단해 핫픽스를 두 번 낸 이력이 있다(v0.42.1~2).
+  //   전용 스위치를 두되, **자리만 열고 신선도 검사는 그대로 받는다**(SKIP_GATE 재사용과 갈리는 지점).
+  const OPEN = { ...env, CHAGEUN_ALLOW_SUBAGENT_PUSH: "1" };
+  assert.equal(call(gitPush, SUB, OPEN).status, 0, "전용 스위치를 켜도 안 열리면 회복 경로가 없다");
+  const stale = join(dir, "stale.jsonl");
+  writeFileSync(stale, [review, edit].map((o) => JSON.stringify(o)).join("\n") + "\n");  // 리뷰 뒤 수정
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: "Bash", tool_input: gitPush, transcript_path: stale, ...SUB }),
+    env: OPEN, encoding: "utf8",
+  });
+  assert.equal(r.status, 2, "스위치가 신선도 검사까지 함께 끄면 안 된다(자리만 여는 스위치)");
+  assert.equal(call(gitPush, SUB, { ...OPEN, CHAGEUN_UNATTENDED: "1" }).status, 2,
+    "무인에서는 켤 사람이 없다 — 스위치를 무시해야 한다");
   rmSync(dir, { recursive: true, force: true });
+});
+
+// 스위치가 있어도 문구가 안 알려주면 못 찾는다. 회복 경로는 **사람에게** 말해야 하고,
+// 서브에이전트에게는 "네가 켤 수 있는 것이 아니다"까지 같이 말해야 우회를 안 찾는다.
+test("H-2 서브에이전트 push 문구에 사람용 회복 경로가 붙어 있다", () => {
+  const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+  const msg = reasonFor("gate-skip", true);
+  assert.ok(msg.includes("CHAGEUN_ALLOW_SUBAGENT_PUSH=1"), "회복 스위치 이름이 없으면 못 찾는다");
+  assert.ok(msg.includes("사람에게"), "누구에게 하는 말인지 없으면 서브에이전트가 자기 지시로 읽는다");
+  assert.ok(/서브에이전트는 켤 수 없/.test(msg), "우회로로 쓰지 말라는 못박음이 있어야 한다");
 });
 
 // 같은 구멍의 나머지 반쪽: 흔적을 만들지 못하게 게이트 스폰 자체를 막는다.
@@ -1281,7 +1377,9 @@ test("배포 차단 문구: 변형이 없는 사유는 기존 문구 그대로(�
 // push는 이미 gate-skip으로 막힌다 — 문제는 그 문구가 사람용이라는 것뿐이다. 사람용 문구는
 // 서브에이전트가 할 수 없는 두 가지를 시킨다: (1) pr-reviewer에게 재검토 요청(서브에이전트는
 // 게이트를 띄우면 안 된다) (2) 세션을 환경변수로 다시 시작(서브에이전트는 세션을 못 만든다).
-// **차단 조건은 안 건드린다.** 여기서 고치는 것은 문구뿐이다.
+// 이때는 차단 조건을 안 건드리고 문구만 갈랐다. **v0.64.0 에서 조건도 바뀌었다** — 트랜스크립트
+// 흔적과 무관하게 서브에이전트의 push·PR 을 무조건 막는다(아래 "H-2" 블록). 그래서 이 블록의
+// 검사 범위는 "문구"이고, "조건은 그대로"는 더 이상 사실이 아니다.
 test("게이트 미통과 push 문구: 메인 세션은 종전 안내 그대로(회귀 방지)", () => {
   const { reasonFor } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
   const msg = reasonFor("gate-skip", false);
