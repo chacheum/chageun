@@ -154,7 +154,13 @@ function parseSsNet(text) {
 }
 
 const MAX_KILL = 50;                    // backstop against a pathological mass-kill
-const IDLE_MIN_AGE_MS = 2 * 60 * 60 * 1000; // 2h — below this a quiet server is just idle
+// 🛑 This measures how long the process has been ALIVE (from /proc starttime), NOT how
+// long it has been idle. There is no "last used" clock for a process. The old name said
+// IDLE and the notice said "2시간+", which read as "quiet for 2h" — it never meant that.
+// A server started this morning and used 30 seconds ago is "old enough" the moment its
+// connections happen to be absent. The connection check is the only idleness evidence,
+// and it is a snapshot — see the residual hole documented in `noClients` below.
+const MIN_PROCESS_AGE_MS = 2 * 60 * 60 * 1000;
 const MAX_PARENT_HOPS = 64;             // pid chains are shallow; also a cycle backstop
 
 // procs: [{ pid, ppid, uid, comm, cmdline, cwd, ageMs }] (uid/ppid/ageMs may be
@@ -162,10 +168,14 @@ const MAX_PARENT_HOPS = 64;             // pid chains are shallow; also a cycle 
 // ownUid: only own-user processes are eligible (null → skip the uid filter).
 // opts.selfPid: never reap this pid (the hook's own process).
 // opts.net: parseSsNet() output, or null/absent when sockets could not be listed.
+// opts.minAgeMs: override MIN_PROCESS_AGE_MS. Only a finite number >= 0 is honoured;
+//   anything else falls back to the default, so a typo can never widen the net.
 // Returns [{ pid, reason }] sorted by pid, de-duped, capped. reason: "deleted" | "idle".
 function selectReapableDetailed(procs, ownUid, opts) {
   opts = opts || {};
   const selfPid = opts.selfPid;
+  const minAgeMs = Number.isFinite(opts.minAgeMs) && opts.minAgeMs >= 0
+    ? opts.minAgeMs : MIN_PROCESS_AGE_MS;
   if (!Array.isArray(procs)) return [];
 
   const byPid = new Map();
@@ -194,6 +204,16 @@ function selectReapableDetailed(procs, ownUid, opts) {
   }
 
   // "Nobody is connected." Any doubt → false (= someone is, so leave it alone).
+  //
+  // 🛑 RESIDUAL HOLE — read before trusting this as the idleness test. This is a SNAPSHOT
+  // of open sockets, not a history. A tab the user still has open but whose socket died
+  // (laptop sleep/resume drops every TCP connection; Chrome freezes background tabs and
+  // closes the HMR websocket) reads exactly like an abandoned server. The user sees no
+  // change on screen and their server is killed. The hook re-reads sockets after a real
+  // pause before killing (reap-dev-servers.js), which catches a client that reconnects
+  // inside that window — it does NOT catch one that stays disconnected.
+  // The mitigations that actually cover this are the OFF switch (CHAGEUN_SKIP_REAP=1)
+  // and SIGTERM being restartable, not this check. Documented in README, not hidden.
   function noClients(p) {
     if (!netKnown) return false;                       // could not list sockets
     const ports = listenByPid.get(p.pid);
@@ -226,8 +246,14 @@ function selectReapableDetailed(procs, ownUid, opts) {
   // "no owner" almost always, silently reducing the three safety conditions to two.
   // The second way is the folder: a live session sitting in the server's folder (or in a
   // folder above it — a session at <project> owns the server in <project>/web) owns it.
-  // Known gap, left as is: a worktree is a SIBLING folder, not a child, so a server
-  // started inside one is not matched here (connections + age still guard it).
+  // Three known gaps, left as is (connections + age still guard all three):
+  //  1. Folder match is ONE-WAY — the session must sit AT or ABOVE the server. A monorepo
+  //     session in <repo>/apps/web does NOT own the server started at <repo>.
+  //  2. Worktrees are SIBLING folders, so a session in the main checkout does not own a
+  //     server started in a worktree (a session INSIDE that worktree does own it).
+  //  3. A server the user launched by hand in a terminal has NO claude ancestor, so it is
+  //     ownerless by definition. On another person's machine that is the common case —
+  //     which is why CHAGEUN_SKIP_REAP=1 exists and why the README says so out loud.
   function ownerAlive(p) {
     if (claudeCwdUnknown) return true;                 // cannot know which folders are open
     const cwd = typeof p.cwd === "string" ? p.cwd.trim() : "";
@@ -246,7 +272,7 @@ function selectReapableDetailed(procs, ownUid, opts) {
     return true;                                       // cycle/too deep → assume alive
   }
 
-  const oldEnough = (p) => Number.isFinite(p.ageMs) && p.ageMs >= IDLE_MIN_AGE_MS;
+  const oldEnough = (p) => Number.isFinite(p.ageMs) && p.ageMs >= minAgeMs;
 
   const reasons = new Map(); // pid → reason ("deleted" wins: it needs no other evidence)
   const mark = (pid, reason) => { if (!reasons.has(pid)) reasons.set(pid, reason); };
@@ -284,5 +310,5 @@ module.exports = {
   isDevServer, isDevLauncher, isDeleted, isClaudeSession, pathCovers,
   parseStat, ageMsFromStat, parseSsNet,
   selectReapable, selectReapableDetailed,
-  MAX_KILL, IDLE_MIN_AGE_MS,
+  MAX_KILL, MIN_PROCESS_AGE_MS,
 };
