@@ -337,7 +337,7 @@ test("parseSsNet: 한 소켓을 여러 프로세스가 쥐면 전부 센다", ()
 // 🛑 이 검사는 **진짜 프로세스를 죽인다.** 그래서 희생자를 우리가 직접 만든다 —
 // 임시 폴더에 가짜 vite 를 놓고, 그걸 detached 로 띄워 부모를 init 으로 만든다
 // (그래야 "주인 없음"이 된다). 남의 프로세스는 건드리지 않는다.
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import nfs from "node:fs";
 import nos from "node:os";
 import npath from "node:path";
@@ -346,17 +346,22 @@ import nnet from "node:net";
 const HOOK = npath.join(process.cwd(), "src", "hooks", "reap-dev-servers.js");
 const linux = process.platform === "linux";
 
-function runHook(env) {
+// 🛑 울타리(CHAGEUN_REAP_ONLY_UNDER)를 **반드시** 함께 넘긴다. 문턱을 0 으로 낮추면
+// 나이 조건이 사라져, 울타리가 없으면 이 검사가 **그 기계의 진짜 개발 서버**까지 훑는다
+// (2회차 리뷰가 잡은 구멍 — `npm test` 만 돌려도 남의 서버가 죽을 수 있었다).
+function runHook(env, fence) {
+  if (!fence) throw new Error("울타리 없이 훅을 부르지 않는다");
   return spawnSync(process.execPath, [HOOK], {
     encoding: "utf8", timeout: 20000,
-    env: { ...process.env, ...env },
+    env: { ...process.env, CHAGEUN_REAP_ONLY_UNDER: fence, ...env },
   });
 }
 
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const naptime = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} };
 const waitGone = (pid, ms) => {
   const end = Date.now() + ms;
-  while (Date.now() < end) { if (!alive(pid)) return true; spawnSync("sleep", ["0.1"]); }
+  while (Date.now() < end) { if (!alive(pid)) return true; naptime(100); }
   return !alive(pid);
 };
 
@@ -382,10 +387,18 @@ function startVictim() {
     process.execPath, script, portFile, dir, pidFile,
   ], { stdio: "ignore" });
   const end = Date.now() + 5000;
-  while (Date.now() < end && !nfs.existsSync(portFile)) spawnSync("sleep", ["0.05"]);
-  const port = Number(nfs.readFileSync(portFile, "utf8"));
-  const pid = Number(nfs.readFileSync(pidFile, "utf8"));
-  return { pid, port, dir };
+  while (Date.now() < end && !nfs.existsSync(portFile)) naptime(50);
+  // 여기서 던지면 이미 떠 있는 희생자와 임시 폴더가 아무도 안 치운 채 남는다(포트도 계속 문다).
+  try {
+    const port = Number(nfs.readFileSync(portFile, "utf8"));
+    const pid = Number(nfs.readFileSync(pidFile, "utf8"));
+    if (!Number.isInteger(pid) || !Number.isInteger(port)) throw new Error("희생자 pid/port 를 못 읽었다");
+    return { pid, port, dir };
+  } catch (e) {
+    try { const p = Number(nfs.readFileSync(pidFile, "utf8")); if (p) process.kill(p, "SIGKILL"); } catch {}
+    try { nfs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    throw e;
+  }
 }
 function cleanup(v) {
   try { process.kill(v.pid, "SIGKILL"); } catch {}
@@ -395,7 +408,7 @@ function cleanup(v) {
 test("훅 통합: 끄는 스위치가 켜지면 아무것도 안 죽인다", { skip: !linux }, () => {
   const v = startVictim();
   try {
-    const r = runHook({ CHAGEUN_SKIP_REAP: "1", CHAGEUN_REAP_MIN_AGE_MS: "0" });
+    const r = runHook({ CHAGEUN_SKIP_REAP: "1", CHAGEUN_REAP_MIN_AGE_MS: "0" }, v.dir);
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trim(), "", "스위치가 켜졌는데 뭔가 출력했다");
     assert.ok(alive(v.pid), "스위치가 켜졌는데 죽였다");
@@ -407,7 +420,7 @@ test("훅 통합: 접속이 붙어 있으면 안 죽인다", { skip: !linux }, a
   const conn = nnet.connect(v.port, "127.0.0.1");
   try {
     await new Promise((ok, no) => { conn.once("connect", ok); conn.once("error", no); });
-    const r = runHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" });
+    const r = runHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" }, v.dir);
     assert.equal(r.status, 0);
     assert.ok(alive(v.pid), "붙어 있는 접속이 있는데 죽였다");
   } finally { conn.destroy(); cleanup(v); }
@@ -419,7 +432,7 @@ test("훅 통합: 주인 없고 접속 없고 문턱을 넘으면 실제로 죽�
   const v = startVictim();
   let killedIt = false;
   try {
-    const r = runHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" });
+    const r = runHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" }, v.dir);
     assert.equal(r.status, 0);
     killedIt = waitGone(v.pid, 5000);
     assert.ok(
@@ -431,4 +444,63 @@ test("훅 통합: 주인 없고 접속 없고 문턱을 넘으면 실제로 죽�
     assert.match(r.stdout, /정리 신호를 보냈습니다/);
     assert.match(r.stdout, /CHAGEUN_SKIP_REAP=1/, "끄는 법을 안내문에 안 적었다");
   } finally { if (!killedIt) cleanup(v); else { try { nfs.rmSync(v.dir, { recursive: true, force: true }); } catch {} } }
+});
+
+// 2초 멈춤이 실제로 있어야만 통과하는 검사. 이게 없으면 `sleepSync` 한 줄을 지워도
+// 전 검사가 초록이라, 2회차에 고친 것이 나중에 조용히 원복된다(리뷰 2회차 medium).
+// 훅을 **비동기로** 띄우고, 0.4초 뒤에 접속한다 — 멈춤이 있으면 두 번째 소켓 읽기가
+// 그 접속을 보고 살려 두고, 멈춤이 없으면 그 전에 죽는다.
+test("훅 통합: 늦게 붙은 접속도 살린다 (2초 멈춤이 없으면 실패한다)", { skip: !linux }, async () => {
+  const v = startVictim();
+  let conn = null;
+  try {
+    const child = spawn(process.execPath, [HOOK], {
+      env: { ...process.env, CHAGEUN_REAP_ONLY_UNDER: v.dir, CHAGEUN_REAP_MIN_AGE_MS: "0" },
+      stdio: "ignore",
+    });
+    const done = new Promise((ok) => child.once("exit", ok));
+    await new Promise((r) => setTimeout(r, 400));
+    assert.ok(alive(v.pid), "멈춤 없이 이미 죽었다 — 2초 멈춤이 사라졌다");
+    conn = nnet.connect(v.port, "127.0.0.1");
+    await new Promise((ok, no) => { conn.once("connect", ok); conn.once("error", no); });
+    await done;
+    assert.ok(alive(v.pid), "멈춤 뒤 다시 읽었는데도 죽였다 — 두 번째 확인이 안 돈다");
+  } finally { if (conn) conn.destroy(); cleanup(v); }
+});
+
+test("울타리: 지정한 폴더 밖 프로세스는 아예 대상이 아니다", () => {
+  // 문턱을 낮춰도 울타리가 먼저 막는다. 두 갈래(놀고 있음·폴더 삭제) 다 막혀야 한다.
+  const inside = vite({ pid: 700, cwd: "/fence/app/web" });
+  const outside = vite({ pid: 800, cwd: "/other/app" });
+  const n = { listen: [{ pid: 700, port: 5173 }, { pid: 800, port: 5174 }], estab: [] };
+  assert.deepEqual(pick([inside, outside], { net: n, onlyUnder: "/fence" }), [700]);
+  const gone = vite({ pid: 900, cwd: del("/other/app"), ageMs: 0 });
+  assert.deepEqual(pick([gone], { net: n, onlyUnder: "/fence" }), []);
+  assert.deepEqual(pick([gone], { net: n }), [900]); // 울타리가 없을 때는 잡힌다
+});
+
+test("울타리: 글자만 겹치는 이웃 폴더는 안쪽이 아니다", () => {
+  const near = vite({ pid: 700, cwd: "/fenced/app" });
+  assert.deepEqual(pick([near], { net: net(), onlyUnder: "/fence" }), []);
+});
+
+test("문턱 재정의: 못 알아볼 값이면 기본값으로 떨어진다 (그물을 못 넓힌다)", () => {
+  const young = vite({ ageMs: 60 * 1000 }); // 1분 — 기본 문턱(2시간)에 한참 못 미침
+  for (const bad of [NaN, -1, "0", null, undefined, {}]) {
+    assert.deepEqual(pick([young], { net: net(), minAgeMs: bad }), [], "minAgeMs=" + String(bad));
+  }
+  assert.deepEqual(pick([young], { net: net(), minAgeMs: 0 }), [700]); // 진짜 0 만 통한다
+});
+
+test("훅 통합: 문턱 환경변수가 빈 값이면 기본값으로 떨어진다", { skip: !linux }, () => {
+  // 🛑 Number("") 은 0 이다. 값을 지운 환경변수가 **가장 공격적인 설정**이 되면 안 된다.
+  // 방금 띄운(=아주 어린) 희생자가 살아남아야 기본 문턱(2시간)이 걸린 것이다.
+  const v = startVictim();
+  try {
+    for (const blank of ["", "   "]) {
+      const r = runHook({ CHAGEUN_REAP_MIN_AGE_MS: blank }, v.dir);
+      assert.equal(r.status, 0);
+      assert.ok(alive(v.pid), "빈 문자열 문턱(" + JSON.stringify(blank) + ")에 죽었다");
+    }
+  } finally { cleanup(v); }
 });

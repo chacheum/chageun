@@ -126,8 +126,11 @@ function maskCmd(s) {
 }
 
 // Blocking pause with no child process and no async — this hook is synchronous by design.
+// Returns false if it could NOT pause; the caller must then skip the idle branch rather
+// than fall back to a 0ms "confirmation", which is the very thing this pause replaced.
 function sleepSync(ms) {
-  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch (_) {}
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); return true; }
+  catch (_) { return false; }
 }
 
 function main() {
@@ -147,8 +150,16 @@ function main() {
   // Age threshold override. Its reason for existing is the integration test: without it
   // the kill wiring can only be exercised by waiting two hours, so it stayed untested.
   // Raising it (e.g. 6h) is a safe user knob; lowering it makes the reaper more eager.
-  const minAgeMs = Number(process.env.CHAGEUN_REAP_MIN_AGE_MS);
-  const opts = { selfPid: process.pid, net: readNet(), minAgeMs };
+  // 🛑 The blank check is not cosmetic. `Number("")` is 0 — so `export CHAGEUN_REAP_MIN_AGE_MS=`
+  // (or a docker-compose `- CHAGEUN_REAP_MIN_AGE_MS` with no value) would have removed the
+  // age condition entirely. Clearing a variable must never be the MOST aggressive setting.
+  const rawMinAge = String(process.env.CHAGEUN_REAP_MIN_AGE_MS == null ? "" : process.env.CHAGEUN_REAP_MIN_AGE_MS).trim();
+  const minAgeMs = rawMinAge ? Number(rawMinAge) : NaN; // NaN → core falls back to the default
+  // Fence: only processes at or below this folder are eligible. The integration test sets
+  // it to its own temp folder so a lowered threshold cannot reach the machine's real
+  // dev servers. Blank (normal operation) = no fence.
+  const onlyUnder = String(process.env.CHAGEUN_REAP_ONLY_UNDER == null ? "" : process.env.CHAGEUN_REAP_ONLY_UNDER).trim();
+  const opts = { selfPid: process.pid, net: readNet(), minAgeMs, onlyUnder };
   let targets = selectReapableDetailed(procs, ownUid, opts);
   if (!targets.length) return;
 
@@ -163,15 +174,19 @@ function main() {
   // (Folder-deleted victims need no such confirmation.)
   const RECHECK_PAUSE_MS = 2000;
   if (targets.some((t) => t.reason === "idle")) {
-    sleepSync(RECHECK_PAUSE_MS);
+    if (!sleepSync(RECHECK_PAUSE_MS)) {
+      targets = targets.filter((t) => t.reason === "deleted"); // no pause → no idle kills
+      if (!targets.length) return;
+    } else {
     const again = new Set(
       // Same opts as the first pass except for a FRESH socket reading — if the threshold
       // differed between the two passes the confirmation would be meaningless.
-      selectReapableDetailed(procs, ownUid, { selfPid: process.pid, net: readNet(), minAgeMs })
+      selectReapableDetailed(procs, ownUid, { selfPid: process.pid, net: readNet(), minAgeMs, onlyUnder })
         .map((t) => t.pid)
     );
     targets = targets.filter((t) => t.reason === "deleted" || again.has(t.pid));
     if (!targets.length) return;
+    }
   }
 
   const byPid = new Map(procs.map((p) => [p.pid, p]));
@@ -187,7 +202,12 @@ function main() {
     // kill is diagnosable after the fact (the /proc entry is gone once killed).
     // Synchronous write so the notice survives process exit.
     // "켜진 지" not "조용한 지": the age is process lifetime, not idle time (see core).
-    const why = { deleted: "작업 폴더 삭제됨", idle: "접속 0·주인 세션 없음·켜진 지 2시간+" };
+    // The threshold is printed from the value ACTUALLY used — a hard-coded "2시간+" would
+    // lie whenever the override is set, and a wrong kill's only clue is this line.
+    const ageNote = rawMinAge && Number.isFinite(minAgeMs) && minAgeMs >= 0
+      ? "켜진 지 " + minAgeMs + "ms+ (CHAGEUN_REAP_MIN_AGE_MS)"
+      : "켜진 지 2시간+";
+    const why = { deleted: "작업 폴더 삭제됨", idle: "접속 0·주인 세션 없음·" + ageNote };
     const lines = killed.map((t) => {
       const p = byPid.get(t.pid);
       const cmd = p ? maskCmd(String(p.cmdline || p.comm || "")).slice(0, 120) : "";
