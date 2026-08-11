@@ -473,7 +473,14 @@ test("훅 통합: 늦게 붙은 접속도 살린다 (2초 멈춤이 없으면 �
     const t0 = Date.now();
     const child = spawnHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" }, v.dir);
     let code = null;
-    const done = new Promise((ok) => child.once("exit", (c) => { code = c; ok(); }));
+    // 🛑 시각은 **종료 순간에** 찍는다. `await done` 뒤에 재면 아래 `setTimeout(1100)` 이
+    // 측정값에 섞여, 멈춤이 있을 때(2.1초)와 없을 때(1.1초)의 간격이 2초가 아니라 0.9초로
+    // 좁아진다 — 기계가 바쁘면 그 0.9초가 메워져 헛통과가 다시 생긴다. 메시지의 숫자도
+    // 훅 실행 시간이 아니게 돼 다음 사람이 엉뚱한 곳을 본다.
+    let elapsed = -1;
+    const done = new Promise((ok) => child.once("exit", (c) => {
+      code = c; elapsed = Date.now() - t0; ok();
+    }));
     // 1.1초 — 훅의 첫 패스(이 기계에서 85ms)가 끝나고도 멈춤(2초) 안쪽이다. 0.4초는
     // 느린 기계에서 첫 패스가 그보다 오래 걸려 판별을 못 할 여지가 있었다.
     await new Promise((r) => setTimeout(r, 1100));
@@ -487,8 +494,11 @@ test("훅 통합: 늦게 붙은 접속도 살린다 (2초 멈춤이 없으면 �
     // 애초에 아무것도 안 골랐을 때. 셋 다 아무도 안 죽여서 초록으로 지나간다.
     // 그래서 "살아 있나"가 아니라 **"훅이 2초를 실제로 썼나"** 를 잰다. 멈춤이 없으면
     // 훅은 0.1초 안에 끝나므로 위 셋이 전부 빨개진다.
-    const elapsed = Date.now() - t0;
-    assert.ok(elapsed >= 2000, "훅이 " + elapsed + "ms 만에 끝났다 — 2초 멈춤을 안 썼다는 뜻이다");
+    assert.ok(
+      elapsed >= 2000,
+      "훅이 " + elapsed + "ms 만에 끝났다. 2초 멈춤이 없어졌거나, 애초에 아무것도 안 골랐다" +
+      "(울타리가 이 기계의 임시 폴더와 안 맞으면 그렇게 된다)."
+    );
     // 종료코드는 훅 파일이 로드 단계에서 깨졌는지만 본다(main 은 try/catch 로 감싼
     // fail-open 이라 아무것도 안 골라도 0 이다 — 위 elapsed 가 그쪽을 담당한다).
     assert.equal(code, 0, "훅 파일이 로드 단계에서 깨졌다");
