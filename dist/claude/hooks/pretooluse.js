@@ -428,17 +428,15 @@ process.stdin.on("end", () => {
       //   세션이 합니다"라는 조건 없는 단정이니 기계도 조건 없이 만든다.
       //   사람용 탈출구(CHAGEUN_SKIP_GATE_CHECK)보다 앞에 둔다 — 그 스위치는 "게이트 검사를 건너뛴다"는
       //   뜻이지 "push 를 뒤에서 돌게 한다"는 뜻이 아니고, 사람은 본 세션에서 그대로 push 할 수 있다.
-      //   v0.64.0 리뷰 2회차: **이 차단만 여는 전용 스위치**를 둔다. 훅이 본 세션을 서브에이전트로 잘못 보면
-      //   push 를 열 방법이 하나도 없었는데(다른 하드 차단은 전부 사람용 탈출구가 있다), 이 저장소는
-      //   새 훅이 메인 세션을 오차단해 핫픽스를 두 번 낸 이력이 있다(v0.42.1~2). 스위치를 **전용**으로
-      //   두는 이유는 CHAGEUN_SKIP_GATE_CHECK 재사용이 뜻을 겹치기 때문이다 — 그건 "게이트 검사 생략"이라
-      //   이 자리를 열면 신선도 검사까지 함께 꺼진다. 이 스위치는 자리만 열고 아래 신선도 검사는 그대로 받는다.
-      //   서브에이전트가 우회로로 못 쓴다: 훅 프로세스의 환경변수라 명령 앞 `VAR=1` 접두가 안 닿는다(실측).
-      //   무인은 이 스위치를 무시한다(집안 관례: CHAGEUN_ALLOW_DEPLOY 와 같은 모양). 무인의 push 는
-      //   위 §2 u-push 가 이미 먼저 막지만, 켤 사람이 없는 자리에서 열리는 스위치를 남겨 두지 않는다.
-      if (IS_SUBAGENT && (UNATTENDED || process.env.CHAGEUN_ALLOW_SUBAGENT_PUSH !== "1")) {
-        return deny("gate-skip", UNATTENDED);
-      }
+      //   v0.64.0 리뷰 2회차가 여기에 전용 회복 스위치(CHAGEUN_ALLOW_SUBAGENT_PUSH)를 넣었고,
+      //   **3회차가 도로 뺐다.** 스위치를 켠 세션에서는 이 자리가 아래 신선도 검사로 떨어지는데,
+      //   그 검사(prReviewerRan)는 게이트 호출이 **실제로 실행됐는지**(tool_result 의 is_error)를 안 본다.
+      //   PreToolUse 가 막은 호출도 트랜스크립트에는 tool_use 로 남는다. 그래서 스위치를 켠 세션에서
+      //   서브에이전트가 (a) 코드를 고치고 (b) 게이트를 부르려다 1.7 에 막히고 (c) 그 막힌 시도가
+      //   "리뷰 흔적"이 되어 (d) push 가 통과한다 — 이 절이 막으려던 바로 그 사고가 되살아난다.
+      //   회복 경로는 스위치가 아니라 **사람**이다(문구 끝 안내: 본 세션인데 이게 떴으면 사람에게 알린다).
+      //   다시 넣으려면 hasPrReviewer 가 is_error 를 보게 하는 일이 **먼저**다.
+      if (IS_SUBAGENT) return deny("gate-skip", UNATTENDED);
       if (UNATTENDED || process.env.CHAGEUN_SKIP_GATE_CHECK !== "1") {
         if (!prReviewerRan(input.transcript_path)) return deny("gate-skip", UNATTENDED);
       }
