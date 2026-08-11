@@ -235,14 +235,22 @@ function isPrCreate(toolName, toolInput) {
 
 // ── routing 리마인더(soft) — batch6 ─────────────────────────────────────────
 // "code-implementer 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
-// 첫 1회만 참(이미 code-implementer 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
+// 첫 1회만 참(이미 일꾼 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
 // 차단이 아니라 리마인더 주입 판정. 게이트(plan-validator/pr-reviewer) 스폰은 대상 아님
 // (게이트 모델은 각 agent frontmatter·라우팅 규칙이 관장). 순수함수(fs 없음).
+//
+// 🛑 이름을 정규식에 박지 않고 **배열 한 곳**에 모은다. 예전엔 `/code-implementer/` 였는데,
+// 일꾼이 하나 늘자 새 에이전트로 위임할 때만 리마인더가 통째로 안 켜졌다 — 하필 판단 걸린
+// 일을 맡는 쪽이라, 이번에 넣은 안전 문장(BLOCKED 계약·push 금지·게이트 재실행)이 가장
+// 필요한 경로에서 안 걸렸다. 정규식에 갈래를 붙이는 방식은 다음 사람이 한쪽만 고쳐도
+// 조용히 통과하므로, 아래 두 자리(스폰 판정·이미-위임 판정)가 **같은 배열**을 쓰게 한다.
+const IMPLEMENTER_AGENTS = ["code-implementer", "deep-implementer"];
+const isImplementer = (who) => IMPLEMENTER_AGENTS.some((n) => String(who).indexOf(n) !== -1);
 const AGENT_TOOLS_RE = /^(Task|Agent)$/;
 function subagentOf(inp) { return String((inp && (inp.subagent_type || inp.agentType || inp.agent_type)) || ""); }
 function routingReminderNeeded(objs, toolName, toolInput) {
   if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return false;
-  if (!/code-implementer/.test(subagentOf(toolInput))) return false;
+  if (!isImplementer(subagentOf(toolInput))) return false;
   if (!Array.isArray(objs)) return false;
   for (const o of objs) {
     const m = (o && o.message) || o; const c = m && m.content;
@@ -251,7 +259,7 @@ function routingReminderNeeded(objs, toolName, toolInput) {
       if (!b || b.type !== "tool_use") continue;
       const nm = String(b.name || "");
       if (nm === "Skill" && /routing/.test(String((b.input && b.input.skill) || ""))) return false; // 로드됨
-      if (AGENT_TOOLS_RE.test(nm) && /code-implementer/.test(subagentOf(b.input))) return false; // 이미 위임 시작(1회 보장)
+      if (AGENT_TOOLS_RE.test(nm) && isImplementer(subagentOf(b.input))) return false; // 이미 위임 시작(1회 보장)
     }
   }
   return true;

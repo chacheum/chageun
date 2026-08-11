@@ -22,7 +22,7 @@ test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
   // 골든과 **독립**인 축(fresh build를 직접 본다). golden↔dist 대조만 남으면, 복사 목록에서 파일이
   // 빠졌을 때 문서화된 절차대로 골든을 재생성하는 순간 경보가 같이 사라진다 — 게이트 에이전트가
   // 통째로 빠진 배포물도 전 테스트 초록이 된다(v0.49.0 pr-reviewer medium).
-  for (const a of ["plan-validator", "pr-reviewer", "code-implementer"])
+  for (const a of ["plan-validator", "pr-reviewer", "code-implementer", "deep-implementer"])
     assert.ok(existsSync(join(out, "agents", a + ".md")), "게이트/일꾼 에이전트 누락: " + a);
   assert.ok(existsSync(join(out, "hooks/finish-work.js")), "Stop 훅 누락");
   assert.ok(existsSync(join(out, "hooks/pretooluse.js")), "PreToolUse 하드블록 누락");
