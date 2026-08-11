@@ -1,0 +1,108 @@
+// test/hook-replay.test.mjs — 실기록 전수 재생으로 **오차단 0**을 건다(F-29 · v0.65.0).
+//
+// 왜 이 검사가 있나: 이 저장소의 **최대 실패 양식은 오차단**이다(한 가드가 정상 작업을 217번 막은
+//   전례가 있다). v0.65.0 은 PreToolUse 매처를 `""`(모든 도구)로 넓혀 **그동안 훅이 아예 안 돌던
+//   호출 940건**을 새로 훅 아래로 들인다. 그 940건이 전부 그대로 지나가는지를 기록으로 못박는다.
+//
+// ⚠ 이 재생이 답하지 **않는** 질문 하나: "매처가 실제로 그 도구에서 훅을 부르는가"는 훅에 직접
+//   먹여서는 못 잰다(재생은 매처를 안 거친다). 재생은 **판정이 옳은가**를 재고, 매처 발동은 따로
+//   잰다. 둘을 섞어 읽으면 **아무것도 안 잰 초록**이 나온다.
+//
+// ⚠ 픽스처의 값은 전부 합성이다(경로는 `/repo/…`, 문자열은 `"…"`). 남긴 것은 **도구 이름과 입력의
+//   칸 구조**뿐이다. 그 치환이 안전한 이유: 이 훅에서 **값을 보는 판정은 실제로 있지만**(Bash 는
+//   명령 문자열을, Edit·Write 계열은 경로와 내용을 읽는다) **이 집합에는 그 도구가 하나도 없다** —
+//   셋 다 옛 매처에 이미 잡혀 있어 애초에 이 집합 밖이다.
+//   🛑 **`Bash` 나 `Edit` 를 이 픽스처에 넣게 되는 날, 값 치환은 검사를 조용히 무의미하게 만든다.**
+//   그때는 치환을 넓히지 말고 그 도구를 **따로 손으로 만든 픽스처**로 다룬다.
+//
+// 무인 칸 네 개((가)·(나)·(다)·(라))는 test/hook-net.test.mjs 에 **나란히** 있다 — 네 칸을 한 자리에
+//   모으라는 것이 그 요구라, 이 파일이 아니라 그쪽 한 곳에 뒀다. 여기서는 전수 재생만 한다.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { tmpDir } from "./support-tmpdir.mjs";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const HOOK = join(ROOT, "src", "hooks", "pretooluse.js");
+const FX = JSON.parse(readFileSync(join(ROOT, "test", "fixtures", "hook-replay-calls.json"), "utf8"));
+const BASE = JSON.parse(readFileSync(join(ROOT, "test", "fixtures", "hook-replay-baseline.json"), "utf8"));
+
+const CLEAN_ENV = { ...process.env };
+for (const k of Object.keys(CLEAN_ENV)) if (k.startsWith("CHAGEUN_")) delete CLEAN_ENV[k];
+
+// 전수 재생. 총계를 **반드시 함께 돌려준다** — 이 저장소 교훈: **잘린 측정은 조용히 틀린다.**
+//   총계가 없으면 재생이 도중에 끊겨도 "차단 0건"이 초록으로 나온다.
+function replay(env, cwd) {
+  const byTool = {};
+  let replayed = 0, exit0 = 0, exit2 = 0, other = 0;
+  const t0 = Date.now();
+  for (const call of FX.calls) {
+    const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(call), env, cwd, encoding: "utf8" });
+    replayed++;
+    const t = (byTool[call.tool_name] ||= { calls: 0, exit0: 0, exit2: 0 });
+    t.calls++;
+    if (r.status === 0) { exit0++; t.exit0++; } else if (r.status === 2) { exit2++; t.exit2++; } else other++;
+  }
+  return { byTool, replayed, exit0, exit2, other, wall: Date.now() - t0 };
+}
+
+let attended = null;   // 아래 두 칸이 나눠 쓴다(재생이 무거워 한 번만 돈다).
+
+test("F-29 오차단 0(유인): 실기록 전수 재생에서 차단이 한 건도 없다", () => {
+  attended = replay(CLEAN_ENV, tmpDir("replay-"));
+  // 총계부터 센다. 재생 수가 픽스처 수와 정확히 같아야 나머지 수치가 뜻을 갖는다.
+  assert.equal(FX.calls.length, FX.total, "픽스처 자기 총계가 안 맞는다");
+  assert.equal(attended.replayed, FX.calls.length,
+    `재생이 도중에 끊겼다: 픽스처 ${FX.calls.length} · 재생 ${attended.replayed}`);
+  assert.equal(attended.other, 0, "0도 2도 아닌 종료코드가 나왔다(훅이 비정상 종료)");
+  assert.equal(attended.exit2, 0,
+    "오차단이 생겼다. 이 축이 넓힌 범위에서 정상 작업이 막히면 다음 두 축의 작업 자체가 막힌다");
+  assert.equal(attended.exit0, FX.calls.length);
+});
+
+test("F-29 기준선 대조(유인): 옛 훅과 도구별 개수·분포가 같다", () => {
+  // 🛑 기준선을 **말로만** 두지 않는다. 지금까지의 실측은 전부 옛 코드로 잰 값이고 새 코드에는
+  //   층이 더 붙었다. 그래서 옛 훅 재생 결과를 파일로 커밋해 두고 여기서 대조한다.
+  //   기준선을 다시 만들려면 옛 트리를 뽑아 같은 픽스처를 먹이면 된다(baseline.ref 가 그 커밋).
+  assert.ok(attended, "앞 칸이 먼저 돌아야 한다");
+  assert.equal(BASE.fixtures, FX.calls.length, "기준선과 픽스처가 다른 세대다 — 기준선을 다시 만들라");
+  assert.equal(BASE.exit2, 0, "옛 훅에서도 차단 0건이었다는 것이 이 대조의 전제다");
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(attended.byTool).map(([k, v]) => [k, v.calls])),
+    Object.fromEntries(Object.entries(BASE.byTool).map(([k, v]) => [k, v.calls])),
+    "도구별 재생 수가 옛 훅과 다르다");
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(attended.byTool).map(([k, v]) => [k, v.exit2])),
+    Object.fromEntries(Object.entries(BASE.byTool).map(([k, v]) => [k, v.exit2])),
+    "도구별 차단 수가 옛 훅과 다르다");
+});
+
+test("F-29 무인 동작이 v0.65.0 전과 같다: 전수 재생 차단 0 · 예산도 안 먹는다", () => {
+  // 결정 3번(사용자 · 2026-08-11): 무인 범위는 안 넓힌다. 목표가 "오차단 0"이 아니라
+  //   **"v0.65.0 전과 동작이 같다"** 인 자리다.
+  const dir = tmpDir("replay-unatt-");
+  mkdirSync(join(dir, ".chageun"), { recursive: true });
+  writeFileSync(join(dir, ".chageun", "token"), JSON.stringify({ nonce: "abc123" }));
+  const env = { ...CLEAN_ENV, CHAGEUN_UNATTENDED: "1", CHAGEUN_UNATTENDED_TOKEN: "abc123", CHAGEUN_ROOT: dir };
+  const r = replay(env, dir);
+  assert.equal(r.replayed, FX.calls.length, "재생이 도중에 끊겼다");
+  assert.equal(r.other, 0);
+  assert.equal(r.exit2, 0, "무인이 넓힌 범위에서 새로 막기 시작하면 사용자 결정과 어긋난다");
+  // 예산 소진 속도. 넓힌 범위의 호출은 §0.5 를 아예 안 지나므로 상태 파일이 **생기지도 않는다** =
+  //   세는 호출 수가 v0.65.0 전(훅이 안 돌던 때)과 정확히 같다.
+  assert.equal(existsSync(join(dir, ".chageun", "runtime.json")), false,
+    "넓힌 범위 호출이 무인 예산을 먹기 시작했다 — 무인 세션이 전보다 빨리 멈춘다");
+});
+
+test("F-29 비용: 재생 벽시계 ÷ 세션 수가 2초 미만", () => {
+  // 넘으면 층3 의 비용 규율(파일도 트랜스크립트도 안 읽는다)이 깨진 것이다.
+  assert.ok(attended, "앞 칸이 먼저 돌아야 한다");
+  const perSession = attended.wall / FX.sessions / 1000;
+  assert.ok(perSession < 2,
+    `세션당 ${perSession.toFixed(2)}초 — 층3 이 흔한 경로에서 파일이나 트랜스크립트를 읽고 있지 않은지 보라`);
+  console.log(`  [비용] ${FX.calls.length}건 ${(attended.wall / 1000).toFixed(1)}초 `
+    + `= ${(attended.wall / attended.replayed).toFixed(1)}ms/건 · 세션당 ${perSession.toFixed(2)}초`);
+});

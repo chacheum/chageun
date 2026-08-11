@@ -1,0 +1,7759 @@
+{
+ "note": "옛 매처가 안 잡던 호출 전수(합성 값). 도구 이름과 입력 칸 구조만 실기록에서 왔다.",
+ "sessions": 27,
+ "total": 940,
+ "calls": [
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "header": "...",
+      "question": "...",
+      "options": [
+       {},
+       {},
+       {}
+      ],
+      "multiSelect": false
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": true,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Workflow",
+   "tool_input": {
+    "name": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1,
+    "offset": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1,
+    "offset": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "EnterWorktree",
+   "tool_input": {
+    "name": "..."
+   }
+  },
+  {
+   "tool_name": "ExitWorktree",
+   "tool_input": {
+    "action": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "/repo/a",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Artifact",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "description": "...",
+    "favicon": "..."
+   }
+  },
+  {
+   "tool_name": "SendUserFile",
+   "tool_input": {
+    "files": [
+     "/repo/a"
+    ],
+    "status": "...",
+    "display": "...",
+    "caption": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "__unparsedToolInput": {
+     "raw": "...",
+     "len": 1
+    }
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Artifact",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "description": "...",
+    "favicon": "...",
+    "label": "..."
+   }
+  },
+  {
+   "tool_name": "SendUserFile",
+   "tool_input": {
+    "__unparsedToolInput": {
+     "raw": "...",
+     "len": 1
+    }
+   }
+  },
+  {
+   "tool_name": "SendUserFile",
+   "tool_input": {
+    "files": [
+     "/repo/a"
+    ],
+    "caption": "...",
+    "status": "...",
+    "display": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "mcp__claude-in-chrome__tabs_context_mcp",
+   "tool_input": {
+    "createIfEmpty": true
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "SendUserFile",
+   "tool_input": {
+    "files": [
+     "/repo/a",
+     "/repo/a",
+     "/repo/a"
+    ],
+    "caption": "...",
+    "status": "...",
+    "display": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Workflow",
+   "tool_input": {
+    "script": "...",
+    "description": "..."
+   }
+  },
+  {
+   "tool_name": "Workflow",
+   "tool_input": {
+    "script": "...",
+    "description": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": true,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "__unparsedToolInput": {
+     "raw": "...",
+     "len": 1
+    }
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     },
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "SendMessage",
+   "tool_input": {
+    "to": "...",
+    "summary": "...",
+    "message": "...",
+    "type": "...",
+    "recipient": "...",
+    "content": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "...",
+    "args": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "__unparsedToolInput": {
+     "raw": "...",
+     "len": 1
+    }
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "ToolSearch",
+   "tool_input": {
+    "query": "...",
+    "max_results": 1
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebSearch",
+   "tool_input": {
+    "query": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "WebFetch",
+   "tool_input": {
+    "url": "/repo/a",
+    "prompt": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "AskUserQuestion",
+   "tool_input": {
+    "questions": [
+     {
+      "question": "...",
+      "header": "...",
+      "multiSelect": false,
+      "options": [
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Skill",
+   "tool_input": {
+    "skill": "..."
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  },
+  {
+   "tool_name": "Read",
+   "tool_input": {
+    "file_path": "/repo/a"
+   }
+  }
+ ]
+}
