@@ -302,8 +302,11 @@ function selectReapableDetailed(procs, ownUid, opts) {
       // itself looks like a dev server or dev launcher (never a generic node daemon).
       // Intentionally NOT extended to the idle branch: an idle server's parent is left
       // alone (npm/sh exit on their own once the child dies).
+      // 🛑 `insideFence(parent)` is not optional. Targets are added in TWO places and the
+      // fence must guard both — the main loop's check does not cover this one, and a
+      // fence with one unguarded door is not a fence.
       const parent = byPid.get(p.ppid);
-      if (parent && eligible(parent) && isDeleted(parent.cwd) &&
+      if (parent && eligible(parent) && insideFence(parent) && isDeleted(parent.cwd) &&
           (isDevServer(parent.comm, parent.cmdline) || isDevLauncher(parent.cmdline))) {
         reasons.set(parent.pid, "deleted");
       }

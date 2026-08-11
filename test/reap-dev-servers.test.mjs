@@ -349,12 +349,20 @@ const linux = process.platform === "linux";
 // 🛑 울타리(CHAGEUN_REAP_ONLY_UNDER)를 **반드시** 함께 넘긴다. 문턱을 0 으로 낮추면
 // 나이 조건이 사라져, 울타리가 없으면 이 검사가 **그 기계의 진짜 개발 서버**까지 훑는다
 // (2회차 리뷰가 잡은 구멍 — `npm test` 만 돌려도 남의 서버가 죽을 수 있었다).
-function runHook(env, fence) {
+// 울타리는 스프레드 **뒤**에 둔다 — 앞에 두면 env 에 같은 키가 들어올 때 덮인다.
+function hookEnv(env, fence) {
   if (!fence) throw new Error("울타리 없이 훅을 부르지 않는다");
+  return { ...process.env, ...env, CHAGEUN_REAP_ONLY_UNDER: fence };
+}
+function runHook(env, fence) {
   return spawnSync(process.execPath, [HOOK], {
-    encoding: "utf8", timeout: 20000,
-    env: { ...process.env, CHAGEUN_REAP_ONLY_UNDER: fence, ...env },
+    encoding: "utf8", timeout: 20000, env: hookEnv(env, fence),
   });
+}
+// 비동기로 띄우는 길도 **같은 헬퍼**를 지나게 한다. 길이 둘로 갈리면 한쪽에만 울타리가
+// 걸려, 다음 사람이 그 길로 울타리 없이 훅을 부르게 된다.
+function spawnHook(env, fence) {
+  return spawn(process.execPath, [HOOK], { env: hookEnv(env, fence), stdio: "ignore" });
 }
 
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -454,17 +462,18 @@ test("훅 통합: 늦게 붙은 접속도 살린다 (2초 멈춤이 없으면 �
   const v = startVictim();
   let conn = null;
   try {
-    const child = spawn(process.execPath, [HOOK], {
-      env: { ...process.env, CHAGEUN_REAP_ONLY_UNDER: v.dir, CHAGEUN_REAP_MIN_AGE_MS: "0" },
-      stdio: "ignore",
-    });
-    const done = new Promise((ok) => child.once("exit", ok));
-    await new Promise((r) => setTimeout(r, 400));
+    const child = spawnHook({ CHAGEUN_REAP_MIN_AGE_MS: "0" }, v.dir);
+    let code = null;
+    const done = new Promise((ok) => child.once("exit", (c) => { code = c; ok(); }));
+    // 1.1초 — 훅의 첫 패스(이 기계에서 85ms)가 끝나고도 멈춤(2초) 안쪽이다. 0.4초는
+    // 느린 기계에서 첫 패스가 그보다 오래 걸려 판별을 못 할 여지가 있었다.
+    await new Promise((r) => setTimeout(r, 1100));
     assert.ok(alive(v.pid), "멈춤 없이 이미 죽었다 — 2초 멈춤이 사라졌다");
     conn = nnet.connect(v.port, "127.0.0.1");
     await new Promise((ok, no) => { conn.once("connect", ok); conn.once("error", no); });
     await done;
     assert.ok(alive(v.pid), "멈춤 뒤 다시 읽었는데도 죽였다 — 두 번째 확인이 안 돈다");
+    assert.equal(code, 0, "훅이 정상 종료하지 않았다(다른 이유로 아무것도 안 골랐을 수 있다)");
   } finally { if (conn) conn.destroy(); cleanup(v); }
 });
 
@@ -503,4 +512,14 @@ test("훅 통합: 문턱 환경변수가 빈 값이면 기본값으로 떨어진
       assert.ok(alive(v.pid), "빈 문자열 문턱(" + JSON.stringify(blank) + ")에 죽었다");
     }
   } finally { cleanup(v); }
+});
+
+test("울타리: 부모를 함께 끄는 갈래도 울타리를 지킨다", () => {
+  // 대상이 추가되는 지점이 둘이라, 주 루프에만 울타리를 걸면 이 뒷문으로 샌다.
+  const parent = { pid: 300, ppid: 1, uid: UID, comm: "node", cmdline: "npm run dev", cwd: del("/other/app") };
+  const child = { pid: 301, ppid: 300, uid: UID, comm: "next-server", cmdline: "next-server", cwd: del("/fence/app") };
+  // 자식은 울타리 안, 부모는 밖 → 자식만 죽어야 한다
+  assert.deepEqual(pick([parent, child], { onlyUnder: "/fence" }), [301]);
+  // 울타리가 없으면 둘 다 (기존 동작이 안 바뀌었는지 대조)
+  assert.deepEqual(pick([parent, child], {}), [300, 301]);
 });
