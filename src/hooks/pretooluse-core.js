@@ -254,7 +254,16 @@ const REASONS_SUBAGENT = {
   //   (gate-skip 4회차 교훈). 그래서 "차근을 잠시 끄라"·"그 파일을 고치라" 류를 한 줄도 안 적는다.
   //   사용자에게 물어보라고도 안 한다 — 서브에이전트는 화면 질문을 못 띄운다.
   "subagent-opaque-spawn": "차단: 이 도구로는 **무엇을 띄우는지 차근이 읽을 수 없습니다.** 각본은 문자열을 이어 붙이거나 바깥 파일에서 올 수 있어, 그 안에서 검증 게이트를 약한 모델로 띄우거나 검사를 건너뛰어도 아무도 못 봅니다. 그래서 뒤에서 도는 작업에는 이 통로를 열어 두지 않습니다. 지금 할 수 있는 것은 둘입니다: (1) 같은 일을 지금 가진 도구로 직접 하고, 하던 일을 끝내 커밋까지만 한 뒤 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 이 통로가 꼭 필요하면 그 자리에서 멈추고 본 세션에 **BLOCKED** 로 보고한다 — 무엇을 띄우려 했는지, 왜 필요한지, 대신 해 본 것을 함께 적으세요. 그 판단과 실행은 본 세션 몫입니다.",
-  "subagent-gate-spawn": "차단: 검증 게이트(plan-validator·pr-reviewer)는 본 세션이 띄웁니다. 만든 쪽이 자기 검사를 부르면 검사가 아닙니다 — 무엇을 검사할지 스스로 고르게 되고, 그 실행 흔적으로 push 잠금까지 풀립니다. 지금 할 수 있는 것은 둘입니다: (1) 하던 일을 끝내 커밋까지만 하고, 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 검토·판단이 꼭 필요하면 그 자리에서 멈추고 **BLOCKED** 로 보고한다(무엇을 정해야 하는지와 선택지를 함께). 게이트 실행과 push 는 본 세션이 합니다.",
+  "subagent-gate-spawn": "차단: 검증 게이트(plan-validator·pr-reviewer)는 본 세션이 띄웁니다. 만든 쪽이 자기 검사를 부르면 검사가 아닙니다 — 무엇을 검사할지 스스로 고르게 되고, 그 실행 흔적으로 push 잠금까지 풀립니다. 지금 할 수 있는 것은 둘입니다: (1) 하던 일을 끝내 커밋까지만 하고, 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 검토·판단이 꼭 필요하면 그 자리에서 멈추고 **BLOCKED** 로 보고한다(무엇을 정해야 하는지와 선택지를 함께). 게이트 실행과 push 는 본 세션이 합니다. **감독(`supervisor`)이 띄운 일이면 감독에게 BLOCKED 로 보고하세요 — 검토는 감독이 띄웁니다.**",
+  // ── v0.65.0 F-28(감독 에이전트) 사유 넷 ──────────────────────────────────
+  // 넷 다 서브에이전트 전용이다(감독은 언제나 서브에이전트다). 이 파일의 하드 교훈 둘을 그대로 지킨다:
+  //   (1) **켤 수 없는 스위치를 안내하지 않는다** — 서브에이전트는 훅 프로세스의 환경변수를 못 켠다.
+  //   (2) **읽는 쪽이 따라 할 수 있는 우회를 안내하지 않는다**(gate-skip 4회차 교훈).
+  //   사용자에게 물어보라고도 안 한다 — 서브에이전트는 화면 질문을 못 띄운다.
+  "subagent-supervisor-spawn": "차단: 감독(`supervisor`)은 본 세션만 띄웁니다. 일이 갈라지면 사람이 볼 수 있게 본 세션이 갈라야 합니다 — 뒤에서 감독이 감독을 낳으면 몇 겹인지 아무도 못 셉니다. 이것은 '감독인 척'을 막는 자물쇠이기도 합니다: 감독이 되는 유일한 길은 본 세션이 감독으로 띄우는 것이고, 돌고 있는 작업은 자기 자리를 바꿀 수 없습니다. 지금 할 수 있는 것은 하나입니다 — 그 자리에서 멈추고 본 세션에 **BLOCKED** 로 보고하세요(무엇을 띄우려 했는지, 왜 필요한지를 함께).",
+  "supervisor-write": "차단: 감독은 파일을 고치지 않습니다. 고칠 일은 일꾼(`code-implementer`·`deep-implementer`)에게 띄우세요 — 감독의 일은 띄우고, 자리를 열어 확인하고, 판정을 옮기는 것입니다. 커밋·push·PR 도 감독이 하지 않습니다. 일꾼에게 띄울 수 없는 일이면 그 자리에서 멈추고 본 세션에 **BLOCKED** 로 보고하세요.",
+  "supervisor-spawn-cap": "차단: 감독이 띄울 수 있는 한도(6건)를 다 썼습니다. **6건은 검토 회차가 아니라 총 스폰 수입니다** — 수정 3 + 검토 3 이 기본이고, 한 회차에 일꾼을 두 번 띄우면 더 빨리 닿습니다. 지금까지의 **게이트 판정 원문**과 남은 문제를 적어 본 세션에 **BLOCKED** 로 올리세요. 한도를 늘리는 스위치는 없습니다.",
+  "supervisor-cap-unreadable": "차단: **기록을 못 읽어 지금까지 띄운 수를 셀 수 없습니다.** 한도를 못 세면 막는 쪽이 안전측이라 이 스폰을 막았습니다. 지금까지의 **게이트 판정 원문**과 남은 문제, 그리고 무엇을 띄우려 했는지를 적어 본 세션에 **BLOCKED** 로 올리세요. 이 검사를 끄거나 한도를 늘리는 스위치는 없습니다. 올릴 때 이 한 줄을 함께 적으세요: '이 검사는 하네스가 기록을 두는 폴더 구조에 기댑니다. 갑자기 전부 막히면 그 폴더 구조가 바뀌었는지부터 보십시오.'",
 };
 function reasonFor(key, forSubagent) {
   if (forSubagent && REASONS_SUBAGENT[key]) return REASONS_SUBAGENT[key];
@@ -321,6 +330,32 @@ function spawnIntent(toolName, toolInput) {
   //   전부 거짓), 그 상태를 readable 로 올리면 "판정된 스폰"으로 잘못 읽힌다.
   const shaped = subagentOf(toolInput);
   return shaped ? { kind: "readable", via: "shape", agentType: shaped } : null;
+}
+
+// ── 감독 폭주 상한(v0.65.0 F-28) ─────────────────────────────────────────────
+// 6 은 **사용자 결정**이다(수정 3 + 검토 3 = 3회차). 임의로 5 나 7 로 바꾸지 않는다.
+// ⚠ 6건과 3회차는 **다른 축**이다. 감독이 같은 회차에 일꾼을 두 번 띄우면 6건이 3회차보다 먼저 닿는다.
+const SUPERVISOR_SPAWN_CAP = 6;
+// 기록 속 스폰 수를 센다. 🛑 **`Task|Agent` 정규식을 새로 만들지 않는다** — 무엇이 '스폰 통로'인지는
+//   위 `spawnIntent` 하나가 정한다. 사본을 만들면 (1) 통로가 늘 때 한쪽만 고쳐져 조용히 갈라지고
+//   (바로 위 IMPLEMENTER_AGENTS 주석의 그 사고) (2) "정규식 리터럴은 spawnIntent 정의 1곳뿐"을
+//   거는 F-29 검사가 빨개진다. 그래서 **불투명 통로 스폰도 상한에 함께 들어간다**(그 갈래는
+//   subagentGateSpawn 이 먼저 막지만, 세는 규칙이 통로마다 갈리지 않는다).
+// 대상은 안 가린다 — 상한은 "감독이 무엇을 띄웠나"가 아니라 "몇을 띄웠나"를 센다.
+// 자기 기록의 레코드 모양이 부모 기록과 같은 계열이라는 근거: 회고 스캐너가 agent 파일에 그대로
+//   hasRealContent 를 적용하고(src/skills/retrospect/retrospect-scan.mjs 의 :451), 그 함수가
+//   `(o.message || o).content[]` 안의 `type: "tool_use"` 를 본다(같은 파일 :358-368).
+//   착수 전 실측이 그것을 닫았다(2026-08-12 프로브 · 첫 스폰 시점 계수 1).
+function spawnCountIn(objs) {
+  let n = 0;
+  for (const record of Array.isArray(objs) ? objs : []) {
+    const content = (record && (record.message || record).content) || [];
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (b && b.type === "tool_use" && spawnIntent(b.name, b.input)) n += 1;
+    }
+  }
+  return n;
 }
 
 // 🛑 이것은 정규식 리터럴이 아니라 `hooks.claude.json` **옛 매처 문자열의 복사본**이다(239자).
@@ -1052,6 +1087,21 @@ const REVIEW_AGENT_RE = /(?:^|:)(plan-validator|pr-reviewer)$/;
 function isReviewAgent(agentType) {
   return typeof agentType === "string" && REVIEW_AGENT_RE.test(agentType);
 }
+// ── 감독 판정기(v0.65.0 F-28) — 한 곳 ─────────────────────────────────────────
+// 🛑 **세 자리가 이 함수 하나를 공유한다**: (1) 문(subagentGateSpawn 이 감독에게만 게이트를 열어 준다)
+//   (2) 감독 스폰 차단(감독이 감독을 못 낳는다) (3) 쓰기 차단(supervisorBlock 호출 가드).
+//   정규식을 세 군데 박으면 한쪽만 고쳐져 조용히 갈라진다 — 이 저장소에서 같은 사고가 두 번 났다
+//   (바로 위 REVIEW_AGENT_RE 의 리브랜드 교훈 · IMPLEMENTER_AGENTS 주석의 일꾼 추가 교훈).
+// 🛑 **세 자리가 다 '좁은 판정'이다.** 이 저장소의 평소 방향("막는 판정은 넓게")과 반대인데
+//   여기서는 그게 맞다 — **문을 지나는 집합과 쓰기가 막히는 집합이 정확히 같아야 하기 때문**이다.
+//   두 집합이 어긋나면 한쪽에 틈이 생긴다. 넓은 쓰기 차단 + 좁은 문이면 감독이 아닌 에이전트가
+//   쓰기만 막혀 남의 에이전트를 망가뜨리고, 좁은 쓰기 차단 + 넓은 문이면 **문은 지났는데 쓰기는
+//   안 막히는 자**가 생긴다 — 그게 이 설계에서 가장 나쁜 칸이다. 그래서 하나를 공유해 둘을 같게 만든다.
+// 네임스페이스 무관 매칭인 이유는 REVIEW_AGENT_RE 와 같다(접두사 하드코딩은 리브랜드에 무음 해제).
+const SUPERVISOR_RE = /(?:^|:)supervisor$/;
+function isSupervisor(agentType) {
+  return typeof agentType === "string" && SUPERVISOR_RE.test(agentType);
+}
 const AGENT_MEM = path.join(os.homedir(), ".claude", "agent-memory");
 // symbolic-ref(HEAD 재기록)·reflog(expire/delete로 복구로그 파기)는 변경 명령이라 제외(pr-reviewer low).
 // v0.42: `branch` 추가 — 실측 32건의 리뷰 차단 중 3건이 읽기 전용 branch 조회였다
@@ -1250,6 +1300,20 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
   return null;  // 그 외 도구(Read/Grep/Glob 등 — 매처에도 없음)는 관여 안 함
 }
 
+// ── 감독의 쓰기 금지(v0.65.0 F-28 · 둘째 겹) ─────────────────────────────────
+// 🛑 **허용 목록(`tools:` 넷)이 본체이고 이것은 그 위에 얹는 둘째 겹이다. 순서를 뒤집으면 안 된다.**
+//   이 차단은 다섯 이름짜리 **금지 목록**인데 이 하네스의 도구는 40개가 넘고 계속 는다 —
+//   금지 목록은 새로 생긴 도구를 못 막는다. 전부 받은 감독은 임의 코드 실행 통로로 파일을 쓰고
+//   각본으로 대신 쓸 일꾼을 띄워, "글을 못 쓰는 감독"이라는 이 설계의 전제가 그 갈래에서 깨진다.
+//   (오늘 그 두 통로는 subagentGateSpawn 의 불투명 갈래가 따로 막지만, 그것도 이름 목록이다.)
+// 그런데 이 겹이 필요한 이유는 도구 목록이 안 지켜져서가 아니다 — **에이전트 정의 파일은 사람이
+//   한 줄 고치면 조용히 넓어지는 자리**이고, 그때 아무 검사도 안 울린다. 이 차단이 그 한 줄을 무력화한다.
+// 🛑 게이트(reviewAgentBlock)와 달리 `~/.claude/agent-memory/` **예외를 두지 않는다.** 감독은
+//   메모리를 안 쓰고, 예외가 없으면 경로 판정 자체가 없어져 우회할 표면도 없다(순수함수 · fs 없음).
+function supervisorBlock(toolName) {
+  return /^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/.test(String(toolName || "")) ? "supervisor-write" : null;
+}
+
 // ── 게이트 모델 런타임 강등 가드(v0.42 · Claude 전용) ────────────────────────
 // gate-model-tier.test.mjs 는 **frontmatter만** 본다. 그런데 Task/Agent 호출의 `model` 파라미터는
 // frontmatter를 덮어쓴다 — 실측: 한 세션이 게이트를 frontmatter보다 낮은 티어로 띄웠고, "게이트
@@ -1310,13 +1374,24 @@ function gateModelBlock(toolName, toolInput) {
 // **오늘 오차단 0인 근거**: 이 두 도구는 서브에이전트 도구 목록에 없다(2026-08-11 확인 · REPL 은
 //   전체 기록 2,235개 트랜스크립트에서 호출 0건). ⚑ **나중에 주어지는 날부터는 정상 위임도 막힌다** —
 //   그때 다시 볼 자리다. 다시 볼 신호 = 서브에이전트 도구 목록에 Workflow·REPL 이 생기는 것.
+// v0.65.0 F-28(감독 에이전트): 이 함수가 **문**이 된다. 갈래 둘을 더한다 —
+//   (4) 대상이 감독이면 무조건 차단(감독은 본 세션만 띄운다 = '감독인 척' 자물쇠),
+//   (5) 대상이 게이트인데 **부르는 쪽이 감독이면 통과**(이것이 문이다).
+//   문이 걸린 값은 지시문 글자도 프롬프트 라벨도 아니고 하네스가 스폰 시점에 박는 `agent_type` 이라,
+//   감독 지시문을 그대로 베껴 붙여도 `agent_type` 은 안 바뀐다.
+// 🛑 **판정 순서가 곧 안전이다.** 불투명 갈래(3)가 감독 갈래(4·5)보다 **먼저**여야 한다 —
+//   불투명 통로는 대상 이름이 빈 값이라, 뒤에 두면 이름 판정 세 줄을 전부 빠져나가 null 로 떨어진다.
+//   그리고 "도구가 Task/Agent 가 아니면 null" 을 여기에 다시 쓰면 F-29 의 불투명 통로 차단이
+//   한 줄로 통째로 사라진다(그때 test/hook-net.test.mjs 의 층4 칸이 빨개진다 — 고칠 것은 검사가 아니라 여기다).
 function subagentGateSpawn(agentType, toolName, toolInput) {
-  if (!agentType) return null;                               // 메인 세션은 대상 아님
+  if (!agentType) return null;                               // 1. 메인 세션은 대상 아님
   const si = spawnIntent(toolName, toolInput);
-  if (!si) return null;
-  if (si.kind === "opaque") return "subagent-opaque-spawn";
+  if (!si) return null;                                      // 2. 스폰 통로가 아님
+  if (si.kind === "opaque") return "subagent-opaque-spawn";  // 3. F-29 갈래 — 감독에게도 그대로 산다
+  if (isSupervisor(si.agentType)) return "subagent-supervisor-spawn";  // 4. 감독 재생산·'감독인 척' 금지
+  if (isSupervisor(agentType)) return null;                  // 5. 문 — 감독만 게이트를 띄운다
   // `via` 는 안 가린다 — **닫는 쪽**이라 넓혀도 게이트가 안 열린다. 성질 통로로 게이트를 띄우는 것도 막힌다.
-  return gateOf(si.agentType) ? "subagent-gate-spawn" : null;
+  return gateOf(si.agentType) ? "subagent-gate-spawn" : null;  // 6. 그 외 서브에이전트는 지금 그대로
 }
 
 // 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
@@ -1418,4 +1493,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE };
+module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP };
