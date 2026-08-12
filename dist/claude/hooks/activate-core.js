@@ -70,13 +70,21 @@ const LEGACY_HEADER = "차근 워크플로우 활성. 아래 운영 규칙을 �
 // 머리말 안에는 빈 줄이 없어야 한다 — 검사와 모델이 첫 "\n\n" 을 본문 시작으로 읽는다.
 // 본문은 `N/5`, 부록은 번호 없이 "조건부"로 적는다: 부록은 보통 안 오는데 "6조각이 한 벌"이라고
 // 하면 매 평범한 세션에서 모델이 없는 조각을 찾게 된다.
+// 명단은 **조각 표에서 뽑는다**(손으로 안 적는다) — 조각을 늘리면 머리말이 따라 늘어난다.
+// 왜 번호만으로 부족한가: 조각 4(멈춤·검증·보안)나 5(안전 캡슐)만 죽으면 1~3이 정상 도착해
+// **세션이 완전히 정상으로 보인다.** 번호의 빈칸은 눈에 안 띄지만 이름의 빈칸은 띈다 —
+// "안전 캡슐이 안 왔다"는 알아볼 수 있어도 "5번이 안 왔다"는 못 알아본다.
+// 머리말은 조각마다 반복되어 글자 수가 ×6 이므로 명단은 짧게 쓴다.
+const ROSTER = PIECES.map((p) => `${p.n} ${p.label}`).join(" / ");
+
 function headerFor(n, label, rulesPath) {
   const tag = n === null ? "부록 조각 · 조건부" : `조각 ${n}/${PIECES.length} · ${label}`;
   const second = n === null
-    ? "이 조각은 조건이 맞을 때만 온다. 규칙 본문 5조각과 한 벌이다."
-    : "조각은 도착 순서가 섞인다. 규칙 본문은 조각 5개가 한 벌이고(조건이 맞으면 부록 조각이 더 온다), 서로를 대체하지 않는다.";
+    ? "이 조각은 조건이 맞을 때만 온다. 규칙 본문 한 벌과 함께 쓴다."
+    : "도착 순서는 섞인다. 조각끼리 서로를 대체하지 않는다.";
   return `차근 워크플로우 활성. 아래 운영 규칙을 이번 세션 내내 따른다 [${tag}].\n` +
-    `${second} 못 본 조각이 있으면 ${rulesPath} 를 읽어 채운다(부록은 같은 폴더).`;
+    `${second} 한 벌 = ${ROSTER} (+조건 맞으면 부록 조각).\n` +
+    `안 온 조각이 있으면 ${rulesPath} 를 읽어 채운다(부록은 같은 폴더).`;
 }
 
 // n 1~5     → 머리말 + 그 조각의 절들
@@ -94,5 +102,5 @@ function assemble({ rulesText, n, rulesPath, appendixTexts }) {
 module.exports = {
   PIECES, sectionsOf, bodyOfPiece,
   PIECE_MAX_CHARS, CLI_TRUNCATION_CHARS, APPENDICES, APPENDIX_PIECE,
-  LEGACY_HEADER, headerFor, assemble,
+  LEGACY_HEADER, ROSTER, headerFor, assemble,
 };
