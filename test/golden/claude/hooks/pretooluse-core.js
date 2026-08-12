@@ -384,6 +384,22 @@ function spawnCountIn(objs) {
   }
   return n;
 }
+// 🛑 **지금 부르려는 그 스폰이 자기 기록에 이미 적혀 있다**(2026-08-12 실측: 스폰을 0번 한 프로브의
+//   **첫 스폰**에서 계수가 1). 그래서 계수를 그대로 상한과 견주면 6번째에서 막혀 **실제로 쓸 수 있는
+//   스폰이 5건**이 되고, 사용자 결정(수정 3 + 검토 3)의 3회차 검토가 아예 못 뜬다(스펙 §3.3 SV-3 이
+//   이 갈래를 예고했다). **사용자 결정(2026-08-12): 쓸 수 있는 스폰을 6건으로 맞춘다** — 6번 성공하고
+//   7번째에서 막힌다. 그래서 진행 중인 이 호출 하나를 계수에서 뺀다.
+// 🛑 **문턱을 7로 올리지 않은 이유.** 상수를 7로 만들면 사용자가 정한 숫자(6)와 상수가 어긋나, 차단
+//   문구의 "한도(6건)" · 스펙의 "총 6건" · 검사가 저마다 다른 수를 들고 조용히 갈라진다. 뺄셈을 여기 두면
+//   **6 = 쓸 수 있는 스폰 수 = 문구의 숫자 = 상수**가 한 값으로 남는다.
+// ⚠ **1회 실측 위에 선 뺄셈이다.** 하네스가 바뀌어 진행 중인 호출이 아직 안 적힌 채 훅이 돌면, 이 뺄셈은
+//   한 건 **더 허용**하는 쪽으로 틀린다(6 대신 7). 그 방향으로 틀리게 뒀다 — 폭주를 막는 상한은 그래도
+//   서지만, 반대 방향(5건으로 조이기)은 3회차 설계를 **조용히 못 돌게** 만들기 때문이다.
+// ⚠ 한 메시지에 스폰 둘이 함께 실리면(병렬 호출) 아직 안 돈 형제도 계수에 들어 그 경우만 한 건 일찍
+//   막힌다. 감독은 앞에 두고 기다려 하나씩 띄우게 지시돼 있어(스펙 §4) 정상 경로가 아니다.
+function spawnCapReached(objs) {
+  return spawnCountIn(objs) - 1 >= SUPERVISOR_SPAWN_CAP;   // -1 = 지금 부르려는 이 호출
+}
 
 // 🛑 이것은 정규식 리터럴이 아니라 `hooks.claude.json` **옛 매처 문자열의 복사본**이다(239자).
 //   안의 `Task|Agent` 는 `spawnIntent` 판정과 **무관하다** — 사본 검사(성공 기준 7)의 명시적 예외다.
@@ -1537,4 +1553,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP };
+module.exports = { statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };

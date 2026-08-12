@@ -1183,6 +1183,9 @@ function f28Fixture({ own = 0, parent = 0, ownExists = true, brokenTail = false 
   }
   return { dir, parentPath };
 }
+// 🛑 **`own` 은 "지금 부르려는 이 호출까지 포함한 수"다.** 하네스가 그 스폰을 기록에 **먼저** 적고 훅을
+//   돌리기 때문이다(2026-08-12 실측: 스폰 0번 한 프로브의 첫 스폰에서 계수 1). 그래서 `own: 6` 은
+//   "이번이 6번째 스폰" 이고, 사용자 결정(쓸 수 있는 스폰 6건)대로면 **통과**해야 한다. `own: 7` 이 차단이다.
 function f28Spawn({ own = 0, parent = 0, ownExists = true, brokenTail = false, agentType = "chageun:supervisor", omit = null } = {}) {
   const { dir, parentPath } = f28Fixture({ own, parent, ownExists, brokenTail });
   const input = {
@@ -1208,14 +1211,24 @@ test("F-28 상한: 세는 것은 spawnIntent 하나뿐이다(Task|Agent 정규�
     "불투명 통로 스폰도 상한에 함께 들어간다 — 세는 규칙이 통로마다 갈리지 않는다");
 });
 
-test("F-28 상한: 5건 통과 · 6건 차단 · 감독이 아니면 6건이어도 통과", () => {
-  assert.equal(f28Spawn({ own: 5 }).status, 0, "5건이면 아직 여유가 있다");
-  const hit = f28Spawn({ own: 6 });
-  assert.equal(hit.status, 2, "6건이면 막는다");
+// 🛑 **경계를 양쪽 다 건다.** 한쪽만 걸면 반대 방향으로 밀려도 안 잡힌다 — 실제로 이 자리가
+//   "기록에 6건이면 차단" 한쪽만 걸려 있어서, 쓸 수 있는 스폰이 **5건**으로 조여진 것을 검사가
+//   전부 초록인 채로 놓쳤다(2026-08-12 · 스펙 §3.3 SV-3 이 예고한 갈래).
+test("F-28 상한: 6번째 스폰은 통과 · 7번째에서 차단(사용자 결정 = 쓸 수 있는 스폰 6건)", () => {
+  const { spawnCapReached, SUPERVISOR_SPAWN_CAP } = require(F28_CORE);
+  const spawns = (n) => Array.from({ length: n }, () => JSON.parse(f28Rec("Agent", { subagent_type: "x" })));
+  assert.equal(SUPERVISOR_SPAWN_CAP, 6, "6은 사용자 결정 3 이다 — 임의로 5·7 로 바꾸지 않는다");
+  assert.equal(spawnCapReached(spawns(6)), false, "6번째 스폰(자기 포함 6건)은 아직 상한이 아니다");
+  assert.equal(spawnCapReached(spawns(7)), true, "7번째에서 닿는다");
+
+  assert.equal(f28Spawn({ own: 6 }).status, 0,
+    "6번째가 막히면 3회차 검토를 못 띄운다 — 사용자 결정(수정 3 + 검토 3)이 안 채워진다");
+  const hit = f28Spawn({ own: 7 });
+  assert.equal(hit.status, 2, "7번째는 막는다(상한이 실제로 서는지)");
   assert.match(hit.stderr, /한도/, "무엇에 막혔는지 알려야 한다");
-  assert.equal(f28Spawn({ own: 6, agentType: "chageun:deep-implementer" }).status, 2,
+  assert.equal(f28Spawn({ own: 7, agentType: "chageun:deep-implementer" }).status, 2,
     "감독이 아닌 서브에이전트는 이 상한이 아니라 게이트 스폰 차단에 걸린다");
-  assert.equal(f28Spawn({ own: 6, agentType: "chageun:deep-implementer" }).stderr.includes("한도"), false,
+  assert.equal(f28Spawn({ own: 7, agentType: "chageun:deep-implementer" }).stderr.includes("한도"), false,
     "다른 서브에이전트에게 감독 상한 문구를 보여 주면 무엇이 막혔는지가 사라진다");
 });
 
@@ -1236,17 +1249,19 @@ test("F-28 상한: 세 칸 중 하나라도 빈 값이면 조립 실패 = 못 �
 // 🛑 이 칸이 자료원 되돌림을 잡는 **유일한** 칸이다. 훅이 받는 transcript_path 는 **부모(메인) 기록**이라
 //   (2026-08-12 실측) 그것을 세면 (1) 메인이 이미 띄운 스폰 때문에 감독이 첫 스폰에서 죽고
 //   (2) 애초에 "감독이 몇을 띄웠나"가 아니라 "메인이 몇을 띄웠나"를 센다 — 값이 큰 게 아니라 다른 것을 센다.
-test("F-28 상한: 부모 기록에 6건이 있어도 자기 기록이 0건이면 통과", () => {
-  assert.equal(f28Spawn({ own: 0, parent: 6 }).status, 0,
+// 🛑 parent 는 **차단이 나는 수(7)** 로 둔다. 6 으로 두면 자료원이 부모로 되돌아가도 이 칸이 초록이라
+//   (6건은 이제 통과 쪽이다) 되돌림을 못 잡는다 — 검사 값이 제품 경계와 함께 움직여야 하는 자리다.
+test("F-28 상한: 부모 기록에 7건이 있어도 자기 기록이 0건이면 통과", () => {
+  assert.equal(f28Spawn({ own: 0, parent: 7 }).status, 0,
     "이 칸이 빨개지면 자료원이 부모 기록으로 되돌아간 것이다");
 });
 
 // 🛑 기록 파일은 **지금도 쓰이는 중**이라 꼬리 한 줄이 덜 쓰인 순간에 읽힐 수 있다. 리더를
 //   "한 줄이라도 파싱 실패면 null" 로 짜면 다른 칸이 전부 초록인 채 실사용에서만 감독이 무작위로
 //   죽는다(켤 스위치가 없어 회복 경로도 없다). 이 저장소가 최대 실패 양식으로 다뤄 온 오차단이다.
-test("F-28 상한: 깨진 줄은 건너뛴다(못 읽음이 아니다) · 앞의 6건까지 잃지 않는다", () => {
+test("F-28 상한: 깨진 줄은 건너뛴다(못 읽음이 아니다) · 앞의 7건까지 잃지 않는다", () => {
   assert.equal(f28Spawn({ own: 0, brokenTail: true }).status, 0, "깨진 꼬리 줄 하나로 감독이 죽으면 안 된다");
-  assert.equal(f28Spawn({ own: 6, brokenTail: true }).status, 2, "깨진 줄을 건너뛰느라 앞의 6건을 잃지도 않는다");
+  assert.equal(f28Spawn({ own: 7, brokenTail: true }).status, 2, "깨진 줄을 건너뛰느라 앞의 7건을 잃지도 않는다");
 });
 
 test("F-28 차단 문구 둘: 없는 스위치를 안내하지 않고, 회차가 아니라 총 스폰 수임을 적는다", () => {

@@ -9,7 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP, statusboardTrigger } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCapReached, statusboardTrigger } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
 // ⚠ 이 require 가 실패하면 **PreToolUse 하드 차단 전부가 한꺼번에 꺼진다**(모듈 로드 시점 예외는
@@ -603,7 +603,10 @@ process.stdin.on("end", () => {
       const own = supervisorTranscriptPath(input);
       const objs = own ? readTranscriptStrict(own) : null;
       if (!objs) return deny("supervisor-cap-unreadable", false);   // 조립 실패·못 읽음 = 첫 스폰도 차단
-      if (spawnCountIn(objs) >= SUPERVISOR_SPAWN_CAP) return deny("supervisor-spawn-cap", false);
+      // 🛑 견주는 규칙은 core 의 spawnCapReached 하나다 — **지금 부르려는 이 호출이 기록에 이미 적혀
+      //   있어서**(2026-08-12 실측) 그 한 건을 빼야 "6번 성공 · 7번째 차단"이 된다(사용자 결정).
+      //   여기서 다시 `>= SUPERVISOR_SPAWN_CAP` 로 견주면 쓸 수 있는 스폰이 5건으로 돌아간다.
+      if (spawnCapReached(objs)) return deny("supervisor-spawn-cap", false);
     }
 
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
