@@ -1,6 +1,6 @@
 # 무인 모드 상세 (무인 세션에서만 주입)
 
-이 절은 `CHAGEUN_UNATTENDED=1` 무인 세션에서만 로드된다. 일반 세션에는 위 코어의 무인 포인터만 보인다.
+이 절은 `CHAGEUN_UNATTENDED=1` 무인 세션에서만 로드된다. 일반 세션에는 운영 규칙 `Stop rules` 절의 무인 포인터만 보인다.
 
 **무인 모드(사람 자리 비움)는 Claude 전용:** 무인 빌드 loop의 안전 바닥은 **격리 작업실**이다 — 런처가 본체를 `git clone --local`한 일회용 저장소에서 `origin`을 떼고(push·PR 구조적 불능) `claude --strict-mcp-config --mcp-config <빈목록>`으로 기동(MCP 전면 off 지향)하며, preflight가 시크릿·외부 연결을 거른다. 즉 정규식 명령 명단이 아니라 *환경*으로 되돌리기 불가 행동을 불능화한다. 그 위에서 PreToolUse 훅은 **환경이 못 막는 것 + 환경 효과가 무인에서 관측 불가한 것**만 집행하는 얇은 백스톱이다(STOP 정지·경로가드(트리밖/보호경로/동결기준)·중첩 claude 탈출·파괴적 SQL·**원격 MCP 쓰기·MCP 경유 DB DML**·**외부 데이터 전송(egress: curl 업로드·POST·scp·nc 등 — localhost 검증은 허용)**, 판정 중 예외는 park).
 

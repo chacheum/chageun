@@ -157,6 +157,48 @@ test("조합 생성기가 등록된 부록을 하나도 빠뜨리지 않는다 (
   assert.deepEqual(covered, wired, "combos() 가 등록된 부록 중 일부를 안 돈다");
 });
 
+// ── 자리 참조 가드 ───────────────────────────────────────────────────────────
+// 🛑 대상은 안전 캡슐 절이 아니라 **주입되는 글 전체**(코어 + 등록된 부록)다. 조각은 순서가
+//    섞이므로 어느 절에서든 "위/아래/끝에" 는 거짓이 될 수 있다. 캡슐만 지키면 다음 자리 참조는
+//    다른 절에서 들어오고, 코어만 지키면 부록에서 들어온다(실제로 부록에 하나 있었다 —
+//    unattended-appendix.md:3 의 "위 코어". 실측에서 부록 조각이 **첫 번째로 도착한** 시행이 있어
+//    그 "위" 는 이미 거짓이 될 수 있는 상태였다).
+// 예외는 "위치를 안 가리키는 4건"뿐이고, 이름과 **뜻**을 붙여 목록으로 둔다(2026-08-12 실측).
+const LOCATION_RE = /\b(above|below|earlier|later|preceding|following|at the end|at the top|at the bottom)\b|(?:위|앞|아래)\s*(?:코어|절|부록|규칙|문단|항목|줄|글)|마지막에|끝에/gi;
+// ⚠ 정직 회계 — 이 그물이 **못 잡는 것**: 한국어의 자유로운 자리 표현("위에 있는 그 규칙",
+//    "앞서 말한", "뒤에 나오는")은 낱말 목록에 없어 안 걸린다. 넓히려다 "그 위에서"(논리적
+//    '그 위에'·부록 5행) 같은 정상 문장을 오탐해 예외 목록만 늘리는 쪽이 더 나쁘다고 봤다.
+//    이건 자물쇠가 아니라 그물이고, 최종 방어선은 이 주석을 읽는 사람이다.
+const ALLOWED = [
+  "later touching",        // 시간 — 작업 도중 나중에
+  "medium and above",      // 등급 — 심각도
+  "above the floor",       // 기준선 — 안전 바닥 위
+  "never below the worker" // 등급 — 심판 모델
+];
+const SCANNED = ["operating-rules.md", ...core.APPENDICES.map((a) => a.file)];
+
+test("규칙 본문·부록 어디에도 자리 참조가 없다 — 조각은 도착 순서가 섞인다", () => {
+  const joined = SCANNED.map((f) => readFileSync(join(ROOT, "src", "rules", f), "utf8")).join("\n");
+  for (const ok of ALLOWED)
+    assert.ok(joined.includes(ok), `예외 목록의 "${ok}" 가 본문에서 사라졌다 — 목록을 정리해라`);
+  for (const f of SCANNED) {
+    let scanned = readFileSync(join(ROOT, "src", "rules", f), "utf8");
+    for (const ok of ALLOWED) scanned = scanned.split(ok).join("");   // 이름 붙인 예외만 먼저 뗀다
+    const hits = [...scanned.matchAll(LOCATION_RE)].map((m) => m[0]);
+    assert.deepEqual(hits, [],
+      `${f} 에 자리로 가리키는 말이 남아 있다: ${hits.join(", ")}. ` +
+      "조각 도착 순서가 섞이면 그 문장은 거짓이 된다 — 자리 대신 절 이름으로 가리켜라. " +
+      "위치를 안 가리키는 말(등급·시간·기준선)이면 ALLOWED 에 **뜻을 적어** 더해라.");
+  }
+});
+
+test("안전 캡슐은 이름으로 가리키고, 새 문구가 그대로 있다", () => {
+  const capsule = core.sectionsOf(RULES).find((s) => s.heading.includes("Safety capsule")).text;
+  assert.ok(capsule.includes("(the named section in each line is the single source)."),
+    "T6 에서 못 박은 문구가 바뀌었다 — 자리 낱말을 다시 넣지 않았는지 확인해라");
+  assert.ok(capsule.includes("Full text: Stop rules"), "이름 기반 참조가 사라졌다");
+});
+
 test("배선 개수와 조각 개수가 같다 — 조각을 늘리고 배선을 안 늘리면 그 조각은 영원히 안 나간다", () => {
   const wiring = JSON.parse(readFileSync(join(ROOT, "src", "hooks", "hooks.claude.json"), "utf8"));
   const cmds = wiring.hooks.SessionStart.flatMap((g) => g.hooks).map((h) => h.command)
