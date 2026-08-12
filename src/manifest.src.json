@@ -14,7 +14,7 @@
     "rules": ["operating-rules.md"],
     "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan", "unattended-loop", "finish-check", "spec-gate", "run-verify", "routing", "formats", "retrospect"],
     "agents": ["plan-validator", "pr-reviewer", "code-implementer", "deep-implementer"],
-    "hooks": ["activate.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js", "posttooluse.js", "secret-scan-core.js", "design-scan-core.js", "reap-dev-servers.js", "reap-dev-servers-core.js"],
+    "hooks": ["activate.js", "activate-core.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js", "posttooluse.js", "secret-scan-core.js", "design-scan-core.js", "reap-dev-servers.js", "reap-dev-servers-core.js"],
     "assets": ["chageun-flow.png"]
   }
 }
