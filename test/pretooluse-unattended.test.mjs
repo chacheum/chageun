@@ -110,10 +110,16 @@ test("STOP: CHAGEUN_ROOT 없으면 상위 폴더로 .chageun을 찾아 멈춘다
   assert.match(r.stderr || "", /정지/);
 });
 
-test("PreToolUse matcher가 MultiEdit 등 편집 도구 포함(훅 우회 방지)", () => {
+// v0.65.0(F-29): 이 칸의 판정을 **문자열 포함**에서 **실제 매칭**으로 바꿨다. 매처가 이름 목록에서
+//   `""`(모든 도구)로 넓어졌기 때문이다 — 이 칸이 지키려던 것("편집 도구에서 훅이 안 도는 일이 없다")은
+//   `""` 가 **더 강하게** 만족한다(모든 도구에서 돈다). 포함 검사 그대로 두면 더 강한 상태에서 빨개진다.
+//   ⚠ 느슨해진 것이 아니다: 매처가 정확히 `""` 인지는 test/hook-net.test.mjs 의 층1 칸이 따로 못박고,
+//   여기서는 "이 도구들이 실제로 덮이는가"를 매처 의미 그대로 잰다(빈 매처 = 전 도구 · PostToolUse 전례).
+test("PreToolUse matcher가 MultiEdit 등 편집 도구를 실제로 덮는다(훅 우회 방지)", () => {
   const cfg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "hooks.claude.json"), "utf8"));
   const m = cfg.hooks.PreToolUse[0].matcher;
-  for (const t of ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "execute_sql", "apply_migration"]) assert.ok(m.includes(t), `matcher에 ${t} 포함`);
+  const covers = (tool) => m === "" || new RegExp(m).test(tool);
+  for (const t of ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "execute_sql", "apply_migration"]) assert.ok(covers(t), `matcher가 ${t}를 덮지 않는다`);
 });
 
 test("무인 예산: 시간/횟수 초과 시 park, 정상은 통과", () => {

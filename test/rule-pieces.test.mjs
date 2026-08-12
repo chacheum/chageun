@@ -82,20 +82,33 @@ function combos() {
 }
 
 // 그 조합에서 실제로 붙는 부록 본문들(등록 순서 = activate.js 가 읽는 순서).
-function textsFor(c) {
-  return core.APPENDICES.filter((a) => c.on.includes(a.id)).map((a) => APPENDIX_TEXT[a.id]);
+// 🛑 다듬기는 **등록부의 render** 를 부른다. 여기서 자리표시자 치환이나 조건부 줄 자르기를
+//    다시 짜면, 훅이 실제로 내는 글이 아니라 내가 뽑은 중간 결과를 재는 검사가 된다
+//    (이 저장소가 이미 데인 자리 — 대조 3종이 전부 초록인데 값이 틀렸다).
+function textsFor(c, pathChars) {
+  const ctx = { boardServer: "x".repeat(pathChars) };
+  return core.APPENDICES.filter((a) => c.on.includes(a.id))
+    .map((a) => a.render(APPENDIX_TEXT[a.id], c.variants[a.id], ctx));
 }
 
 // 2026-08-12 실측(손으로 세지 않았다 — 위 combos()·core.assemble() 로 뽑았다).
-// 조합 2가지: unattended:꺼짐 / unattended:only. 가장 빡빡한 조각은 4번(여유 1,663자)이다.
+// 조합 **6가지** = 무인 2(꺼짐·only) × 상황판 3(꺼짐·표식온전·표식깨짐). 손으로 안 적었다 —
+// 상황판 부록을 등록부에 올리자 곱집합이 2에서 6으로 저절로 늘었다.
+// 가장 빡빡한 조각은 여전히 4번(여유 1,663자)이고, 조각 1~5 는 조합과 무관하게 값이 같다.
 //   조각 | 본문  | 정책(경로256) | 8,000 여유 | 물리(경로1024)
 //    1   | 5597  |  6046         | 1954       | 6814
 //    2   | 3865  |  4312         | 3688       | 5080
 //    3   | 2695  |  3144         | 4856       | 3912
 //    4   | 5884  |  6337         | 1663       | 7105
 //    5   | 1407  |  1856         | 6144       | 2624
-//    6   |    0  |     0         | 8000       |    0   (평시 — 조건 안 맞음)
-//    6   | 3130  |  3583         | 4417       | 4351   (무인)
+//   조각 6은 조합마다 다르다(부록이 전부인 조각이라 조건이 곧 크기다):
+//    6   |    0  |     0         | 8000       |    0     둘 다 꺼짐(평시)
+//    6   |  291  |  1000         | 7000       | 2536     상황판:표식온전
+//    6   |  360  |  1069         | 6931       | 2605     상황판:표식깨짐
+//    6   | 3130  |  3583         | 4417       | 4351     무인만
+//    6   |  ---  |  4137         | 3863       | 5673     무인 + 상황판:표식온전
+//    6   |  ---  |  4206         | 3794       | 5742     무인 + 상황판:표식깨짐 ← 최악
+// 최악(4,206자)도 8,000까지 3,794자가 남는다. 경로를 1,024자로 잡아도 5,742자다.
 // 이 숫자가 지키는 것은 **둘이고, 성격이 다르다.** 갈라 적는다(pr-reviewer 2차 low) —
 // 섞어 읽으면 필요 없는 조각 재분할을 하게 된다.
 //
@@ -117,7 +130,7 @@ test("조건 조합을 전부 돌아도 조각 하나가 8,000자를 안 넘는�
   for (const c of combos())
     for (const n of ALL_PIECES) {
       const out = core.assemble({ rulesText: RULES, n, rulesPath: "x".repeat(PATH_STANDIN_CHARS),
-                                  appendixTexts: textsFor(c) });
+                                  appendixTexts: textsFor(c, PATH_STANDIN_CHARS) });
       assert.ok(out.length <= PIECE_MAX_CHARS,
         `조각 ${n} (조건 ${c.id}) = ${out.length}자 > ${PIECE_MAX_CHARS}. ` +
         `고치는 법: 인접한 조각으로 절을 넘기거나(파일 순서를 안 깬다), 건너뛰어 옮겨야 하면 ` +
@@ -134,7 +147,7 @@ test("경로가 비정상적으로 길어도 CLI 문턱 10,000에 못 닿는다"
   for (const c of combos())
     for (const n of ALL_PIECES) {
       const out = core.assemble({ rulesText: RULES, n, rulesPath: "x".repeat(PATH_PARANOID_CHARS),
-                                  appendixTexts: textsFor(c) });
+                                  appendixTexts: textsFor(c, PATH_PARANOID_CHARS) });
       assert.ok(out.length < CLI_TRUNCATION_CHARS, `조각 ${n} 이 물리 천장에 닿는다: ${out.length}자`);
     }
 });
@@ -147,10 +160,11 @@ test("자를 문자 수로 쓴다 — 코드 포인트로 재면 안 된다", ()
 
 // 🛑 이 가드의 기준은 **등록부 바깥**이어야 한다. combos() 는 APPENDICES 에서 만들어지므로
 //    combos() 를 APPENDICES 와 대조하면 재료와 결과를 비교하는 것이라 **절대 실패할 수 없다.**
-//    실제 위험은 반대 방향이다 — "주입은 되는데 등록이 안 된 부록". 그 상황이 지금 옆 브랜치에
-//    실재한다: feat/v0.65.0 의 activate.js 가 statusboard-appendix.md 를 하드코딩으로 이어 붙인다.
-//    rebase 하는 사람이 그 갈래를 남긴 채 등록만 잊으면 그 부록은 실제로 주입되면서
-//    조합 매트릭스에도 바이트 예산에도 안 잡힌다. 그래서 파일 시스템을 기준으로 양방향 대조한다.
+//    실제 위험은 반대 방향이다 — "주입은 되는데 등록이 안 된 부록". 그 상황이 실제로 있었다:
+//    feat/v0.65.0 의 activate.js 가 statusboard-appendix.md 를 하드코딩으로 이어 붙였다.
+//    rebase 때 그 갈래를 지우고 등록부에 올렸다(하드코딩을 남긴 채 등록만 잊었으면 그 부록은
+//    실제로 주입되면서 조합 매트릭스에도 바이트 예산에도 안 잡혔다).
+//    그래서 파일 시스템을 기준으로 양방향 대조한다 — 다음 부록에도 같은 문이 열려 있다.
 test("src/rules 의 부록 파일과 APPENDICES 등록이 양방향으로 같다", () => {
   const NOT_APPENDIX = new Set(["operating-rules.md"]);   // 규칙 본문. 늘릴 때는 사유를 옆에 적는다.
   const onDisk = readdirSync(join(ROOT, "src", "rules"))
@@ -168,6 +182,32 @@ test("조합 생성기가 등록된 부록을 하나도 빠뜨리지 않는다 (
   const wired = core.APPENDICES.map((a) => a.id).sort();
   const covered = [...new Set(combos().flatMap((c) => c.on))].sort();
   assert.deepEqual(covered, wired, "combos() 가 등록된 부록 중 일부를 안 돈다");
+});
+
+// 🛑 변형 이름만 늘리고 render 가 그 이름으로 안 갈라지면, 매트릭스는 늘어나는데 두 칸이 **같은 글**을
+//    잰다. 개수만 세는 검사는 그때도 초록이다 — 조합이 늘었다는 사실이 곧 더 재고 있다는 뜻은 아니다.
+test("변형은 서로 다른 글을 낸다 — 이름만 늘리고 render 가 안 갈라지면 헛매트릭스다", () => {
+  for (const a of core.APPENDICES) {
+    const ctx = { boardServer: "x".repeat(PATH_STANDIN_CHARS) };
+    const rendered = a.variants.map((v) => a.render(APPENDIX_TEXT[a.id], v, ctx));
+    assert.equal(new Set(rendered).size, a.variants.length,
+      `부록 "${a.id}" 의 변형 ${a.variants.length}개 중 같은 글을 내는 것이 있다. ` +
+      "변형을 늘렸으면 render 가 그 이름으로 갈라져야 한다 — 안 그러면 조합만 늘고 재는 것은 그대로다.");
+  }
+});
+
+// 훅이 고른 변형이 등록된 이름 안에 있어야 한다. variantOf 가 목록 밖 이름을 내면 render 가
+// 기본 갈래로 떨어져 **매트릭스가 한 번도 안 재 본 글**이 실제로 주입된다.
+test("variantOf 는 등록된 변형 이름만 낸다", () => {
+  const CTXS = [
+    { env: {}, board: false, boardMarkersIntact: true },
+    { env: { CHAGEUN_UNATTENDED: "1" }, board: true, boardMarkersIntact: true },
+    { env: { CHAGEUN_UNATTENDED: "1" }, board: true, boardMarkersIntact: false },
+  ];
+  for (const a of core.APPENDICES)
+    for (const ctx of CTXS)
+      assert.ok(a.variants.includes(a.variantOf(ctx)),
+        `부록 "${a.id}" 의 variantOf 가 등록 밖 이름 "${a.variantOf(ctx)}" 를 냈다`);
 });
 
 // ── 자리 참조 가드 ───────────────────────────────────────────────────────────
@@ -189,7 +229,8 @@ const ALLOWED = [
   "later touching",        // 시간 — 작업 도중 나중에
   "medium and above",      // 등급 — 심각도
   "above the floor",       // 기준선 — 안전 바닥 위
-  "never below the worker" // 등급 — 심판 모델
+  "never below the worker",// 등급 — 심판 모델
+  "답장 끝에"              // 답장 안의 자리 — 규칙 조각의 도착 순서와 무관하다
 ];
 const SCANNED = ["operating-rules.md", ...core.APPENDICES.map((a) => a.file)];
 
