@@ -9,13 +9,18 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP, statusboardTrigger } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
 // ⚠ 이 require 가 실패하면 **PreToolUse 하드 차단 전부가 한꺼번에 꺼진다**(모듈 로드 시점 예외는
 //   아래 stdin 핸들러 밖이라 어떤 try/catch 도 못 잡는다). 배포판에 실리는지는 매니페스트
 //   `components.hooks` 가 정하고, test/build.test.mjs 의 existsSync 한 줄이 그 그물이다.
 const { unknownToolNotice, unknownToolMessage } = require("./tool-ledger-core.js");
+// v0.65.0 F-27(상황판). 무시 판정은 **별도 모듈**이다 — 코어는 "순수 판정 로직 · fs 없음"이
+//   계약이라 git 호출이 들어가면 그 계약이 깨지고, posttooluse 가 판정 하나 때문에 코어
+//   전체를 끌어오게 된다. 소유는 여기(PreToolUse)이고 PostToolUse 는 쓰기만 한다.
+const { boardIgnoreVerdict } = require("./board-ignore-core.js");
+const { collectSecrets, findLeaks } = require("./secret-scan-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
@@ -162,6 +167,78 @@ function prReviewerRan(transcriptPath) {
 }
 
 // ── 공용 component 경계(Claude 편집 시점 hard block) ────────────────────────
+// ── 상황판(v0.65.0 F-27) ────────────────────────────────────────────────────
+// 하드 차단 둘이 보는 대상은 **켠 폴더의 `status.md` 이면서 실제로 상황판인 파일**이다.
+// 판정이 두 겹인 이유: 경로만 보면 **저장소 루트에 원래부터 `status.md` 를 두고 git 으로
+//   추적하는 프로젝트**가 정확히 그 경로다. 차근은 공개 플러그인이고 이 차단에는 탈출구가
+//   없어, 그 팀 문서를 고치려는 모든 편집이 막히고 차단 문구가 **남의 문서를 저장소에서
+//   빼라고 권하는 모양**이 된다. 이 저장소는 오차단을 최대 실패 양식으로 다뤄 왔다.
+// 내용 신호로 `chageun:auto` 를 쓰는 이유: 본보기 골격의 **기계가 읽는 부분**이고 정확한
+//   리터럴 하나라 판정을 새로 짤 일이 없다. 머리 표시(`chageun:auto:head`)에도 들어 있는
+//   조각이라 반쯤 마이그레이션된 상황판도 그대로 무장된다.
+const BOARD_FILE = "status.md";
+const BOARD_MARK = "chageun:auto";
+const BOARD_HEAD_BYTES = 512 * 1024;   // 표시는 파일 앞쪽에 있다
+
+// 이번에 **새로 쓰는 텍스트**만 모은다. 🛑 편집 후 파일 전체를 재지 않는다 — 예전에 한 번
+// 들어간 값이 남아 있으면 그 뒤 모든 편집이 영영 막히고, 그 값을 지우는 편집조차 막혀
+// 회복 경로가 사라진다.
+function boardNewText(name, ti) {
+  const nm = String(name || "");
+  if (nm === "Write") return String(ti.content || "");
+  if (nm === "Edit") return String(ti.new_string || "");
+  if (nm === "MultiEdit") return (Array.isArray(ti.edits) ? ti.edits : []).map((e) => String((e && e.new_string) || "")).join("\n");
+  return "";
+}
+// 못 읽으면 (a)는 거짓으로 본다 — 오차단 대신 통과다(§4.6 fail-open 관례).
+function boardHasMark(abs) {
+  try {
+    const len = Math.max(0, Math.min(fs.statSync(abs).size, BOARD_HEAD_BYTES));
+    const fd = fs.openSync(abs, "r");
+    try {
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, 0);
+      return buf.toString("utf8").indexOf(BOARD_MARK) !== -1;
+    } finally { fs.closeSync(fd); }
+  } catch (_) { return false; }
+}
+// 대상 판정을 **한 번만** 짓고 하드 차단과 소프트 안내가 그 결과를 갈라 쓴다.
+// 순서가 싼 것부터다: 도구 이름 → 절대 경로 → 내용 신호(파일 읽기 1회) → git.
+// 남의 루트 `status.md` 는 세 번째에서 끝나 **git 을 아예 안 부른다.**
+function boardTargetOf(name, ti, cwd) {
+  if (!COMPONENT_EDIT_RE.test(String(name || ""))) return null;
+  const abs = ti && ti.file_path ? path.resolve(cwd, ti.file_path) : null;
+  if (!abs || abs !== path.resolve(cwd, BOARD_FILE)) return null;
+  const exists = fs.existsSync(abs);
+  const armed = (exists && boardHasMark(abs)) || boardNewText(name, ti).indexOf(BOARD_MARK) !== -1;
+  return { abs, exists, armed };
+}
+
+// 세션당 한 번만 안내하기 위한 표식. 🛑 트랜스크립트를 안 읽는다 — 매 편집마다 세션 기록
+// 전체를 파싱하면 긴 세션에서 훅이 10초 제한을 넘겨 **하드 차단 전부가 조용히 꺼진다**.
+function boardNoticeKey(input) {
+  const raw = input.session_id || (input.transcript_path ? path.basename(input.transcript_path) : "");
+  return raw ? String(raw).replace(/[^A-Za-z0-9_-]/g, "-") : null;
+}
+// 성공 = 이번 세션 처음. EEXIST 든 그 밖의 실패든 **전부 침묵**이다(중복을 못 막으면
+// 편집마다 같은 말이 붙는다). ⚠ 상위 폴더를 먼저 만든다 — 새 기계에는 이 폴더가 없고,
+// 없으면 배타 생성이 ENOENT 로 실패해 **새 사용자에게 주 경로가 한 번도 안 울린다.**
+function claimBoardNotice(key) {
+  const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+  const dir = path.join(base, "chageun", "board-notice");
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { return false; }
+  try { fs.writeFileSync(path.join(dir, key), "", { flag: "wx" }); } catch (_) { return false; }
+  // 새로 만든 그 자리에서 7일 지난 표식을 지운다(임시 파일이 쌓인 전례가 있다).
+  try {
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    for (const f of fs.readdirSync(dir)) {
+      const p = path.join(dir, f);
+      try { if (fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p); } catch (_) { /* 개별 격리 */ }
+    }
+  } catch (_) { /* 정리 실패는 침묵 */ }
+  return true;
+}
+
 const COMPONENT_EDIT_RE = /^(Write|Edit|MultiEdit)$/;
 function boundaryIssue(code, detail) { return detail ? { code, detail } : { code }; }
 function readText(file) {
@@ -606,6 +683,31 @@ process.stdin.on("end", () => {
       }
     }
 
+    // 4.8b) 상황판 하드 차단 둘(v0.65.0 F-27): **비밀 값**과 **무시가 확인 안 된 상황판**.
+    //    둘 다 (1) 손해가 되돌릴 수 없고 (2) 회복이 항상 있고 밟고 나면 차단이 스스로
+    //    풀리는 자리라 단다. 이 잣대를 넘는 차단은 더 안 단다.
+    //    🛑 차단할 때 `deny(key, false)` 로 부른다 — `true` 로 부르면 무인 문구 표에 없는
+    //    열쇠라 일반 park 문구로 떨어져 **회복 문구가 통째로 사라진다**(탈출구 없는 차단이라
+    //    문구가 유일한 안내다). 기존 하드 차단 둘(design-color·component-boundary)도 false 다.
+    //    🛑 판정이 실패하면 유인·무인 모두 통과(§4.6 관례) — 상황판은 안전 장치가 아니라
+    //    편의이고, 판정을 못 했다고 작업을 막으면 안 된다.
+    //    ⚠ 이 자리는 PreToolUse 훅에서 자식 프로세스를 띄우는 첫 자리다. 정상 작업에서는
+    //    두 번째 조건(절대 경로)이 사실상 항상 거짓이라 git 호출이 0회다.
+    let boardTarget = null;
+    try {
+      boardTarget = boardTargetOf(name, ti, input.cwd || process.cwd());
+      if (boardTarget && boardTarget.armed) {
+        const cwd = input.cwd || process.cwd();
+        const secrets = collectSecrets(cwd);
+        const leaks = secrets.length ? findLeaks(boardNewText(name, ti), secrets) : [];
+        // 값은 절대 다시 안 적는다 — 걸린 **열쇠 이름만** 붙인다.
+        if (leaks.length) return deny("statusboard-secret", false, [...new Set(leaks)].slice(0, 8).join(", "));
+        if (boardIgnoreVerdict(path.dirname(boardTarget.abs)) === "blocked") {
+          return deny("statusboard-unignored", false);
+        }
+      }
+    } catch (_) { /* fail-open — 판정 오류가 정상 작업을 막지 않는다 */ }
+
     // 4) P1 리마인더(soft): plan 문서를 쓰고 plan-validator 없이 첫 코드 수정 시작 →
     //    차단 없이 리마인더 한 줄 주입(additionalContext). 자체 try/catch — 리마인더는 어떤
     //    경우에도 차단·park 사유가 되지 않는다(무인 fail-closed catch로 새지 않게).
@@ -665,6 +767,60 @@ process.stdin.on("end", () => {
           reminderEmitted = true;
         }
       } catch (_) { /* 리마인더 실패는 조용히 무시 */ }
+    }
+
+    // 4.5b) 상황판 안내(soft · v0.65.0 F-27 주 경로). 그 세션에서 **파일을 처음 만지거나
+    //    처음 위임할 때** 한 번만, 이 프로젝트에 상황판이 없다고 알린다.
+    //    🛑 **막지 않는다(exit 0)**. 상황판은 안전 장치가 아니라 편의라, 없다고 편집을 막으면
+    //    상황판을 안 쓰는 프로젝트가 통째로 멈춘다. stderr 는 exit 2 일 때만 Claude 에게
+    //    가므로 통로는 stdout 의 additionalContext 다.
+    //    🛑 **훅이 파일을 만들지 않는다.** 빈 껍데기를 만들면 그 순간 조건 (d)가 참이 되어
+    //    다음부터 안내가 영영 안 나가고, §2.1 절차의 판단 걸린 갈래를 10초 제한 훅이
+    //    대신 내리게 된다.
+    //    🛑 앞 리마인더가 이미 나갔으면 **표식도 안 만든다** — 그래야 다음 편집에서 다시
+    //    시도한다(양보는 미룸이지 취소가 아니다).
+    //    ⚠ 위임 갈래에는 `file_path` 가 없다. 삼항이 빠지면 path.resolve 가 TypeError 를
+    //    내고 이 절의 try/catch 가 조용히 삼켜, **위임만 하는 세션에서 안내가 영영 안 나간다.**
+    if (!reminderEmitted && !IS_SUBAGENT) {
+      try {
+        const cwd = input.cwd || process.cwd();
+        const home = os.homedir();
+        const abs = ti.file_path ? path.resolve(cwd, ti.file_path) : null;   // 상대경로 오판 방지
+        if (statusboardTrigger(name, abs, ti)
+            && cwd !== home && cwd !== "/" && cwd !== "/home"
+            && !fs.existsSync(path.join(cwd, BOARD_FILE))) {
+          const key = boardNoticeKey(input);
+          if (key && claimBoardNotice(key)) {
+            process.stdout.write(JSON.stringify({
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                additionalContext: "차근 안내: 이 프로젝트에는 작업 상황판(`status.md`)이 없습니다. 뒤에서 돌 일이 생기거나 사용자가 결정할 것이 생기는 일이면 지금 만드는 것이 좋습니다 — 파일 하나를 15분 안에 고치고 끝나는 일이면 안 만들어도 됩니다. **상황판을 만들기로 정했으면 파일부터 만들지 말고 `chageun:statusboard` 를 먼저 열어 git 무시 절차부터 밟으세요**(안 그러면 이 평문 보고서가 저장소에 올라갑니다).",
+              },
+            }));
+            reminderEmitted = true;
+          }
+        }
+      } catch (_) { /* 안내 실패는 어떤 경우에도 차단·park 사유가 아니다 */ }
+    }
+
+    // 4.5c) 표시 없이 **지금 만드는** 편집 — 차단이 아니라 안내 한 줄(v0.65.0 F-27).
+    //    위 4.8b 가 내용 신호까지 보게 되면서, 스킬을 안 열고 손으로 만드는 그 편집은
+    //    표시가 없어 차단에 안 걸린다. 🛑 **차단을 되돌리지 않는다** — 남의 루트
+    //    `status.md` 오차단이 더 나쁘다. 대신 막지 않고 한 줄만 낸다(exit 0).
+    //    🛑 **이미 있는 파일에는 안 낸다.** 남의 팀 문서를 고칠 때마다 같은 잔소리가 붙으면
+    //    그것도 마찰이고, 그 파일은 이 기능과 무관하다.
+    //    판정을 두 번 짜지 않는다 — 4.8b 의 결과(boardTarget)를 갈라 쓰기만 하고 git 은
+    //    안 부른다(내용 신호에서 이미 끝나는 자리라 비용도 그대로 0이다).
+    if (!reminderEmitted && boardTarget && !boardTarget.armed && !boardTarget.exists) {
+      try {
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            additionalContext: "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 — `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.",
+          },
+        }));
+        reminderEmitted = true;
+      } catch (_) { /* 안내 실패는 차단 사유가 아니다 */ }
     }
 
     // 4.9) 목록 밖 도구 알림(soft · v0.65.0 F-29 층3). **가장 낮은 우선순위** — "그 밖에 할 말이
