@@ -162,13 +162,26 @@ test("routing '누가 무엇을 맡나' 절의 안전 문장이 살아 있다", 
 //    없고, 코어 '작업 유형별 진행'은 `executing-plans` 또는 라우팅 표에 따른 위임을 가리킨다.
 //    없는 절차의 소유를 주장하면 읽는 쪽이 이 파일에서 찾다가 못 찾고 스스로 만들어 낸다(문서 셋이
 //    서로 다른 말을 하던 자리다: 코어 · 이 스킬 · README). 소유 주장 문투의 **부재**로 잰다.
+//    🛑 두 축을 **다른 넓이로** 잰다.
+//    (가) 소유 주장의 부재 = `순차`·`실행` 이 함께 있는 **모든 줄**에서 잰다. `계획` 한 낱말만 빼서
+//         "태스크별 순차 실행은 `chageun:routing` 이 직접 갖는다"로 되돌리면 좁은 필터에 안 걸려
+//         조용히 통과했다(이 파일 `:33` 이 이미 `태스크별 순차 실행` 문투를 쓴다).
+//    (나) `executing-plans` 를 가리키라는 요구 = **좁은 쪽에만** 건다. `:33` 은 표 안에서 병렬과의
+//         축 구분만 하는 줄이라 그 포인터를 들 자리가 아니고, 넓은 필터에 이 요구까지 걸면 멀쩡한
+//         그 줄이 오탐이 된다(그물을 넓히면서 이 축까지 같이 넓히지 말 것).
 test("routing 이 순차 계획 실행의 소유를 주장하지 않는다", () => {
-  const lines = routingSkill.split("\n").filter((l) => l.includes("순차 계획 실행"));
-  assert.ok(lines.length > 0,
-    "routing/SKILL.md 에서 '순차 계획 실행'을 다루는 줄이 사라졌다 - 병렬 위임과의 축 구분이 없어졌다");
-  for (const l of lines) {
+  const lines = routingSkill.split("\n");
+  const claimLines = lines.filter((l) => l.includes("순차") && l.includes("실행"));
+  assert.ok(claimLines.length > 0,
+    "routing/SKILL.md 에서 '순차 실행'을 다루는 줄이 사라졌다 - 병렬 위임과의 축 구분이 없어졌다");
+  for (const l of claimLines) {
     assert.ok(!/직접\s*갖는다/.test(l),
-      `routing 이 순차 계획 실행을 직접 갖는다고 다시 주장한다(그 절차는 이 파일에 없다): ${l}`);
+      `routing 이 순차 실행을 직접 갖는다고 다시 주장한다(그 절차는 이 파일에 없다): ${l}`);
+  }
+  const planLines = lines.filter((l) => l.includes("순차 계획 실행"));
+  assert.ok(planLines.length > 0,
+    "routing/SKILL.md 에서 '순차 계획 실행'을 다루는 줄이 사라졌다 - 코어가 가리키는 자리가 없어졌다");
+  for (const l of planLines) {
     assert.ok(l.includes("executing-plans"),
       `순차 계획 실행 줄이 코어와 같은 말(\`executing-plans\`)을 안 가리킨다: ${l}`);
   }
