@@ -1059,6 +1059,175 @@ test("H-2 서브에이전트는 게이트를 띄우지 못한다(메인은 그�
   assert.equal(call("chageun:code-implementer", SUB).status, 0, "게이트가 아닌 스폰은 이 규칙 밖(기계 차단은 게이트만)");
 });
 
+// ── F-28(v0.65.0) 감독 에이전트: 좁은 문 · 쓰기 금지 · 스폰 상한 ─────────────
+// 이 셋은 판정기 **하나**(isSupervisor)를 공유한다. 이름을 정규식 세 군데에 박으면 한쪽만
+// 고쳐져 조용히 갈라진다(이 저장소에서 두 번 난 사고). 셋 다 **좁은 판정**인 것이 이 저장소의
+// 평소 방향("막는 판정은 넓게")과 반대인데 여기서는 그게 맞다 — **문을 지나는 집합과 쓰기가
+// 막히는 집합이 정확히 같아야** "문은 지났는데 쓰기는 안 막히는 자"가 안 생긴다.
+const F28_CORE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js");
+const F28_HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+function f28Run(input) {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  return spawnSync(process.execPath, [F28_HOOK], { input: JSON.stringify(input), env, encoding: "utf8" });
+}
+
+test("F-28 감독 판정기는 한 곳(좁은 판정)", () => {
+  const { isSupervisor } = require(F28_CORE);
+  assert.equal(isSupervisor("supervisor"), true);
+  assert.equal(isSupervisor("chageun:supervisor"), true);
+  assert.equal(isSupervisor("honclwd:supervisor"), true, "접두사를 하드코딩하면 리브랜드에 무음 해제된다");
+  assert.equal(isSupervisor("supervisord"), false);
+  assert.equal(isSupervisor("my-supervisor-x"), false);
+  assert.equal(isSupervisor("my-supervisor"), false, "`-` 앞은 네임스페이스 구분자가 아니다");
+  assert.equal(isSupervisor(""), false);
+  assert.equal(isSupervisor(null), false);
+  assert.equal(isSupervisor(undefined), false);
+});
+
+test("F-28 문: 감독만 게이트를 띄운다 · 감독은 메인만 띄운다", () => {
+  const { subagentGateSpawn } = require(F28_CORE);
+  for (const tool of ["Task", "Agent"]) {
+    const g = (caller, target) => subagentGateSpawn(caller, tool, { subagent_type: target });
+    assert.equal(g(undefined, "chageun:pr-reviewer"), null, tool + ": 메인은 대상 아님");
+    assert.equal(g("chageun:code-implementer", "chageun:pr-reviewer"), "subagent-gate-spawn", tool);
+    assert.equal(g("chageun:deep-implementer", "plan-validator"), "subagent-gate-spawn", tool + ": 네임스페이스가 없어도 게이트다");
+    assert.equal(g("chageun:supervisor", "chageun:pr-reviewer"), null, tool + ": 이것이 문이다");
+    assert.equal(g("chageun:supervisor", "chageun:plan-validator"), null, tool + ": 이것이 문이다");
+    assert.equal(g("chageun:supervisor", "chageun:code-implementer"), null, tool + ": 일꾼 스폰은 원래 대상 아님");
+    assert.equal(g("chageun:supervisor", "chageun:supervisor"), "subagent-supervisor-spawn", tool + ": 감독 재생산 금지");
+    assert.equal(g("chageun:code-implementer", "chageun:supervisor"), "subagent-supervisor-spawn", tool + ": '감독인 척' 자물쇠");
+  }
+  assert.equal(subagentGateSpawn("chageun:supervisor", "Bash", { command: "ls" }), null, "스폰 통로가 아니면 이 판정 밖이다");
+  // 🛑 아래 두 칸은 F-29(안전 그물) 검사와 **일부러 겹친다.** 이 축이 판정 순서 2·3번을 빠뜨려
+  //   "도구가 Task/Agent 가 아니면 null" 을 다시 쓰면 F-29 가 막 넣은 불투명 통로 차단이 한 줄로
+  //   사라지는데, 그때 여기서도 빨개져 "그물 쪽 검사가 낡았다"로 오해할 여지를 줄인다.
+  //   그 빨간불을 검사 삭제로 끄면 안전 차단이 조용히 없어진다(v0.49.0 전례).
+  assert.equal(subagentGateSpawn("chageun:supervisor", "Workflow", { name: "x", args: {} }), "subagent-opaque-spawn",
+    "F-29 갈래는 감독에게도 그대로 산다(불투명 갈래가 감독 갈래보다 먼저)");
+  assert.equal(subagentGateSpawn(undefined, "Workflow", { name: "x", args: {} }), null,
+    "메인의 각본 스폰은 통과한다(F-29 Task 1 Step 4 와 같은 칸) — 그래서 '감독은 Agent 로 띄운다'가 문장으로 남는다");
+});
+
+test("F-28 감독은 파일을 못 고친다(허용 목록 위의 둘째 겹)", () => {
+  const { supervisorBlock } = require(F28_CORE);
+  for (const t of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"])
+    assert.equal(supervisorBlock(t), "supervisor-write", t + " 는 막힌다");
+  for (const t of ["Read", "Grep", "Glob", "Agent"])
+    assert.equal(supervisorBlock(t), null, t + " 는 감독의 도구다");
+  // 게이트(reviewAgentBlock)와 달리 agent-memory 예외를 **두지 않는다** — 감독은 메모리를 안 쓰고,
+  // 예외가 없으면 경로 판정 자체가 없어져 우회할 표면도 없다.
+  const memPath = join(require("node:os").homedir(), ".claude", "agent-memory", "x.md");
+  assert.equal(f28Run({ agent_type: "chageun:supervisor", tool_name: "Write", tool_input: { file_path: memPath } }).status, 2,
+    "감독에게는 agent-memory 예외가 없다");
+  assert.equal(f28Run({ agent_type: "chageun:deep-implementer", tool_name: "Write", tool_input: { file_path: "/repo/x.md" } }).status, 0,
+    "이 차단은 감독 전용이다(다른 서브에이전트를 망가뜨리면 안 된다)");
+});
+
+// 상한 픽스처. 🛑 **경로는 리터럴로 짓는다. 제품 조립기(supervisorTranscriptPath)를 부르지 않는다.**
+//   부르는 것이 가장 자연스러운 구현인데, 그러면 조립기가 바뀌어도 검사가 함께 따라가 **전부 초록**이
+//   되고 아래 '부모 기록 6건 + 자기 기록 0건 → 통과' 칸까지 무력해진다. 이 저장소에서 같은 모양의
+//   사고가 났다(v0.61.0 — 제품 함수로 기준을 만들어 대조 3종이 전부 초록이던 자리).
+const F28_SID = "sess-0001";
+const F28_AID = "abc123";
+const f28Rec = (name, input) => JSON.stringify({ message: { content: [{ type: "tool_use", name, input }] } });
+function f28Fixture({ own = 0, parent = 0, ownExists = true, brokenTail = false } = {}) {
+  const dir = tmpDir("f28-cap-");
+  const parentPath = join(dir, "parent.jsonl");
+  const pl = [];
+  for (let i = 0; i < parent; i += 1) pl.push(f28Rec("Task", { subagent_type: "chageun:code-implementer" }));
+  writeFileSync(parentPath, pl.length ? pl.join("\n") + "\n" : "");
+  if (ownExists) {
+    mkdirSync(join(dir, F28_SID, "subagents"), { recursive: true });
+    const ol = [];
+    for (let i = 0; i < own; i += 1) ol.push(f28Rec("Agent", { subagent_type: "chageun:code-implementer" }));
+    if (brokenTail) ol.push('{"type":"assistant","mess');   // 쓰이는 중인 꼬리 줄
+    writeFileSync(join(dir, F28_SID, "subagents", "agent-" + F28_AID + ".jsonl"), ol.length ? ol.join("\n") + "\n" : "");
+  }
+  return { dir, parentPath };
+}
+function f28Spawn({ own = 0, parent = 0, ownExists = true, brokenTail = false, agentType = "chageun:supervisor", omit = null } = {}) {
+  const { dir, parentPath } = f28Fixture({ own, parent, ownExists, brokenTail });
+  const input = {
+    agent_type: agentType, tool_name: "Agent",
+    tool_input: { subagent_type: "chageun:pr-reviewer", prompt: "검토해줘" },
+    transcript_path: parentPath, session_id: F28_SID, agent_id: F28_AID,
+  };
+  if (omit) input[omit] = "";
+  const r = f28Run(input);
+  rmSync(dir, { recursive: true, force: true });
+  return r;
+}
+
+test("F-28 상한: 세는 것은 spawnIntent 하나뿐이다(Task|Agent 정규식을 새로 만들지 않는다)", () => {
+  const { spawnCountIn, SUPERVISOR_SPAWN_CAP } = require(F28_CORE);
+  assert.equal(SUPERVISOR_SPAWN_CAP, 6, "6은 사용자 결정 3 이다 — 임의로 5·7 로 바꾸지 않는다");
+  assert.equal(spawnCountIn([]), 0);
+  assert.equal(spawnCountIn(null), 0, "배열이 아니면 0(던지지 않는다)");
+  const rec = (name, input) => ({ message: { content: [{ type: "tool_use", name, input }] } });
+  assert.equal(spawnCountIn([rec("Read", { file_path: "/x" })]), 0, "스폰이 아닌 도구는 안 센다");
+  assert.equal(spawnCountIn([rec("Task", { subagent_type: "x" }), rec("Agent", { subagent_type: "y" })]), 2);
+  assert.equal(spawnCountIn([rec("Workflow", { name: "x", args: {} })]), 1,
+    "불투명 통로 스폰도 상한에 함께 들어간다 — 세는 규칙이 통로마다 갈리지 않는다");
+});
+
+test("F-28 상한: 5건 통과 · 6건 차단 · 감독이 아니면 6건이어도 통과", () => {
+  assert.equal(f28Spawn({ own: 5 }).status, 0, "5건이면 아직 여유가 있다");
+  const hit = f28Spawn({ own: 6 });
+  assert.equal(hit.status, 2, "6건이면 막는다");
+  assert.match(hit.stderr, /한도/, "무엇에 막혔는지 알려야 한다");
+  assert.equal(f28Spawn({ own: 6, agentType: "chageun:deep-implementer" }).status, 2,
+    "감독이 아닌 서브에이전트는 이 상한이 아니라 게이트 스폰 차단에 걸린다");
+  assert.equal(f28Spawn({ own: 6, agentType: "chageun:deep-implementer" }).stderr.includes("한도"), false,
+    "다른 서브에이전트에게 감독 상한 문구를 보여 주면 무엇이 막혔는지가 사라진다");
+});
+
+// "못 읽음"과 "읽었는데 0건"이 갈리는지를 재는 두 칸을 **나란히** 둔다. 나중에 누가 리더를
+// readTranscriptIfMentions 로 되돌리면(그 헬퍼는 둘 다 null 이다) 그 자리에서 빨개진다.
+test("F-28 상한: 읽혔는데 0건이면 통과 · 조립한 파일이 없으면 첫 스폰도 차단", () => {
+  assert.equal(f28Spawn({ own: 0 }).status, 0, "첫 스폰이 지나가는 길은 이 갈래 하나뿐이다");
+  const unread = f28Spawn({ ownExists: false });
+  assert.equal(unread.status, 2, "못 읽으면 통과가 아니라 멈춤(fail-closed) — 요금이 걸린 자리다");
+  assert.match(unread.stderr, /셀 수 없습니다/);
+});
+
+test("F-28 상한: 세 칸 중 하나라도 빈 값이면 조립 실패 = 못 읽음 = 차단", () => {
+  for (const omit of ["transcript_path", "session_id", "agent_id"])
+    assert.equal(f28Spawn({ own: 0, omit }).status, 2, omit + " 가 비면 조립하지 않고 차단한다");
+});
+
+// 🛑 이 칸이 자료원 되돌림을 잡는 **유일한** 칸이다. 훅이 받는 transcript_path 는 **부모(메인) 기록**이라
+//   (2026-08-12 실측) 그것을 세면 (1) 메인이 이미 띄운 스폰 때문에 감독이 첫 스폰에서 죽고
+//   (2) 애초에 "감독이 몇을 띄웠나"가 아니라 "메인이 몇을 띄웠나"를 센다 — 값이 큰 게 아니라 다른 것을 센다.
+test("F-28 상한: 부모 기록에 6건이 있어도 자기 기록이 0건이면 통과", () => {
+  assert.equal(f28Spawn({ own: 0, parent: 6 }).status, 0,
+    "이 칸이 빨개지면 자료원이 부모 기록으로 되돌아간 것이다");
+});
+
+// 🛑 기록 파일은 **지금도 쓰이는 중**이라 꼬리 한 줄이 덜 쓰인 순간에 읽힐 수 있다. 리더를
+//   "한 줄이라도 파싱 실패면 null" 로 짜면 다른 칸이 전부 초록인 채 실사용에서만 감독이 무작위로
+//   죽는다(켤 스위치가 없어 회복 경로도 없다). 이 저장소가 최대 실패 양식으로 다뤄 온 오차단이다.
+test("F-28 상한: 깨진 줄은 건너뛴다(못 읽음이 아니다) · 앞의 6건까지 잃지 않는다", () => {
+  assert.equal(f28Spawn({ own: 0, brokenTail: true }).status, 0, "깨진 꼬리 줄 하나로 감독이 죽으면 안 된다");
+  assert.equal(f28Spawn({ own: 6, brokenTail: true }).status, 2, "깨진 줄을 건너뛰느라 앞의 6건을 잃지도 않는다");
+});
+
+test("F-28 차단 문구 둘: 없는 스위치를 안내하지 않고, 회차가 아니라 총 스폰 수임을 적는다", () => {
+  const { reasonFor } = require(F28_CORE);
+  for (const key of ["supervisor-spawn-cap", "supervisor-cap-unreadable", "supervisor-write", "subagent-supervisor-spawn"]) {
+    const msg = reasonFor(key, true);
+    assert.ok(msg.includes("BLOCKED"), key + ": 막힌 쪽이 실제로 할 수 있는 행동을 지정해야 한다");
+    assert.ok(!/환경변수|CHAGEUN_/.test(msg), key + ": 서브에이전트는 훅 프로세스의 환경변수를 못 켠다");
+    assert.ok(!/사용자에게 (물어|여쭤)/.test(msg), key + ": 서브에이전트는 화면 질문을 못 띄운다");
+  }
+  assert.ok(reasonFor("supervisor-spawn-cap", true).includes("회차가 아니라 총 스폰 수"),
+    "회차로 읽으면 남은 여유를 잘못 세고, 3회차 게이트를 못 띄운 채 막힌다");
+  // SV-6: 이 진단이 docs/ 에만 있으면 사람에게 안 닿는다 — 이 저장소는 docs/ 를 커밋하지 않고
+  //   끌 스위치도 없어 회복이 코드 수정뿐이다. 그래서 **배포되는 자리**에 남긴다.
+  assert.ok(/폴더 구조가 바뀌었는지부터/.test(reasonFor("supervisor-cap-unreadable", true)),
+    "갑자기 전부 막힐 때 어디부터 보라는 한 줄이 배포되는 자리에 있어야 한다");
+});
+
 // ── P7 무인 egress 차단(외부 데이터 전송) — localhost는 허용, substring 우회 방어 ──
 test("무인 egress: 외부 전송(curl POST/업로드·wget --post·scp·nc)은 park, localhost·읽기는 통과", () => {
   const { unattendedBlock } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));

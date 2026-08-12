@@ -9,7 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE } = require("./pretooluse-core.js");
+const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
 // ⚠ 이 require 가 실패하면 **PreToolUse 하드 차단 전부가 한꺼번에 꺼진다**(모듈 로드 시점 예외는
@@ -34,6 +34,61 @@ function readTranscriptIfMentions(transcriptPath, needle) {
     }
     return objs;
   } catch (_) { return null; }
+}
+
+// ── 감독 상한이 읽을 자리(v0.65.0 F-28) ──────────────────────────────────────
+// 훅이 받는 `transcript_path` 는 **부모(메인) 기록**이다(2026-08-12 실측). 상한이 세야 하는 것은
+// "감독이 몇을 띄웠나"인데 서브에이전트의 스폰은 부모 기록에 **아예 안 실린다**(훅 호출 13건 내내
+// 한 바이트도 안 자람). 그 값을 그대로 읽으면 (1) 부모 기록에 이미 든 스폰 때문에 감독이 첫 스폰에서
+// 죽고 (2) 더 근본적으로 **"메인이 몇을 띄웠나"를 센다** — 값이 큰 게 아니라 다른 것을 센다.
+// 그래서 자기 기록의 자리를 조립해 그것을 읽는다. 순수 문자열 조립이다.
+//
+// 🛑 이 세 칸은 하네스가 훅 입력에 박는 값이라 모델이 못 정한다(agent_type 과 같은 자리).
+//    하나라도 빈 값이면 조립하지 않고 null = 못 읽음 = 차단(fail-closed).
+//
+// 🛑 이 자리는 하네스가 기록을 두는 **폴더 구조**에 기댄다. 갑자기 전부 막히면 그 구조가 바뀌었는지부터 본다.
+//    (이 진단을 docs/ 에만 두면 사람에게 안 닿는다 — 이 저장소는 docs/ 를 커밋하지 않는다.
+//     그래서 같은 한 줄이 supervisor-cap-unreadable 문구에도 들어 있다.)
+// 🛑 그 구조는 한 겹이 아니다. 평면 `subagents/agent-*.jsonl` 과 각본 층
+//    `subagents/workflows/<wf_id>/agent-*.jsonl` 둘이고(단일 원본:
+//    src/skills/retrospect/retrospect-scan.mjs 의 walkAgentDir 주석), 이 조립은 **평면을 가정한다.**
+//    감독은 `Agent` 로 띄우므로 평면에 떨어진다(2026-08-12 프로브 실측: layer=flat).
+//    각본(Workflow)으로 띄우면 이 가정이 깨지고 첫 스폰부터 supervisor-cap-unreadable 로 선다
+//    — 조용히 틀리는 대신 시끄럽게 서는 쪽이다.
+// 🛑 구조가 바뀌면 **고칠 곳은 여기 하나가 아니라 둘이다** — 여기와 회고 스캐너
+//    (retrospect-scan.mjs 의 listAgentFiles·walkAgentDir). 훅은 시끄럽게 서지만 **회고는 조용히
+//    죽는다**(readdirSync 가 실패하면 그대로 종료). 그래서 훅이 서는 것을 **회고가 굶고 있다는
+//    경보로도 읽는다.**
+function supervisorTranscriptPath(input) {
+  const parent = input && input.transcript_path;
+  const sid = input && input.session_id;
+  const aid = input && input.agent_id;
+  if (typeof parent !== "string" || !parent) return null;
+  if (typeof sid !== "string" || !sid) return null;
+  if (typeof aid !== "string" || !aid) return null;
+  return path.join(path.dirname(parent), sid, "subagents", `agent-${aid}.jsonl`);
+}
+
+// "못 읽음"과 "읽었는데 0건"을 **가르는** 리더. 🛑 위 readTranscriptIfMentions 를 쓰면 안 된다 —
+// 그 헬퍼는 리마인더용이라 둘 다 null 로 돌려주고, 감독의 **첫 스폰 때 정상적으로 null** 이다.
+// 계약 세 줄. (1) readFileSync 가 던지면 null = 못 읽음 → 차단.
+// (2) 읽혔으면 줄마다 파싱하되 **깨진 줄은 건너뛴다.** 0줄이어도 배열이다(= 읽음 → 0건이면 통과).
+// (3) 즉 "못 읽음"은 **파일 수준 실패 하나뿐**이고, 줄 수준 실패는 못 읽음이 아니다.
+//     🛑 여기를 "한 줄이라도 깨지면 null" 로 바꾸면, 기록이 쓰이는 중인 순간마다 감독이 오차단으로
+//     죽는다(꼬리 한 줄이 덜 쓰인 채 읽히는 일이 실제로 있다). 켤 스위치가 없어 회복 경로도 없고,
+//     화면에는 버그가 아니라 정상 정책 정지처럼 보여 원인 찾기도 어렵다. 형제 함수와 같은 계약이다.
+// existsSync 로 미리 거르지 않는다 — 확인과 읽기 사이에 파일이 사라지는 틈을 안 만든다.
+// 크기 상한을 안 두는 이유(다음 사람이 다시 재지 않게 적어 둔다): 이 읽기는 **감독이 스폰할 때만**
+//   돌고 한 세션에 많아야 일곱 번이다(모든 도구 호출마다 읽는 자리가 아니다). 상한을 둘 값이 안 나온다.
+function readTranscriptStrict(transcriptPath) {
+  let raw;
+  try { raw = fs.readFileSync(transcriptPath, "utf8"); } catch (_) { return null; }
+  const objs = [];
+  for (const ln of String(raw).split("\n")) {
+    const s = ln.trim(); if (!s) continue;
+    try { objs.push(JSON.parse(s)); } catch (_) { /* skip — 쓰이는 중인 꼬리 줄 */ }
+  }
+  return objs;
 }
 
 // v0.42: 서브에이전트면 사람 전용 탈출구를 안내하지 않는다(켤 수도 없고, 그 승인은 사람 판단이다).
@@ -308,6 +363,17 @@ process.stdin.on("end", () => {
       if (raHit) return deny(raHit, false);
     }
 
+    // 0-pre2) 감독의 쓰기 금지(v0.65.0 F-28 · 0-pre 와 같은 모양). 허용 목록(`tools:` 넷)이 본체이고
+    //   이것은 둘째 겹이다 — 에이전트 정의 파일은 사람이 한 줄 고치면 조용히 넓어지는 자리이고,
+    //   그때 아무 검사도 안 울린다. 판정 예외는 안전측 차단(ra-error 와 같은 원칙).
+    //   deny 의 두 번째 인자가 항상 false 인 이유도 0-pre 와 같다: 이 문구는 무인이냐가 아니라
+    //   **감독이라는 자리**에서 나온 것이라, 무인 park 문구로 바꾸면 무엇이 왜 막혔는지가 사라진다.
+    if (isSupervisor(input.agent_type)) {
+      let svHit;
+      try { svHit = supervisorBlock(name); } catch (_) { svHit = "supervisor-write"; }
+      if (svHit) return deny(svHit, false);
+    }
+
     // 0) 무인 게이트: 정지 요청 or preflight 통과표 없음 → park(fail-closed).
     //    v0.65.0: **옛 집합만.** 넓힌 범위에서 돌면 무인 세션이 전보다 자주 멈춘다(사용자가 거부한 방향).
     if (UNATTENDED_SCOPED) {
@@ -445,6 +511,22 @@ process.stdin.on("end", () => {
     {
       const sgs = subagentGateSpawn(input.agent_type, name, ti);
       if (sgs) return deny(sgs, false);
+    }
+
+    // 1.7b) 감독 폭주 상한(v0.65.0 F-28). 문을 지난 **감독이 스폰 통로를 부를 때만** 돈다 —
+    //   한 세션에 많아야 일곱 번이라 비용이 안 나온다(모든 도구 호출마다 읽는 자리가 아니다).
+    //   자리가 문 판정 **바로 뒤**인 이유: 앞에 두면 감독의 감독 스폰(subagent-supervisor-spawn)이
+    //   상한 문구로 뒤바뀌어, 왜 막혔는지가 사라진다.
+    // 🛑 **읽는 것은 input.transcript_path 가 아니라 조립한 자기 기록이다**(위 조립기 주석).
+    //   못 읽으면 통과가 아니라 멈춤이다(fail-closed) — 첫 스폰도 막는다. 통과로 두면 최상위 모델
+    //   에이전트가 **상한 없이 늘어나는** 길이 열린다. 요금이 걸린 자리라 "값이 안 보이면 안전측"이다.
+    //   "첫 1건만 봐주기"는 배선할 수 없다 — 지금이 첫 스폰인지 알려면 지금까지의 수를 세야 하는데
+    //   그 수를 세는 유일한 재료가 못 읽은 그 기록이고, 훅은 호출마다 새 프로세스라 기억이 없다.
+    if (isSupervisor(input.agent_type) && spawnIntent(name, ti)) {
+      const own = supervisorTranscriptPath(input);
+      const objs = own ? readTranscriptStrict(own) : null;
+      if (!objs) return deny("supervisor-cap-unreadable", false);   // 조립 실패·못 읽음 = 첫 스폰도 차단
+      if (spawnCountIn(objs) >= SUPERVISOR_SPAWN_CAP) return deny("supervisor-spawn-cap", false);
     }
 
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
