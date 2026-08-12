@@ -45,4 +45,54 @@ function bodyOfPiece(text, n) {
     .join("");
 }
 
-module.exports = { PIECES, sectionsOf, bodyOfPiece };
+// 두 상수를 **코어에** 두는 이유: 훅 stdout 을 재는 검사(test/activate.test.mjs)와 함수 반환값을
+// 재는 검사(test/rule-pieces.test.mjs)가 **같은 숫자**를 봐야 한다. 두 파일에 각각 적으면
+// 한쪽만 올려 놓고 통과시키는 길이 생긴다.
+const PIECE_MAX_CHARS = 8000;       // 우리가 지키는 선. 여유 2,000자.
+const CLI_TRUNCATION_CHARS = 10000; // CLI 바이너리 상수. 우리가 올려도 CLI 는 안 올라간다.
+
+// 조건부 부록 등록부. 파일 목록(src/rules/)과 **양방향**으로 대조된다
+// (test/rule-pieces.test.mjs) — 주입은 되는데 등록이 안 된 부록이 생기면 그 부록은
+// 조합 매트릭스에도 바이트 예산에도 안 잡힌다. 이번 사고와 같은 방향의 구멍이다.
+const APPENDICES = [
+  { id: "unattended", file: "unattended-appendix.md",
+    applies: (ctx) => ctx.env.CHAGEUN_UNATTENDED === "1", variants: ["only"] },
+];
+
+// 부록 조각의 번호. 본문 조각 뒤 한 자리.
+const APPENDIX_PIECE = PIECES.length + 1;
+
+// 옛 머리말. 인자 없이 불릴 때(설치본 배선이 옛것일 때) 그대로 쓴다 — 잘리더라도 침묵보다 낫다.
+const LEGACY_HEADER = "차근 워크플로우 활성. 아래 운영 규칙을 이번 세션 내내 따른다:\n\n";
+
+// 표식 문자열 `차근 워크플로우 활성` 은 **첫 줄 맨 앞**에 그대로 둔다
+// (test/activate.test.mjs · test/statusboard-activate.test.mjs 가 이 문자열을 키로 쓴다).
+// 머리말 안에는 빈 줄이 없어야 한다 — 검사와 모델이 첫 "\n\n" 을 본문 시작으로 읽는다.
+// 본문은 `N/5`, 부록은 번호 없이 "조건부"로 적는다: 부록은 보통 안 오는데 "6조각이 한 벌"이라고
+// 하면 매 평범한 세션에서 모델이 없는 조각을 찾게 된다.
+function headerFor(n, label, rulesPath) {
+  const tag = n === null ? "부록 조각 · 조건부" : `조각 ${n}/${PIECES.length} · ${label}`;
+  const second = n === null
+    ? "이 조각은 조건이 맞을 때만 온다. 규칙 본문 5조각과 한 벌이다."
+    : "조각은 도착 순서가 섞인다. 규칙 본문은 조각 5개가 한 벌이고(조건이 맞으면 부록 조각이 더 온다), 서로를 대체하지 않는다.";
+  return `차근 워크플로우 활성. 아래 운영 규칙을 이번 세션 내내 따른다 [${tag}].\n` +
+    `${second} 못 본 조각이 있으면 ${rulesPath} 를 읽어 채운다(부록은 같은 폴더).`;
+}
+
+// n 1~5     → 머리말 + 그 조각의 절들
+// n 6       → 조건 맞는 부록이 없으면 "" (머리말도 안 붙인다), 있으면 부록 머리말 + 부록들
+// n 그 밖   → 옛 동작(머리말 한 줄 + 전체 본문 + 조건 맞는 부록). 인자 없는 옛 배선용.
+function assemble({ rulesText, n, rulesPath, appendixTexts }) {
+  const texts = appendixTexts || [];
+  const tail = texts.length ? "\n\n---\n\n" + texts.join("\n\n---\n\n") : "";
+  if (n === APPENDIX_PIECE) return texts.length ? headerFor(null, null, rulesPath) + "\n\n" + texts.join("\n\n---\n\n") : "";
+  const piece = PIECES.find((p) => p.n === n);
+  if (!piece) return LEGACY_HEADER + rulesText + tail;
+  return headerFor(piece.n, piece.label, rulesPath) + "\n\n" + bodyOfPiece(rulesText, piece.n);
+}
+
+module.exports = {
+  PIECES, sectionsOf, bodyOfPiece,
+  PIECE_MAX_CHARS, CLI_TRUNCATION_CHARS, APPENDICES, APPENDIX_PIECE,
+  LEGACY_HEADER, headerFor, assemble,
+};
