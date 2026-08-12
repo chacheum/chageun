@@ -53,19 +53,24 @@ test("게이트(plan-validator·pr-reviewer)는 최상위 모델을 쓴다 — R
   }
 });
 
-// 일꾼 목록은 **배열 한 곳**에 모은다. 예전엔 `modelOf("code-implementer.md")` 한 줄이라 파일 이름이
-// 박혀 있었고, 일꾼이 하나 늘자(`deep-implementer`, v0.64.0) 그 새 일꾼이 검사 밖으로 조용히 빠졌다.
-// 하필 **판단 걸린 일**을 최상위 모델로 맡는 쪽이라, 여기가 뚫리면 심판이 일꾼보다 약해지는
-// 바로 그 역전이 가장 위험한 자리에서 성립한다.
-const WORKER_AGENTS = ["code-implementer.md", "deep-implementer.md"];
+// 게이트가 아닌 에이전트 목록은 **배열 한 곳**에 모은다. 예전엔 `modelOf("code-implementer.md")`
+// 한 줄이라 파일 이름이 박혀 있었고, 일꾼이 하나 늘자(`deep-implementer`, v0.64.0) 그 새 일꾼이
+// 검사 밖으로 조용히 빠졌다. 하필 **판단 걸린 일**을 최상위 모델로 맡는 쪽이라, 여기가 뚫리면
+// 심판이 일꾼보다 약해지는 바로 그 역전이 가장 위험한 자리에서 성립한다.
+// v0.65.0 F-28: **감독(supervisor)이 같은 이유로 들어왔다.** 감독은 일꾼이 아니라 지휘하는 자리라,
+//   이름만 두고 끼워 넣으면 배열 이름·검사 제목·이 주석이 전부 사실과 어긋나고 다음 사람이
+//   "여긴 일꾼만 넣는 곳"으로 읽어 감독을 도로 뺀다. 그래서 배열 이름과 제목을 함께 고쳤다
+//   (WORKER_AGENTS → NON_GATE_AGENTS). 감독은 게이트 판정을 읽고 다음 수를 정하는 자리라
+//   등급이 최상위인데, 그것이 심판보다 강해지면 안 되는 것은 일꾼과 똑같다.
+const NON_GATE_AGENTS = ["code-implementer.md", "deep-implementer.md", "supervisor.md"];
 
-test("일꾼(code-implementer·deep-implementer)은 게이트보다 강한 티어가 아니다 — 심판≥일꾼", () => {
-  for (const file of WORKER_AGENTS) {
-    const worker = modelOf(file);
-    assert.ok(TIER[worker], `${file} 모델 '${worker}'이 TIER 표에 없음 — 새 모델이면 TIER에 추가하라`);
+test("심판보다 강한 에이전트가 없다 — 심판 ≥ 나머지 전부", () => {
+  for (const file of NON_GATE_AGENTS) {
+    const other = modelOf(file);
+    assert.ok(TIER[other], `${file} 모델 '${other}'이 TIER 표에 없음 — 새 모델이면 TIER에 추가하라`);
     assert.ok(
-      TIER[worker] <= TIER[TOP_TIER],
-      `심판이 일꾼보다 약함: ${file}(${worker})가 게이트(${TOP_TIER})보다 강함 — R6가 막으려는 역전.`
+      TIER[other] <= TIER[TOP_TIER],
+      `심판이 더 약함: ${file}(${other})가 게이트(${TOP_TIER})보다 강함 — R6가 막으려는 역전.`
     );
   }
 });
