@@ -146,10 +146,45 @@ const ROUTING_MARKERS = [
   //   안 막는다**(그 차단은 부르는 쪽이 서브에이전트일 때만 걸리고 메인은 통과한다).
   //   그래서 이 한 구절이 배포되는 자리에 남는 유일한 방어다.
   "감독은 `Agent` 로 띄운다(각본으로 안 띄운다)",
+  // v0.66.0 F1·F2: 계획서 쓰기가 내장 `Plan` 에이전트로 갔다. 위임 직전에 읽는 상세 문서가
+  //   이 두 문장을 잃으면 코어만 바뀌고 상세가 옛 흐름을 가리켜 새 흐름이 무산된다(v0.58.0 전례).
+  "구현 계획서는 내장 `Plan` 에이전트",
+  // 폴백. 내장 에이전트는 "설치/활성"이 불가능한 대상이라, 이 문장이 없으면 없는 판에서
+  //   흐름이 그 자리에서 멈춘다(형제 자리 = src/skills/planning/SKILL.md 8번).
+  "`Plan` 에이전트가 없는 판이면 메인이 최상위 모델로 계획서를 직접 쓴다",
 ];
 test("routing '누가 무엇을 맡나' 절의 안전 문장이 살아 있다", () => {
   for (const m of ROUTING_MARKERS)
     assert.ok(routingSkill.includes(m), `routing/SKILL.md에 누락: ${m}`);
+});
+
+// 🛑 이 줄은 "태스크별 순차 계획 실행은 `chageun:routing` 이 직접 갖는다"였다. 그 절차는 이 파일에
+//    없고, 코어 '작업 유형별 진행'은 `executing-plans` 또는 라우팅 표에 따른 위임을 가리킨다.
+//    없는 절차의 소유를 주장하면 읽는 쪽이 이 파일에서 찾다가 못 찾고 스스로 만들어 낸다(문서 셋이
+//    서로 다른 말을 하던 자리다: 코어 · 이 스킬 · README). 소유 주장 문투의 **부재**로 잰다.
+//    🛑 두 축을 **다른 넓이로** 잰다.
+//    (가) 소유 주장의 부재 = `순차`·`실행` 이 함께 있는 **모든 줄**에서 잰다. `계획` 한 낱말만 빼서
+//         "태스크별 순차 실행은 `chageun:routing` 이 직접 갖는다"로 되돌리면 좁은 필터에 안 걸려
+//         조용히 통과했다(이 파일 `:33` 이 이미 `태스크별 순차 실행` 문투를 쓴다).
+//    (나) `executing-plans` 를 가리키라는 요구 = **좁은 쪽에만** 건다. `:33` 은 표 안에서 병렬과의
+//         축 구분만 하는 줄이라 그 포인터를 들 자리가 아니고, 넓은 필터에 이 요구까지 걸면 멀쩡한
+//         그 줄이 오탐이 된다(그물을 넓히면서 이 축까지 같이 넓히지 말 것).
+test("routing 이 순차 계획 실행의 소유를 주장하지 않는다", () => {
+  const lines = routingSkill.split("\n");
+  const claimLines = lines.filter((l) => l.includes("순차") && l.includes("실행"));
+  assert.ok(claimLines.length > 0,
+    "routing/SKILL.md 에서 '순차 실행'을 다루는 줄이 사라졌다 - 병렬 위임과의 축 구분이 없어졌다");
+  for (const l of claimLines) {
+    assert.ok(!/직접\s*갖는다/.test(l),
+      `routing 이 순차 실행을 직접 갖는다고 다시 주장한다(그 절차는 이 파일에 없다): ${l}`);
+  }
+  const planLines = lines.filter((l) => l.includes("순차 계획 실행"));
+  assert.ok(planLines.length > 0,
+    "routing/SKILL.md 에서 '순차 계획 실행'을 다루는 줄이 사라졌다 - 코어가 가리키는 자리가 없어졌다");
+  for (const l of planLines) {
+    assert.ok(l.includes("executing-plans"),
+      `순차 계획 실행 줄이 코어와 같은 말(\`executing-plans\`)을 안 가리킨다: ${l}`);
+  }
 });
 
 // 서브에이전트 `description` 은 나중에 사용자 화면에 그대로 뜨는 **이름**이라 짧아야 한다.

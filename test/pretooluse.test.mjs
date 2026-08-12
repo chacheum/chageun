@@ -410,7 +410,7 @@ test("계획서 경로 판정: 에이전트 정의 파일을 계획서로 오인
 });
 test("계획서 경로 판정: 진짜 계획서는 여전히 잡는다", () => {
   for (const p of [
-    "docs/superpowers/plans/2026-08-07-x.md",  // 표준 자리
+    "docs/plans/2026-08-07-x.md",              // 표준 자리(v0.66.0 부터 계획서는 여기 쓴다)
     "docs/plan.md",                            // 손으로 쓴 것
     "docs/2026-08-07-migration-plan.md",       // -plan.md
     "docs/migration_plan.md",                  // _plan.md

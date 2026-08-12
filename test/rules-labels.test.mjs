@@ -54,11 +54,23 @@ test("기타 정본 라벨 존재", () => {
   for (const s of MISC_LABELS) assert.ok(RULES.includes(s), `누락: ${s}`);
 });
 
-test("스킬 로드 강제 포인터 5문장 유지(Skill tool + 스킬 ID)", () => {
-  for (const id of ["chageun:formats", "chageun:spec-gate", "chageun:routing", "chageun:run-verify", "chageun:finish-check"]) {
+test("스킬 로드 강제 포인터 6문장 유지(Skill tool + 스킬 ID)", () => {
+  for (const id of ["chageun:formats", "chageun:spec-gate", "chageun:routing", "chageun:run-verify", "chageun:finish-check",
+                    // v0.66.0: 기획 대화가 차근 것이 됐다. 새 기능 입구는 **강제 포인터**를 쓴다
+                    // (스킬 저발동 실측 때문에 가장 중요한 입구의 발동률을 우선).
+                    "chageun:planning"]) {
     const re = new RegExp(`load(ing)? \\\`${id}\\\` via the Skill tool`);
     assert.ok(re.test(RULES), `포인터 누락: ${id}`);
   }
+});
+
+// M2(v0.66.0): 디버깅은 **포인터 문투를 안 쓴다**(위 검사가 안 덮는다) — 새 기능 입구에만 강제
+//   포인터를 두기로 한 의도된 비대칭이다. 그래서 79행에서 `chageun:debugging` 이 통째로 빠져도
+//   잡는 칸이 하나도 없었다. 크기 밴드는 재핀하면 초록이 되므로(core-size.test.mjs:252) 그쪽은
+//   방어가 아니다. 이 한 줄이 그 축의 전부다.
+test("코어 '작업 유형별 진행'이 `chageun:debugging` 을 가리킨다(포인터 문투 없는 축)", () => {
+  assert.ok(RULES.includes("chageun:debugging"),
+    "누락: chageun:debugging — 버그 경로가 가리킬 스킬 이름이 코어에서 사라졌다");
 });
 
 // v0.54.0 pr-reviewer 2차 medium: 요약 라벨을 줄였다가 finish-work 훅의 요약 감지를 꺼뜨린 사고가
