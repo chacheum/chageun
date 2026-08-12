@@ -139,6 +139,12 @@ function walkAgentDir(sub, parent, sinceMtime, files, depth, skipped) {
     } catch (_) { /* skip */ }
   }
 }
+// 🛑 이 폴더 구조(`<session_id>/subagents/…`)를 아는 자리가 **저장소에 둘**이다(v0.65.0 F-28).
+//   여기와 `src/hooks/pretooluse.js` 의 `supervisorTranscriptPath`(감독 스폰 상한이 읽을 자리를
+//   조립하는 곳). 하네스가 구조를 바꾸면 **둘 다 깨지는데 증상이 정반대다** — 훅은 시끄럽게 서고
+//   (`supervisor-cap-unreadable` 로 감독이 첫 스폰부터 막힌다) **회고는 조용히 죽는다**
+//   (바로 아래 readdirSync 가 실패하면 빈 배열로 그냥 끝난다 · 아무도 안 알려 준다).
+//   그래서 **훅이 서는 것을 회고가 굶고 있다는 경보로도 읽는다.** 한쪽만 고치지 말 것.
 function listAgentFiles(dir, opts = {}) {
   const { sinceMtime = 0, maxSessions = MAX_AGENT_FILES, maxBytes = MAX_AGENT_BYTES,
           maxFileBytes = MAX_FILE_BYTES, skipped = null } = opts;

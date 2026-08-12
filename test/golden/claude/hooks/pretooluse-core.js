@@ -179,7 +179,12 @@ const REASONS = {
   "sql-delete-no-where": "차단: WHERE 없는 DELETE는 테이블 전체를 지웁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "sql-update-no-where": "차단: WHERE 없는 UPDATE는 테이블 전체를 덮어씁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "deploy": "차단(배포는 되돌리기 어려움): 사용자 확인 후 진행하려면 세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하세요(그 세션 동안 배포 검사가 꺼집니다). 이 브레이크는 CLI 배포만 막고 git push→자동배포(Vercel/Netlify 깃연동)는 못 막습니다 — 그건 멈춤 규칙으로 확인하세요.",
-  "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). pr-reviewer에게 **재검토를 요청**하세요 — 이미 돌린 리뷰어를 SendMessage로 이어 부른 재검토도 인정됩니다(새 Agent로 다시 띄워도 됩니다. 그땐 **프롬프트에 `재리뷰 회차: N`과 지난 회차 blocker/high 제목을 적으세요** — 새로 띄우면 회차 소스가 그것뿐이라 안 적으면 몇 번째인지 아무도 못 셉니다). 예외로 건너뛰어야 하면 **세션 자체를 CHAGEUN_SKIP_GATE_CHECK=1로 시작**해야 합니다(명령 앞에 인라인으로 붙이는 건 훅 프로세스에 안 닿아 안 켜집니다).",
+  // v0.65.0 F-28: **감독(supervisor)을 띄운 세션도 여기 걸린다**(DELEGATE_AGENTS 주석). 감독은 파일을
+  //   안 고치는데도 걸리므로, "코드를 다시 수정했으면"만 적혀 있으면 **코드를 안 고친 사람에게
+  //   사실과 다르게 읽힌다.** 그래서 한 조각을 더한다. 🛑 REASONS_SUBAGENT["gate-skip"] 은 안 건드린다
+  //   — 감독을 띄우는 것은 메인뿐이라 서브에이전트용 문구가 이 상황을 만날 일이 없고, 그 문구는
+  //   회복 경로를 네 회차에 걸쳐 다듬은 자리라 손대면 잃는 것이 크다.
+  "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). **감독(`supervisor`)을 띄운 세션도 여기 포함됩니다** — 감독은 파일을 안 고치지만, 감독이 띄운 일꾼이 고쳤을 수 있어 한 번 더 검토를 받습니다. pr-reviewer에게 **재검토를 요청**하세요 — 이미 돌린 리뷰어를 SendMessage로 이어 부른 재검토도 인정됩니다(새 Agent로 다시 띄워도 됩니다. 그땐 **프롬프트에 `재리뷰 회차: N`과 지난 회차 blocker/high 제목을 적으세요** — 새로 띄우면 회차 소스가 그것뿐이라 안 적으면 몇 번째인지 아무도 못 셉니다). 예외로 건너뛰어야 하면 **세션 자체를 CHAGEUN_SKIP_GATE_CHECK=1로 시작**해야 합니다(명령 앞에 인라인으로 붙이는 건 훅 프로세스에 안 닿아 안 켜집니다).",
   "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
   "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
   "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged·check-ignore, 그리고 **branch는 읽기 형태만** — `--show-current`·`--list`·`--contains`·`-a`·`-r`·`-v` 등이나 인자 없는 `git branch`. 브랜치 이름을 인자로 주거나 `-d`·`-m`·`-f`를 붙이면 쓰기라 막힙니다). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 그 밖의 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 오류 메시지까지 보려면 `2>&1`은 됩니다(감추는 게 아니라 화면으로 끌어오는 것이라 허용합니다). 단 **앞뒤를 띄어 쓰세요** — `2>&1| head`처럼 붙여 쓰면 안 열립니다(`… 2>&1 | head`). 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 자주 막히던 것의 이미 허용된 대체: 현재 브랜치는 `git rev-parse --abbrev-ref HEAD`, 특정 커밋을 담은 브랜치는 `git for-each-ref --contains <sha>`. `check-ignore`는 **종료코드 1 = 무시되지 않음**(오류 아님)입니다. 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
@@ -187,6 +192,17 @@ const REASONS = {
   "gate-model-downgrade": "차단: 검증 게이트를 기본보다 약한 모델로 띄우려 했습니다. 게이트는 \"검토 대상보다 최소 같거나 강한 독립 심판\"이라 약한 모델로 내리면 게이트의 의미가 사라집니다(심판이 일꾼보다 약해짐). **`model` 파라미터를 빼면** 에이전트 설정의 기본 모델이 그대로 쓰입니다 — 그게 정답인 경우가 대부분입니다. 그 모델을 못 쓰는 환경이면 실행 전 사용자가 CHAGEUN_ALLOW_GATE_MODEL=1로만 열 수 있습니다(게이트를 아예 안 부르는 것보다는 약한 심판이 낫기 때문입니다).",
   "design-color": "차단(차근 색 백스톱): 새로 넣는 코드에 디자인 토큰 대신 직접 색이 있습니다. 팔레트 색 클래스(`bg-blue-500` 등)·임의값(`-[#hex]`) 대신 docs/design-system.md의 토큰을 쓰세요. 색 견본판·Tailwind safelist처럼 색 이름이 원래 나열되는 파일이면, design-system.md front-matter의 `lint-allow-colors`에 그 팔레트명을 선언하거나 그 줄에 `design-lint-ignore` 주석을 붙이세요(그 줄만 통과). 전체 우회는 실행 전 사용자가 CHAGEUN_SKIP_DESIGN_LINT=1로만 켤 수 있습니다.",
   "component-boundary": "차단(공용 컴포넌트 경계): 페이지와 라우트는 등록된 공용 컴포넌트만 조립할 수 있습니다. 직접 UI는 공용 컴포넌트로 옮기고 레지스트리와 코드 표식을 맞추세요.",
+  // ── v0.65.0 F-27(상황판) 하드 차단 둘 ────────────────────────────────────
+  // 둘 다 **탈출구 환경변수가 없다.** 그래서 문구가 유일한 안내다 — 회복법이 안 닿으면
+  //   막힌 채로 끝난다. 이 열쇠를 REASONS 에 안 넣으면 일반 문구("되돌리기 어려운 고위험
+  //   명령")로 떨어져 그 사고가 그대로 난다.
+  // ⚠ 오탐이 실제로 난다: secret-scan-core 의 looksLikeToken 은 **이름이 무엇이든** 값이
+  //   12자 이상이고 글자·숫자가 섞이면 비밀로 본다. 상황판은 프로젝트 이름·버전·서버
+  //   이름을 적는 자리라 `DB_HOST=mssql-server-01` 같은 평범한 값도 걸린다. 탐지 규칙을
+  //   두 벌로 만들지 않고(같은 저장소에 잣대가 둘이면 어느 쪽이 진짜인지 아무도 모른다)
+  //   **회복 문장**으로 푼다.
+  "statusboard-secret": "차단: 상황판에 `.env` 의 비밀 값이 새로 들어갑니다. 상황판은 비밀번호가 없는 평문 보고서라 그대로 밖으로 열릴 수 있고, 살아 있는 열쇠가 나가면 되돌릴 수 없습니다. **값은 여기 다시 적지 않습니다** — 걸린 열쇠 이름만 아래 `(위반:` 에 있습니다. 회복: 그 값을 빼고 다시 쓰세요. **그 값이 비밀이 아니면 다르게 적으세요** — 예: `v0.65.0-beta1` → `버전 v0.65.0`. 이미 파일에 들어 있는 값은 이 검사가 안 봅니다(새로 쓰는 글만 봅니다) — 지우는 편집은 그대로 됩니다.",
+  "statusboard-unignored": "차단: 이 상황판이 git 에 올라갈 수 있습니다. 평문 업무 보고가 저장소에 실리면 커밋 이력에 남아 나중에 지워도 흔적이 남습니다. 회복은 상태에 따라 둘입니다. (1) **아직 추적 안 된 파일**이면 `chageun:statusboard` 의 무시 절차를 밟으세요(`.git/info/exclude` 에 한 줄 넣고 `git check-ignore -q status.md` 로 재확인). (2) **이미 추적 중**이면 먼저 `git rm --cached status.md` 로 추적을 끊어야 합니다 — 차근이 대신 돌리지 않습니다. 사용자에게 그 명령을 보여 드리고 사용자가 돌립니다. 🛑 **추적을 끊은 뒤에 무시 절차를 한 번 더 밟아야 풀립니다** — 추적 중인 파일은 무시 줄만 넣어서는 `check-ignore` 가 계속 1이라 안 풀립니다. 이 차단을 여는 스위치는 없습니다.",
 };
 
 // 어떤 도구·입력이 위험한지 판정. 위험하면 사유 키를, 아니면 null.
@@ -248,7 +264,22 @@ const REASONS_SUBAGENT = {
   // v0.64.0 H-2: 위 문구가 "게이트를 직접 띄우지 마세요"라고 말로만 막던 것을 기계로도 막는다.
   //   말로만 두면 서브에이전트가 게이트를 띄워 자기 기록에 흔적을 만들고, 그 흔적으로 자기 push
   //   자물쇠를 푼다. 그래서 이 사유는 **서브에이전트 전용**이다(메인 세션엔 아예 안 걸린다).
-  "subagent-gate-spawn": "차단: 검증 게이트(plan-validator·pr-reviewer)는 본 세션이 띄웁니다. 만든 쪽이 자기 검사를 부르면 검사가 아닙니다 — 무엇을 검사할지 스스로 고르게 되고, 그 실행 흔적으로 push 잠금까지 풀립니다. 지금 할 수 있는 것은 둘입니다: (1) 하던 일을 끝내 커밋까지만 하고, 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 검토·판단이 꼭 필요하면 그 자리에서 멈추고 **BLOCKED** 로 보고한다(무엇을 정해야 하는지와 선택지를 함께). 게이트 실행과 push 는 본 세션이 합니다.",
+  // v0.65.0 F-29: 불투명 통로(Workflow·REPL)를 서브에이전트가 쓰는 것. 이 문구는 이 파일의 하드 교훈
+  //   두 개를 지킨다. (1) **켤 수 없는 스위치를 안내하지 않는다** — 서브에이전트는 훅 프로세스의
+  //   환경변수를 못 켠다(위 deploy 문구의 실측). (2) **읽는 쪽이 따라 할 수 있는 우회를 안내하지 않는다**
+  //   (gate-skip 4회차 교훈). 그래서 "차근을 잠시 끄라"·"그 파일을 고치라" 류를 한 줄도 안 적는다.
+  //   사용자에게 물어보라고도 안 한다 — 서브에이전트는 화면 질문을 못 띄운다.
+  "subagent-opaque-spawn": "차단: 이 도구로는 **무엇을 띄우는지 차근이 읽을 수 없습니다.** 각본은 문자열을 이어 붙이거나 바깥 파일에서 올 수 있어, 그 안에서 검증 게이트를 약한 모델로 띄우거나 검사를 건너뛰어도 아무도 못 봅니다. 그래서 뒤에서 도는 작업에는 이 통로를 열어 두지 않습니다. 지금 할 수 있는 것은 둘입니다: (1) 같은 일을 지금 가진 도구로 직접 하고, 하던 일을 끝내 커밋까지만 한 뒤 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 이 통로가 꼭 필요하면 그 자리에서 멈추고 본 세션에 **BLOCKED** 로 보고한다 — 무엇을 띄우려 했는지, 왜 필요한지, 대신 해 본 것을 함께 적으세요. 그 판단과 실행은 본 세션 몫입니다.",
+  "subagent-gate-spawn": "차단: 검증 게이트(plan-validator·pr-reviewer)는 본 세션이 띄웁니다. 만든 쪽이 자기 검사를 부르면 검사가 아닙니다 — 무엇을 검사할지 스스로 고르게 되고, 그 실행 흔적으로 push 잠금까지 풀립니다. 지금 할 수 있는 것은 둘입니다: (1) 하던 일을 끝내 커밋까지만 하고, 무엇을 고쳤는지와 브랜치 이름을 상태 보고에 적는다 (2) 검토·판단이 꼭 필요하면 그 자리에서 멈추고 **BLOCKED** 로 보고한다(무엇을 정해야 하는지와 선택지를 함께). 게이트 실행과 push 는 본 세션이 합니다. **감독(`supervisor`)이 띄운 일이면 감독에게 BLOCKED 로 보고하세요 — 검토는 감독이 띄웁니다.**",
+  // ── v0.65.0 F-28(감독 에이전트) 사유 넷 ──────────────────────────────────
+  // 넷 다 서브에이전트 전용이다(감독은 언제나 서브에이전트다). 이 파일의 하드 교훈 둘을 그대로 지킨다:
+  //   (1) **켤 수 없는 스위치를 안내하지 않는다** — 서브에이전트는 훅 프로세스의 환경변수를 못 켠다.
+  //   (2) **읽는 쪽이 따라 할 수 있는 우회를 안내하지 않는다**(gate-skip 4회차 교훈).
+  //   사용자에게 물어보라고도 안 한다 — 서브에이전트는 화면 질문을 못 띄운다.
+  "subagent-supervisor-spawn": "차단: 감독(`supervisor`)은 본 세션만 띄웁니다. 일이 갈라지면 사람이 볼 수 있게 본 세션이 갈라야 합니다 — 뒤에서 감독이 감독을 낳으면 몇 겹인지 아무도 못 셉니다. 이것은 '감독인 척'을 막는 자물쇠이기도 합니다: 감독이 되는 유일한 길은 본 세션이 감독으로 띄우는 것이고, 돌고 있는 작업은 자기 자리를 바꿀 수 없습니다. 지금 할 수 있는 것은 하나입니다 — 그 자리에서 멈추고 본 세션에 **BLOCKED** 로 보고하세요(무엇을 띄우려 했는지, 왜 필요한지를 함께).",
+  "supervisor-write": "차단: 감독은 파일을 고치지 않습니다. 고칠 일은 일꾼(`code-implementer`·`deep-implementer`)에게 띄우세요 — 감독의 일은 띄우고, 자리를 열어 확인하고, 판정을 옮기는 것입니다. 커밋·push·PR 도 감독이 하지 않습니다. 일꾼에게 띄울 수 없는 일이면 그 자리에서 멈추고 본 세션에 **BLOCKED** 로 보고하세요.",
+  "supervisor-spawn-cap": "차단: 감독이 띄울 수 있는 한도(6건)를 다 썼습니다. **6건은 검토 회차가 아니라 총 스폰 수입니다** — 수정 3 + 검토 3 이 기본이고, 한 회차에 일꾼을 두 번 띄우면 더 빨리 닿습니다. 지금까지의 **게이트 판정 원문**과 남은 문제를 적어 본 세션에 **BLOCKED** 로 올리세요. 한도를 늘리는 스위치는 없습니다.",
+  "supervisor-cap-unreadable": "차단: **기록을 못 읽어 지금까지 띄운 수를 셀 수 없습니다.** 한도를 못 세면 막는 쪽이 안전측이라 이 스폰을 막았습니다. 지금까지의 **게이트 판정 원문**과 남은 문제, 그리고 무엇을 띄우려 했는지를 적어 본 세션에 **BLOCKED** 로 올리세요. 이 검사를 끄거나 한도를 늘리는 스위치는 없습니다. 올릴 때 이 한 줄을 함께 적으세요: '이 검사는 하네스가 기록을 두는 폴더 구조에 기댑니다. 갑자기 전부 막히면 그 폴더 구조가 바뀌었는지부터 보십시오.'",
 };
 function reasonFor(key, forSubagent) {
   if (forSubagent && REASONS_SUBAGENT[key]) return REASONS_SUBAGENT[key];
@@ -262,7 +293,7 @@ function isPrCreate(toolName, toolInput) {
 }
 
 // ── routing 리마인더(soft) — batch6 ─────────────────────────────────────────
-// "구현 에이전트(아래 IMPLEMENTER_AGENTS) 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
+// "구현 에이전트(아래 DELEGATE_AGENTS) 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
 // 첫 1회만 참(이미 일꾼 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
 // 차단이 아니라 리마인더 주입 판정. 게이트(plan-validator/pr-reviewer) 스폰은 대상 아님
 // (게이트 모델은 각 agent frontmatter·라우팅 규칙이 관장). 순수함수(fs 없음).
@@ -272,13 +303,106 @@ function isPrCreate(toolName, toolInput) {
 // 일을 맡는 쪽이라, 이번에 넣은 안전 문장(BLOCKED 계약·push 금지·게이트 재실행)이 가장
 // 필요한 경로에서 안 걸렸다. 정규식에 갈래를 붙이는 방식은 다음 사람이 한쪽만 고쳐도
 // 조용히 통과하므로, 아래 두 자리(스폰 판정·이미-위임 판정)가 **같은 배열**을 쓰게 한다.
-const IMPLEMENTER_AGENTS = ["code-implementer", "deep-implementer"];
-const isImplementer = (who) => IMPLEMENTER_AGENTS.some((n) => String(who).indexOf(n) !== -1);
+//
+// v0.65.0 F-28: **감독(supervisor)이 여기 들어온다. 그래서 이름이 더는 '구현'만 뜻하지 않아
+//   배열과 판정기 이름을 뜻에 맞게 바꿨다**(IMPLEMENTER_AGENTS·isImplementer → DELEGATE_AGENTS·isDelegate).
+//   왜 감독이 여기 드는가: 메인이 일꾼 대신 감독을 띄우면 **메인 기록에는 감독 스폰 한 줄만 남는다.**
+//   그러면 (1) 검토 뒤에 코드가 바뀌어도 신선도 검사가 스스로 안 깨지고 (2) 라우팅 리마인더도 안 뜬다.
+//   v0.64.0 이 deep-implementer 로 이미 겪은 것과 **같은 사고**다.
+//   🛑 감독은 **읽기만 하는데도** 여기 든다 — 감독이 띄운 일꾼이 고쳤을 수 있기 때문이다.
+//   거래는 옳다: 과하게 세면 검토가 한 번 더 돌 뿐이고, 덜 세면 **검토 안 받은 코드가 나간다.**
+//   그 대신 REASONS["gate-skip"] 문구가 "감독을 띄운 세션도 포함"이라고 사람에게 밝힌다
+//   (코드를 안 고친 사장님께 "코드를 다시 수정했으면"만 보이면 사실과 다르게 읽힌다).
+// 판정은 **부분 문자열 그대로 넓게** 둔다(네임스페이스 접두사가 붙어 와도 걸리게).
+const DELEGATE_AGENTS = ["code-implementer", "deep-implementer", "supervisor"];
+const isDelegate = (who) => DELEGATE_AGENTS.some((n) => String(who).indexOf(n) !== -1);
 const AGENT_TOOLS_RE = /^(Task|Agent)$/;
+// 차근이 **무엇을 띄우는지 못 읽는** 통로. 각본은 문자열 이어붙이기·계산값·외부 파일(scriptPath)·
+//   재개(resumeFromRunId)로 올 수 있어 정적 해석이 못 버틴다. REPL 은 임의 코드에 상태까지 유지된다.
+const OPAQUE_SPAWN_TOOLS_RE = /^(Workflow|REPL)$/;
 function subagentOf(inp) { return String((inp && (inp.subagent_type || inp.agentType || inp.agent_type)) || ""); }
+
+// ── 스폰 판정 단일 출처(v0.65.0 F-29) ───────────────────────────────────────
+// 이 파일은 같은 실패를 이미 겪었다(바로 위 DELEGATE_AGENTS 주석): 판정을 정규식에 박으면
+//   갈래가 늘 때 한쪽만 고쳐져 조용히 통과한다. 그래서 스폰 판정도 **여기 한 곳**에 모은다.
+//   🛑 새로 스폰 판정이 필요하면 정규식을 새로 적지 말고 이 함수를 부르라.
+//
+// 🛑 **판정 순서가 곧 안전이다. opaque 를 먼저 본다.** 두 조건은 겹친다 —
+//   `Workflow({script:"…", agentType:"chageun:pr-reviewer"})` 는 이름으로는 opaque,
+//   입력 칸으로는 readable 이다. readable 이 이기면 **입력 칸 하나로 아래 불변식이 우회되어**
+//   못 읽는 통로가 읽히는 통로 행세를 한다. 이름이 Workflow·REPL 이면 입력에 무엇이 있든 opaque.
+//
+// 🛑 **readable 을 via 로 쪼개는 이유.** `via:"shape"`(입력 칸)는 **아무 도구 이름에나 붙일 수 있다** —
+//   호출하는 쪽이 칸 하나를 얹으면 그만이다. 그래서 성질 판정은 **게이트를 닫는 데만** 쓸 수 있고,
+//   여는 데 쓰면 이름 문자열로 게이트를 여는 것과 위험이 같다. 이 파일이 그 금지를 이미 적어 뒀고
+//   (hasPrReviewer 머리의 "이름 문자열 휴리스틱은 일부러 안 넣는다"), `via` 는 그 금지를
+//   **기계가 셀 수 있는 한 칸**으로 만든 것이다. 불변식은 한 줄이다:
+//   **`lastReview`(게이트를 여는 쓰기)를 미는 것은 `via:"name"` 뿐이고, `via:"shape"` 와 `opaque` 는
+//     `lastCodeEdit`(닫는 방향)에만 쓴다.**
+//   ⚠ 이 문장은 무조건이 아니라 **이 함수가 덮는 범위 안에서만** 참이다. 런타임이 직접 실은
+//     `toolUseResult.agentType` 은 도구 이름을 한 번도 안 거치고 맵에 오른다(hasPrReviewer 1패스) —
+//     그 길은 이 함수 밖이고 v0.65.0 이 만든 것도 아니다.
+//
+// 왜 성질만으로는 안 되나(실측): 이 저장소에서 실제로 관측된 유일한 `Workflow` 호출의 입력은
+//   `{name, args}` 였고 **`script` 칸이 없었다.** 그래서 "입력에 각본이 있으면 스폰"은 실제 표본을
+//   놓친다. `name` 은 너무 흔한 칸이라 신호가 못 된다. 이 문장이 없으면 다음 사람이 이름 목록을
+//   "정리"하다 구멍을 되살린다.
+//
+// 반환: null | { kind:"opaque"|"readable", via:"name"|"shape", agentType }. 순수함수(fs 없음).
+function spawnIntent(toolName, toolInput) {
+  const nm = String(toolName || "");
+  if (OPAQUE_SPAWN_TOOLS_RE.test(nm)) return { kind: "opaque", via: "name", agentType: "" };
+  if (AGENT_TOOLS_RE.test(nm)) return { kind: "readable", via: "name", agentType: subagentOf(toolInput) };
+  // 값이 빈 칸은 스폰으로 안 본다 — 이름을 못 얻으면 어느 소비자도 판정을 못 하고(gateOf·isDelegate
+  //   전부 거짓), 그 상태를 readable 로 올리면 "판정된 스폰"으로 잘못 읽힌다.
+  const shaped = subagentOf(toolInput);
+  return shaped ? { kind: "readable", via: "shape", agentType: shaped } : null;
+}
+
+// ── 감독 폭주 상한(v0.65.0 F-28) ─────────────────────────────────────────────
+// 6 은 **사용자 결정**이다(수정 3 + 검토 3 = 3회차). 임의로 5 나 7 로 바꾸지 않는다.
+// ⚠ 6건과 3회차는 **다른 축**이다. 감독이 같은 회차에 일꾼을 두 번 띄우면 6건이 3회차보다 먼저 닿는다.
+const SUPERVISOR_SPAWN_CAP = 6;
+// 기록 속 스폰 수를 센다. 🛑 **`Task|Agent` 정규식을 새로 만들지 않는다** — 무엇이 '스폰 통로'인지는
+//   위 `spawnIntent` 하나가 정한다. 사본을 만들면 (1) 통로가 늘 때 한쪽만 고쳐져 조용히 갈라지고
+//   (바로 위 DELEGATE_AGENTS 주석의 그 사고) (2) "정규식 리터럴은 spawnIntent 정의 1곳뿐"을
+//   거는 F-29 검사가 빨개진다. 그래서 **불투명 통로 스폰도 상한에 함께 들어간다**(그 갈래는
+//   subagentGateSpawn 이 먼저 막지만, 세는 규칙이 통로마다 갈리지 않는다).
+// 대상은 안 가린다 — 상한은 "감독이 무엇을 띄웠나"가 아니라 "몇을 띄웠나"를 센다.
+// 자기 기록의 레코드 모양이 부모 기록과 같은 계열이라는 근거: 회고 스캐너가 agent 파일에 그대로
+//   hasRealContent 를 적용하고(src/skills/retrospect/retrospect-scan.mjs 의 :451), 그 함수가
+//   `(o.message || o).content[]` 안의 `type: "tool_use"` 를 본다(같은 파일 :358-368).
+//   착수 전 실측이 그것을 닫았다(2026-08-12 프로브 · 첫 스폰 시점 계수 1).
+function spawnCountIn(objs) {
+  let n = 0;
+  for (const record of Array.isArray(objs) ? objs : []) {
+    const content = (record && (record.message || record).content) || [];
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (b && b.type === "tool_use" && spawnIntent(b.name, b.input)) n += 1;
+    }
+  }
+  return n;
+}
+
+// 🛑 이것은 정규식 리터럴이 아니라 `hooks.claude.json` **옛 매처 문자열의 복사본**이다(239자).
+//   안의 `Task|Agent` 는 `spawnIntent` 판정과 **무관하다** — 사본 검사(성공 기준 7)의 명시적 예외다.
+// 왜 있나: v0.65.0 이 매처를 `""`(모든 도구)로 넓혔는데, **무인 모드는 안 넓히기로 사용자가 정했다**
+//   (2026-08-11). 넓혀서 **새로 도달하게 된** 차단만 무인에서 안 켜는 것이지, 기존에 무인에서 돌던
+//   차단을 끄라는 뜻이 아니다. 그 차이를 정확히 그 옛 범위로 잡는다.
+// 왜 문자열 + new RegExp 인가: (1) 옛 매처는 **부분일치**로 돌았다 — `^…$` 를 붙이면
+//   `mcp__…__create_branch` 가 `create_branch` 로 걸리던 것이 안 걸려 예외 범위가 뒤바뀐다.
+//   (2) 정규식 리터럴로 적으면 위 사본 검사에 걸린다(이 문자열의 꼬리가 `…|Task|Agent` 다).
+// ⚠ 이 값은 손으로 옮겨 적은 것이 아니라 그 JSON 에서 그대로 복사했다. 한 토큰이 빠지면 예외 범위가
+//   조용히 좁아져 무인 park 이 늘고, 반대로 늘리면 무인이 유인보다 헐거워진다.
+const LEGACY_UNATTENDED_SCOPE = new RegExp("Bash|Write|Edit|MultiEdit|NotebookEdit|execute_sql|apply_migration|deploy_edge_function|delete_branch|create_branch|merge_branch|reset_branch|rebase_branch|restore_project|pause_project|create_project|delete_project|confirm_cost|Task|Agent");
+
 function routingReminderNeeded(objs, toolName, toolInput) {
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return false;
-  if (!isImplementer(subagentOf(toolInput))) return false;
+  // 넓힌 범위에서 `readable` 만 본다(`via` 는 안 가린다 — 리마인더는 게이트를 여는 판정이 아니다).
+  //   불투명 통로는 무엇을 띄우는지 못 읽으니 라우팅 리마인더 판정 자체가 성립하지 않는다.
+  const si = spawnIntent(toolName, toolInput);
+  if (!si || si.kind !== "readable") return false;
+  if (!isDelegate(si.agentType)) return false;
   if (!Array.isArray(objs)) return false;
   for (const o of objs) {
     const m = (o && o.message) || o; const c = m && m.content;
@@ -287,7 +411,8 @@ function routingReminderNeeded(objs, toolName, toolInput) {
       if (!b || b.type !== "tool_use") continue;
       const nm = String(b.name || "");
       if (nm === "Skill" && /routing/.test(String((b.input && b.input.skill) || ""))) return false; // 로드됨
-      if (AGENT_TOOLS_RE.test(nm) && isImplementer(subagentOf(b.input))) return false; // 이미 위임 시작(1회 보장)
+      const prev = spawnIntent(nm, b.input);
+      if (prev && prev.kind === "readable" && isDelegate(prev.agentType)) return false; // 이미 위임 시작(1회 보장)
     }
   }
   return true;
@@ -301,7 +426,7 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 // v0.64.0 H-1: **구현 에이전트 스폰도 코드 수정으로 센다.** 구현을 서브에이전트에 맡기면 메인
 //   기록엔 Task 한 줄만 남아 Edit/Write 가 0 이 되고, 리뷰 뒤에 파일이 바뀌어도 push 가 그대로
 //   통과했다(v0.64.0 이 그 위임을 **기본 경로**로 만들었으므로 반드시 닫아야 하는 자리다).
-//   판정은 위 `isImplementer`(IMPLEMENTER_AGENTS 배열) 한 곳을 공유한다 — 정규식에 이름을 박으면
+//   판정은 위 `isDelegate`(DELEGATE_AGENTS 배열) 한 곳을 공유한다 — 정규식에 이름을 박으면
 //   일꾼이 늘 때 한쪽만 고쳐져 조용히 통과한다(같은 사고가 라우팅 리마인더에서 이미 났다).
 //   이어부르기(SendMessage)도 같이 센다: 백그라운드 일꾼에게 "이것도 고쳐줘"를 보내면 파일이 바뀐다.
 //   맞바꾼 것(합의): **아무것도 안 고친 위임 뒤에도 재리뷰가 강제된다.** 스폰 시점 계상이라
@@ -363,8 +488,15 @@ function hasPrReviewer(objs) {
   for (const o of objs) {
     const c = ((o && o.message) || o || {}).content;
     if (Array.isArray(c)) for (const b of c) {
-      if (b && b.type === "tool_use" && AGENT_TOOLS_RE.test(String(b.name || "")) && b.id) {
-        typeByToolUseId.set(String(b.id), subagentOf(b.input)); // 키 목록은 형제 함수와 한 벌(사본 금지)
+      // 🛑 **이 자리는 v0.65.0 에서 "안 넓히는 것"이 고치는 것이다.** 이 맵은 toolUseResult.agentId 와
+      //   조인돼 SendMessage 로 `lastReview`(게이트를 **여는** 쓰기)까지 이어진다(아래 패스2). 성질
+      //   (`via:"shape"`)까지 올리면 `아무도구({agentType:"chageun:pr-reviewer"})` 한 줄이 쪽지 한 통을
+      //   거쳐 **리뷰 도장**이 된다 — 직접 쓰기만 막으면 이 길이 그대로 남는다.
+      //   ⚑ **이 한 줄이 이번 판의 자물쇠다**: `via:"shape"` 를 남겨 둔 판단이 여기에 기대고 있다.
+      //   회귀 칸 = test/hook-net.test.mjs 의 (d) 와 "1패스 맵은 via:\"name\" 전용이다".
+      const si1 = b && b.type === "tool_use" ? spawnIntent(b.name, b.input) : null;
+      if (si1 && si1.kind === "readable" && si1.via === "name" && b.id) {
+        typeByToolUseId.set(String(b.id), si1.agentType); // 키 목록은 spawnIntent 와 한 벌(사본 금지)
       }
     }
     const tur = o && o.toolUseResult;
@@ -391,21 +523,43 @@ function hasPrReviewer(objs) {
       seq++;
       const nm = String(b.name || "");
       const inp = b.input || {};
-      if (/^(Task|Agent)$/.test(nm)) {
-        const sub = subagentOf(inp);
-        if (/pr-reviewer/.test(sub)) lastReview = seq;
-        else if (isImplementer(sub)) lastCodeEdit = seq;      // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
-      } else if (nm === "TaskOutput") {
+      // ⚠ **아는 도구를 먼저 가른다.** 스폰 판정을 앞에 두면, 아는 도구가 우연히 스폰꼴 칸을 달고 온
+      //   경우(`Edit({file_path, agentType:"x"})`)에 그 도구의 자기 계상(여기서는 isCodeTarget)이
+      //   통째로 건너뛰어진다 — **여는 방향**이다. 이름 집합이 서로 겹치지 않으므로 순서를 바꿔도
+      //   오늘 있는 도구들의 판정은 한 칸도 안 변한다.
+      if (nm === "TaskOutput") {
         // 백그라운드 결과 회수 = 그 일꾼이 끝났다는 두 번째 신호(H-1b (b)).
         const tid = String(inp.task_id || "");
-        if (tid && isImplementer(String(agentTypeById.get(tid) || ""))) lastCodeEdit = seq;
+        if (tid && isDelegate(String(agentTypeById.get(tid) || ""))) lastCodeEdit = seq;
       } else if (nm === "SendMessage") {
         const to = String(inp.to || inp.recipient || "");
         const type = to ? String(agentTypeById.get(to) || "") : "";
         if (/pr-reviewer/.test(type)) lastReview = seq;
-        else if (isImplementer(type)) lastCodeEdit = seq;      // 이어부르기로 더 고치게 시킨 것도 같다
+        else if (isDelegate(type)) lastCodeEdit = seq;      // 이어부르기로 더 고치게 시킨 것도 같다
       } else if (EDIT_TOOLS_RE.test(nm)) {
         if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
+      } else {
+        // v0.65.0 F-29: 스폰 통로. **닫는 쪽으로만 움직인다** — 이 비대칭이 설계의 전부다.
+        const si = spawnIntent(nm, inp);
+        if (si && si.kind === "opaque") {
+          // 불투명 통로(Workflow·REPL): 각본이 코드를 통째로 고쳤을 수 있으므로 **코드 수정으로 센다.**
+          //   🛑 `lastReview` 는 **어떤 경우에도 안 민다.** 그래서 불투명 통로로 게이트를 강등해
+          //   띄워도 그 리뷰는 리뷰로 안 쳐지고, **강등해서 얻는 것이 없다** — 각본 내용을 한 줄도
+          //   안 읽고 그 경로가 죽는다. 결정 2번(2026-08-11): 메인 세션에서도 센다. 실측 빈도가
+          //   0.015% 라 재검토 비용이 사실상 0이고, 안 세면 v0.64.0 이 막 닫은 자리가 다른 이름으로 열린다.
+          //   ⚠ 조건부다: 런타임이 각본 결과에 agentType 을 싣기 시작하면 위 1패스의 런타임 표기
+          //   가지로 맵이 채워져 이 문장이 그날 거짓이 된다(T0 실측 기준 오늘은 0건). 그때 무엇을
+          //   좁힐지는 **사람이 정한다**.
+          lastCodeEdit = seq;
+        } else if (si && si.via === "name") {
+          if (/pr-reviewer/.test(si.agentType)) lastReview = seq;
+          else if (isDelegate(si.agentType)) lastCodeEdit = seq; // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
+        } else if (si && isDelegate(si.agentType)) {
+          // `via:"shape"` = 입력 칸으로만 잡힌 스폰. 호출하는 쪽이 칸 하나로 만들어 낼 수 있으므로
+          //   **닫는 쪽에만** 쓴다(일꾼이면 코드 수정 계상). 리뷰어여도 여기서는 아무 일도 안 한다 —
+          //   그것이 `아무도구({agentType:"chageun:pr-reviewer"})` 한 줄이 리뷰 도장이 되는 것을 막는다.
+          lastCodeEdit = seq;
+        }
       }
     }
     // 일꾼이 **끝난 시점**(H-1b). 위 content 루프 **뒤**에 둔다 — 한 레코드가 리뷰 스폰과 완료 신호를
@@ -427,7 +581,7 @@ function finishedImplementerHere(o, agentTypeById) {
   //     이 자리는 "완료만" 보지 않는다). 노리는 것은 앞에 두고 기다린 스폰의 완료 레코드이고,
   //     런타임이 백그라운드에도 완료 레코드를 싣기 시작하는 날 이 줄이 그대로 받는다.
   const tur = o.toolUseResult;
-  if (tur && typeof tur === "object" && tur.agentId && isImplementer(typeOf(tur.agentId))) return true;
+  if (tur && typeof tur === "object" && tur.agentId && isDelegate(typeOf(tur.agentId))) return true;
   // (a) <task-notification> 알림. 문자열 content · 배열 content 의 text 블록 · attachment.prompt 셋 다.
   const m = o.message || o;
   const c = m && m.content;
@@ -444,7 +598,7 @@ function finishedImplementerHere(o, agentTypeById) {
     const re = /<task-id>([^<]+)<\/task-id>/g;
     let hit;
     while ((hit = re.exec(txt)) !== null) {
-      if (isImplementer(typeOf(hit[1].trim()))) return true;
+      if (isDelegate(typeOf(hit[1].trim()))) return true;
     }
   }
   return false;
@@ -637,8 +791,12 @@ function bigPlanKey(rel, lines) {
 //   앞선 두 번의 문턱 설계가 측정 스크립트를 `planPathsInPrompt` 대신 느슨한 정규식으로 짜서 만든
 //   **없는 빈 구간** 위에 있었다는 것은 사실이고, 그대로 유효하다.
 function planScaleBlock(toolName, toolInput, opts) {
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
-  if (gateOf(subagentOf(toolInput)) !== "plan-validator") return null;
+  // v0.65.0: `readable` 이면 판정한다(`via` 는 안 가린다 — 이 가드는 **닫는 쪽**이라 넓혀도
+  //   게이트가 안 열리고, 오히려 성질 통로로 띄운 게이트에도 크기 가드가 돈다).
+  //   불투명 통로는 무엇을 띄우는지 못 읽어 판정 재료가 없다.
+  const si = spawnIntent(toolName, toolInput);
+  if (!si || si.kind !== "readable") return null;
+  if (gateOf(si.agentType) !== "plan-validator") return null;
   const readFile = opts && opts.readFile;
   if (typeof readFile !== "function") return null;
 
@@ -684,6 +842,23 @@ function planScaleBlock(toolName, toolInput, opts) {
 const SCRATCH_ROOT_RE = /^\/(?:var\/)?tmp\//;
 function isScratchPath(s) {
   return SCRATCH_ROOT_RE.test(s) || s.indexOf("/.cache/claude-tmp/") !== -1;
+}
+// 상황판 안내(v0.65.0 F-27)를 낼 자리인가. **순수 판정**이다(fs 없음).
+// 두 번째 인자는 **`null` 일 수 있다** — 위임 도구(`Task`·`Agent`·불투명 통로)에는
+//   `file_path` 칸이 아예 없다. null 이면 스크래치 판정을 건너뛰고 도구 이름만 본다.
+// 🛑 경로는 **래퍼에서 절대화해** 넘긴다. `isScratchPath` 는 절대 경로 전제라
+//   상대 경로(`./scratch/x.md`)로 들어오면 안 걸린다.
+// 🛑 위임 갈래는 `spawnIntent` 로 판정한다 — **새 정규식을 만들지 않는다.** 같은 판에서
+//   F-29 가 "위임 도구는 그 두 이름이 아니다"를 사실로 만들었고, 사본을 만들면 통로가
+//   늘 때 한쪽만 고쳐져 **위임만 하는 세션에 안내가 영영 안 나간다**.
+// 정직 고지(안 고치는 절반): macOS 의 `$TMPDIR`(`/var/folders/…`)은 절대 경로여도
+//   `isScratchPath` 에 안 걸린다. 🛑 그 함수를 넓히지 않는다 — `isCodeTarget` 을 거쳐
+//   push 게이트와 계획 리마인더도 쓰므로 넓히면 그 둘이 함께 헐거워진다. 대가는 안내가
+//   한 번 더 뜨는 것뿐이고 **차단이 아니다**.
+function statusboardTrigger(toolName, absTargetPath, toolInput) {
+  const nm = String(toolName || "");
+  if (EDIT_TOOLS_RE.test(nm)) return !(absTargetPath && isScratchPath(absTargetPath));
+  return spawnIntent(nm, toolInput) !== null;
 }
 function isCodeTarget(p) {
   const s = String(p || "");
@@ -756,9 +931,14 @@ function planReminderNeeded(objs, toolName, toolInput) {
           }
         }
         else if (planSeen && isCodeTarget(p)) codeEdited = true;
-      } else if (/^(Task|Agent)$/.test(nm)) {
-        const sub = String(inp.subagent_type || inp.agentType || inp.agent_type || "");
-        if (planSeen && /plan-validator/.test(sub) && !erroredIds.has(String(b.id || ""))) validated = true;
+      } else {
+        // v0.65.0 F-29: **`via:"name"` 일 때만** "검증됨"으로 친다. 이 판정은 리마인더를 **끄는**
+        //   쪽(= 여는 쪽)이라, 성질까지 넓히면 `아무도구({agentType:"plan-validator"})` 한 줄이
+        //   계획 검증 리마인더를 끈다 — 검증을 한 번도 안 받은 계획이 조용히 구현으로 들어간다.
+        //   키 목록은 손으로 다시 적지 않고 spawnIntent 와 한 벌로 쓴다(사본 금지).
+        const si = spawnIntent(nm, inp);
+        if (si && si.kind === "readable" && si.via === "name"
+            && planSeen && /plan-validator/.test(si.agentType) && !erroredIds.has(String(b.id || ""))) validated = true;
       }
     }
   }
@@ -950,6 +1130,21 @@ const os = require("os");
 const REVIEW_AGENT_RE = /(?:^|:)(plan-validator|pr-reviewer)$/;
 function isReviewAgent(agentType) {
   return typeof agentType === "string" && REVIEW_AGENT_RE.test(agentType);
+}
+// ── 감독 판정기(v0.65.0 F-28) — 한 곳 ─────────────────────────────────────────
+// 🛑 **세 자리가 이 함수 하나를 공유한다**: (1) 문(subagentGateSpawn 이 감독에게만 게이트를 열어 준다)
+//   (2) 감독 스폰 차단(감독이 감독을 못 낳는다) (3) 쓰기 차단(supervisorBlock 호출 가드).
+//   정규식을 세 군데 박으면 한쪽만 고쳐져 조용히 갈라진다 — 이 저장소에서 같은 사고가 두 번 났다
+//   (바로 위 REVIEW_AGENT_RE 의 리브랜드 교훈 · DELEGATE_AGENTS 주석의 일꾼 추가 교훈).
+// 🛑 **세 자리가 다 '좁은 판정'이다.** 이 저장소의 평소 방향("막는 판정은 넓게")과 반대인데
+//   여기서는 그게 맞다 — **문을 지나는 집합과 쓰기가 막히는 집합이 정확히 같아야 하기 때문**이다.
+//   두 집합이 어긋나면 한쪽에 틈이 생긴다. 넓은 쓰기 차단 + 좁은 문이면 감독이 아닌 에이전트가
+//   쓰기만 막혀 남의 에이전트를 망가뜨리고, 좁은 쓰기 차단 + 넓은 문이면 **문은 지났는데 쓰기는
+//   안 막히는 자**가 생긴다 — 그게 이 설계에서 가장 나쁜 칸이다. 그래서 하나를 공유해 둘을 같게 만든다.
+// 네임스페이스 무관 매칭인 이유는 REVIEW_AGENT_RE 와 같다(접두사 하드코딩은 리브랜드에 무음 해제).
+const SUPERVISOR_RE = /(?:^|:)supervisor$/;
+function isSupervisor(agentType) {
+  return typeof agentType === "string" && SUPERVISOR_RE.test(agentType);
 }
 const AGENT_MEM = path.join(os.homedir(), ".claude", "agent-memory");
 // symbolic-ref(HEAD 재기록)·reflog(expire/delete로 복구로그 파기)는 변경 명령이라 제외(pr-reviewer low).
@@ -1149,6 +1344,20 @@ function reviewAgentBlock(agentType, toolName, toolInput) {
   return null;  // 그 외 도구(Read/Grep/Glob 등 — 매처에도 없음)는 관여 안 함
 }
 
+// ── 감독의 쓰기 금지(v0.65.0 F-28 · 둘째 겹) ─────────────────────────────────
+// 🛑 **허용 목록(`tools:` 넷)이 본체이고 이것은 그 위에 얹는 둘째 겹이다. 순서를 뒤집으면 안 된다.**
+//   이 차단은 다섯 이름짜리 **금지 목록**인데 이 하네스의 도구는 40개가 넘고 계속 는다 —
+//   금지 목록은 새로 생긴 도구를 못 막는다. 전부 받은 감독은 임의 코드 실행 통로로 파일을 쓰고
+//   각본으로 대신 쓸 일꾼을 띄워, "글을 못 쓰는 감독"이라는 이 설계의 전제가 그 갈래에서 깨진다.
+//   (오늘 그 두 통로는 subagentGateSpawn 의 불투명 갈래가 따로 막지만, 그것도 이름 목록이다.)
+// 그런데 이 겹이 필요한 이유는 도구 목록이 안 지켜져서가 아니다 — **에이전트 정의 파일은 사람이
+//   한 줄 고치면 조용히 넓어지는 자리**이고, 그때 아무 검사도 안 울린다. 이 차단이 그 한 줄을 무력화한다.
+// 🛑 게이트(reviewAgentBlock)와 달리 `~/.claude/agent-memory/` **예외를 두지 않는다.** 감독은
+//   메모리를 안 쓰고, 예외가 없으면 경로 판정 자체가 없어져 우회할 표면도 없다(순수함수 · fs 없음).
+function supervisorBlock(toolName) {
+  return /^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/.test(String(toolName || "")) ? "supervisor-write" : null;
+}
+
 // ── 게이트 모델 런타임 강등 가드(v0.42 · Claude 전용) ────────────────────────
 // gate-model-tier.test.mjs 는 **frontmatter만** 본다. 그런데 Task/Agent 호출의 `model` 파라미터는
 // frontmatter를 덮어쓴다 — 실측: 한 세션이 게이트를 frontmatter보다 낮은 티어로 띄웠고, "게이트
@@ -1173,9 +1382,14 @@ function gateOf(agentType) {
 // 오차단 0 요건: 모델 미명시(상속) 통과 · 게이트 아닌 에이전트 통과 · 동급 이상 통과 ·
 // **등급표에 없는 값 통과(fail-open)** — 모르는 값을 막으면 오차단이고, 이건 백스톱이지 유일 방어선이 아니다.
 function gateModelBlock(toolName, toolInput) {
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
+  // v0.65.0: `readable` 이면 본다(`via` 는 안 가린다 — **닫는 쪽**이라 넓혀도 게이트가 안 열린다).
+  //   불투명 통로는 무엇을 어떤 모델로 띄우는지 못 읽어 여기서 판정이 성립하지 않는다.
+  //   그 구멍은 이 함수가 아니라 신선도 불변식이 무해화한다(hasPrReviewer 의 opaque 가지:
+  //   각본으로 게이트를 강등해 띄워도 그 리뷰가 리뷰로 안 쳐져 push 가 여전히 막힌다).
+  const si = spawnIntent(toolName, toolInput);
+  if (!si || si.kind !== "readable") return null;
   const inp = toolInput || {};
-  const gate = gateOf(subagentOf(inp));
+  const gate = gateOf(si.agentType);
   if (!gate) return null;
   const asked = String(inp.model || "").toLowerCase();
   if (!asked) return null;                                   // 미명시 = frontmatter 상속 → 정상
@@ -1194,10 +1408,34 @@ function gateModelBlock(toolName, toolInput) {
 // 막는 범위는 **게이트 스폰만**이다. 중첩 스폰 전반(조사·탐색 위임)은 텍스트 계약이 막고 여기선 안 센다
 //   — 기계 차단을 넓히면 무엇이 정상 작업인지 판정할 근거가 없다(과차단이 조용한 우회를 부른다).
 // 판정 재료는 도구 이름과 `subagent_type` 뿐이라 fs·트랜스크립트가 필요 없다(순수함수).
+// v0.65.0 F-29(결정 4번 · 2026-08-11): **불투명 통로도 서브에이전트에서 막는다.**
+//   T0 프로브 실측이 이 결정을 추측에서 근거로 바꿨다: 각본에서 지정한 `agentType` 이 훅 입력에
+//   **그대로** 실려 온다(`agentType:'general-purpose'` → `agent_type:"general-purpose"`). 즉 각본
+//   한 줄로 게이트 이름을 띄우면 차근이 그것을 **게이트로 인정한다.** 게다가 각본 안의 `agent()`
+//   스폰 자체는 PreToolUse 를 안 낸다(같은 프로브 · 그 창의 전수 로그 9줄에 Task·Agent 이름 0건).
+//   훅이 스폰을 볼 기회는 `Workflow` 호출 **한 번**뿐이라, 안쪽을 하나씩 판정할 방법이 없다 —
+//   문 앞에서 막는 것 말고 수가 없다.
+// **오늘 오차단 0인 근거**: 이 두 도구는 서브에이전트 도구 목록에 없다(2026-08-11 확인 · REPL 은
+//   전체 기록 2,235개 트랜스크립트에서 호출 0건). ⚑ **나중에 주어지는 날부터는 정상 위임도 막힌다** —
+//   그때 다시 볼 자리다. 다시 볼 신호 = 서브에이전트 도구 목록에 Workflow·REPL 이 생기는 것.
+// v0.65.0 F-28(감독 에이전트): 이 함수가 **문**이 된다. 갈래 둘을 더한다 —
+//   (4) 대상이 감독이면 무조건 차단(감독은 본 세션만 띄운다 = '감독인 척' 자물쇠),
+//   (5) 대상이 게이트인데 **부르는 쪽이 감독이면 통과**(이것이 문이다).
+//   문이 걸린 값은 지시문 글자도 프롬프트 라벨도 아니고 하네스가 스폰 시점에 박는 `agent_type` 이라,
+//   감독 지시문을 그대로 베껴 붙여도 `agent_type` 은 안 바뀐다.
+// 🛑 **판정 순서가 곧 안전이다.** 불투명 갈래(3)가 감독 갈래(4·5)보다 **먼저**여야 한다 —
+//   불투명 통로는 대상 이름이 빈 값이라, 뒤에 두면 이름 판정 세 줄을 전부 빠져나가 null 로 떨어진다.
+//   그리고 "도구가 Task/Agent 가 아니면 null" 을 여기에 다시 쓰면 F-29 의 불투명 통로 차단이
+//   한 줄로 통째로 사라진다(그때 test/hook-net.test.mjs 의 층4 칸이 빨개진다 — 고칠 것은 검사가 아니라 여기다).
 function subagentGateSpawn(agentType, toolName, toolInput) {
-  if (!agentType) return null;                               // 메인 세션은 대상 아님
-  if (!AGENT_TOOLS_RE.test(String(toolName || ""))) return null;
-  return gateOf(subagentOf(toolInput)) ? "subagent-gate-spawn" : null;
+  if (!agentType) return null;                               // 1. 메인 세션은 대상 아님
+  const si = spawnIntent(toolName, toolInput);
+  if (!si) return null;                                      // 2. 스폰 통로가 아님
+  if (si.kind === "opaque") return "subagent-opaque-spawn";  // 3. F-29 갈래 — 감독에게도 그대로 산다
+  if (isSupervisor(si.agentType)) return "subagent-supervisor-spawn";  // 4. 감독 재생산·'감독인 척' 금지
+  if (isSupervisor(agentType)) return null;                  // 5. 문 — 감독만 게이트를 띄운다
+  // `via` 는 안 가린다 — **닫는 쪽**이라 넓혀도 게이트가 안 열린다. 성질 통로로 게이트를 띄우는 것도 막힌다.
+  return gateOf(si.agentType) ? "subagent-gate-spawn" : null;  // 6. 그 외 서브에이전트는 지금 그대로
 }
 
 // 컴포넌트 새 변형 승인은 metadata가 아니라 저장된 AskUserQuestion 도구 호출과 결과를 묶어 확인한다.
@@ -1299,4 +1537,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL };
+module.exports = { statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP };
