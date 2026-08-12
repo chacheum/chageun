@@ -34,6 +34,16 @@ function injectedBytes() {
   return INJECTED.reduce((sum, f) => sum + normBytes(join(RULES_DIR, f)), 0);
 }
 
+// 🛑 합계 핀만으로는 **파일 사이 이동**을 못 본다(pr-reviewer 1차 medium):
+//    부록에서 1,000B 빼서 코어에 넣으면 합계가 같아 장부가 침묵한다. 두 파일은 성격이 다르다 —
+//    코어는 **모든 세션에 항상** 드는 비용이고 부록은 **무인 세션에만 가끔** 드는 비용이다.
+//    합계 하나로 재면 "항상 드는 비용"이 소리 없이 커지는 것을 그 축이 못 본다. 그래서 파일별로도 핀다.
+//    아래 FILE_CEILINGS 의 합 = CEILING_BYTES 라는 단언이 두 장부가 따로 놀지 못하게 묶는다.
+const FILE_CEILINGS = {
+  "operating-rules.md": 20710,     // v0.64.1 T6 뒤 실측(20690 + 20)
+  "unattended-appendix.md": 5944,  // v0.64.1 T6 뒤 실측(5924 + 20)
+};
+
 // Claude 상시 주입 = operating-rules.md 단독. batch6 다이어트 + batch7 영어화 기준으로 하향.
 // 2026-07-27 +140 (17500→17640): "접기"(맞지만 사소한 low를 한 줄로 묶어 보고) 규칙. v0.38.0이 게이트의
 // 억제 지시를 없애 "전부 올려라"로 바꿨는데, 그 정당화였던 "메인이 걸러준다"의 필터가 실제로는 없었다
@@ -240,4 +250,25 @@ test(`주입 규칙 소스가 상한에 붙어 있다(헤드룸 0~${BAND_BYTES}B
     `초록이 된다 — 근거만 적고 상수를 안 고치면 계속 빨간불이다. ` +
     `⚠ BAND_BYTES를 넓혀서 통과시키지 마라 — 그러면 이 검사의 존재 이유가 사라진다.`
   );
+});
+
+test(`주입 규칙 **파일별** 핀(밴드 0~${BAND_BYTES}B) — 파일 사이로 글을 옮겨 합계 핀을 피하는 길을 막는다`, () => {
+  // 대상 목록이 곧 핀 목록이어야 한다(양방향). 부록을 새로 등록하면서 핀을 안 박으면 그 파일은
+  // 파일별 축에 안 잡히고, 합계 핀만 재핀하면 통과해 버린다.
+  assert.deepEqual(Object.keys(FILE_CEILINGS).sort(), [...INJECTED].sort(),
+    "FILE_CEILINGS 와 주입 대상(INJECTED)이 어긋난다 — 새 부록을 등록했으면 파일별 핀도 함께 박아라.");
+  // 두 장부가 따로 놀지 못하게 묶는다. 한쪽만 재핀하면 여기서 빨간불이다.
+  const sum = Object.values(FILE_CEILINGS).reduce((a, b) => a + b, 0);
+  assert.equal(sum, CEILING_BYTES,
+    `파일별 핀 합계 ${sum} ≠ 합계 핀 ${CEILING_BYTES}. 재핀은 **두 장부를 함께** 고쳐야 한다 ` +
+    "— 한쪽만 고치면 합계는 맞는데 파일별로는 틀리거나 그 반대가 된다.");
+  for (const f of INJECTED) {
+    const headroom = FILE_CEILINGS[f] - normBytes(join(RULES_DIR, f));
+    assert.ok(headroom >= 0 && headroom <= BAND_BYTES,
+      `${f} 헤드룸 ${headroom} bytes (허용 0~${BAND_BYTES}). ` +
+      "음수 = 그 파일이 커졌다. 초과 = 그 파일이 작아졌다(다른 파일로 옮겼을 수 있다 — " +
+      "합계 핀은 그 이동에 침묵한다. 코어는 **모든 세션**, 부록은 **무인 세션만** 비용이라 " +
+      "옮기는 방향에 따라 상시 비용이 조용히 늘거나 준다). " +
+      "둘 다 처방은 같다: FILE_CEILINGS 와 CEILING_BYTES 를 **함께** 현재 크기로 다시 박고 장부에 사유 한 줄.");
+  }
 });
