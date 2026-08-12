@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildClaude } from "../build/adapters/claude.mjs";
@@ -39,6 +39,25 @@ test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
   assert.ok(existsSync(join(out, "skills/retrospect/retrospect-scan.mjs")));
   // 스킬이 본문에서 부르는 스크립트는 빌드가 함께 옮겨야 한다(안 옮기면 스킬이 없는 파일을 부른다).
   assert.ok(existsSync(join(out, "skills/product-map/table-to-yaml.mjs")));
+  assert.ok(existsSync(join(out, "skills/statusboard/SKILL.md")));
+  assert.ok(existsSync(join(out, "skills/statusboard/board-core.mjs")));
+  assert.ok(existsSync(join(out, "skills/statusboard/board-server.mjs")));
   // hooks.json은 Claude env var를 그대로 유지
   assert.match(readFileSync(join(out, "hooks/hooks.json"), "utf8"), /CLAUDE_PLUGIN_ROOT/);
+});
+
+// 🛑 손목록 의존을 끝내는 칸. 위 `existsSync` 줄들은 **사람이 한 줄씩 적은 목록**이라,
+//    매니페스트 등재를 잊은 사람은 그 목록에도 안 적는다 — 그러면 검사도 안 잡는다.
+//    골든 대조도 못 잡는다(빠진 파일은 dist 에도 골든에도 없어 "일치"가 된다).
+//    그래서 **양방향 집합 비교**로 바꾸고, 그 목록을 루프로 돌며 dist 도착까지 본다.
+//    ⚠ `hooks.claude.json` 은 대상이 아니다(빌드가 `hooks/hooks.json` 으로 바꿔 낸다).
+test("components.hooks ↔ src/hooks/*.js 가 양방향으로 같고 전부 dist 에 도착한다", () => {
+  const out = join(tmpDir("bc-hooks-"), "claude");
+  buildClaude(SRC, out);
+  const m = JSON.parse(readFileSync(join(SRC, "manifest.src.json"), "utf8"));
+  const listed = [...m.components.hooks].sort();
+  const actual = readdirSync(join(SRC, "hooks")).filter((f) => f.endsWith(".js")).sort();
+  assert.deepEqual(listed, actual,
+    "매니페스트 등재와 실제 훅 파일이 어긋난다 — 빠진 파일은 배포판에만 없어 남의 컴퓨터에서만 죽는다");
+  for (const f of listed) assert.ok(existsSync(join(out, "hooks", f)), "dist 에 안 실림: " + f);
 });
