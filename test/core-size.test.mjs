@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 // P6 코어 크기 상한(one-in-one-out) — 연구 F5(컨텍스트 활용률)·BMAD project-context lean 규칙 근거.
 // 상시 주입 규칙의 팽창은 곧 모든 세션 비용 + 중간 규칙 희석(안전 캡슐 존재 이유). 이 테스트는 상한을
@@ -12,10 +13,36 @@ import { fileURLToPath } from "node:url";
 // 계측 아님(정적 파일 크기 검사, 로컬 로깅·카운터 없음).
 // 재현성: 개행을 LF로 정규화해 재므로 OS/checkout(CRLF)에 무관(+ .gitattributes eol=lf 이중 방어).
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CORE = join(ROOT, "src", "rules", "operating-rules.md");
+const RULES_DIR = join(ROOT, "src", "rules");
 function normBytes(p) {
   return Buffer.byteLength(readFileSync(p, "utf8").replace(/\r\n/g, "\n"), "utf8");
 }
+
+// v0.64.1: 재는 대상을 **한 파일 → 주입되는 규칙 소스 전체 합**으로 넓혔다. 안 그러면 조각 사이로
+// 글을 옮기거나 부록에만 규칙을 넣어 이 예산 검사를 빠져나가는 길이 남는다(아래 한계 3번이 자백해 둔 구멍).
+// **대상 목록은 손으로 적지 않는다** — activate-core.APPENDICES 에서 뽑아 코어 파일과 합친다.
+// 그래야 부록을 새로 만들면서 예산 검사를 빠져나가는 길이 없다(부록 등록 자체는
+// test/rule-pieces.test.mjs 가 src/rules 파일 목록과 양방향으로 강제한다).
+// 🛑 문자 검사(test/rule-pieces.test.mjs)와 이 바이트 검사는 **다른 축**이고 서로를 대신하지 못한다.
+//    문자 = 조각 하나가 CLI 문턱을 넘어 잘리는 것(물리 천장·외부 사실).
+//    바이트 = 상시 주입 비용이 소리 없이 부는 것(예산·정책). 합치면 안 된다.
+// 머리말은 예산에 안 넣는다 — 규칙 내용이 아니라 코드가 만드는 문자열이라, 조각 수가 바뀔 때마다
+// 장부가 흔들리면 장부의 뜻이 흐려진다. 머리말까지 포함한 길이는 문자 검사가 잰다.
+const require = createRequire(import.meta.url);
+const INJECTED = ["operating-rules.md", ...require("../src/hooks/activate-core.js").APPENDICES.map((a) => a.file)];
+function injectedBytes() {
+  return INJECTED.reduce((sum, f) => sum + normBytes(join(RULES_DIR, f)), 0);
+}
+
+// 🛑 합계 핀만으로는 **파일 사이 이동**을 못 본다(pr-reviewer 1차 medium):
+//    부록에서 1,000B 빼서 코어에 넣으면 합계가 같아 장부가 침묵한다. 두 파일은 성격이 다르다 —
+//    코어는 **모든 세션에 항상** 드는 비용이고 부록은 **무인 세션에만 가끔** 드는 비용이다.
+//    합계 하나로 재면 "항상 드는 비용"이 소리 없이 커지는 것을 그 축이 못 본다. 그래서 파일별로도 핀다.
+//    아래 FILE_CEILINGS 의 합 = CEILING_BYTES 라는 단언이 두 장부가 따로 놀지 못하게 묶는다.
+const FILE_CEILINGS = {
+  "operating-rules.md": 20710,     // v0.64.1 T6 뒤 실측(20690 + 20)
+  "unattended-appendix.md": 5944,  // v0.64.1 T6 뒤 실측(5924 + 20)
+};
 
 // Claude 상시 주입 = operating-rules.md 단독. batch6 다이어트 + batch7 영어화 기준으로 하향.
 // 2026-07-27 +140 (17500→17640): "접기"(맞지만 사소한 low를 한 줄로 묶어 보고) 규칙. v0.38.0이 게이트의
@@ -140,17 +167,37 @@ function normBytes(p) {
 //   (2)는 정반대로 **수신자가 메인 세션뿐**이라 코어 말고는 닿을 자리가 없다. push 시점에
 //   메인이 읽는 자리가 코어 하나다(5차 HIGH-1 이 잡은 것이 정확히 이 점이다).
 //   서브에이전트가 실제로 읽는 계약은 deep-implementer.md·code-implementer.md 가 따로 들고 있다.
-const CEILING_BYTES = 20690;
+// 2026-08-12 재핀 20690 → 26614 (v0.64.1). **규칙은 한 글자도 안 늘었다.**
+//   1. 무엇이 바뀌었나: 재는 대상이 "코어 파일 하나" → "주입되는 규칙 소스 전체 합"으로 넓어졌다.
+//      20,690(operating-rules.md) + 5,924(unattended-appendix.md) = 26,614. 델타 +5,924 는
+//      **새 규칙이 아니라 그동안 아무 핀도 없던 파일이 장부에 처음 올라온 것**이다.
+//   2. 왜: 조각 사이로 글을 옮겨 예산 검사를 피하는 길과, 부록에만 규칙을 넣어 검사를 통과하는
+//      길을 함께 막는다(아래 한계 3번이 자백해 둔 구멍 — 그 자백을 이번에 반만 메운다.
+//      src/skills·src/agents 는 여전히 핀이 없다).
+//   3. 다음 델타는 26,614 기준으로 계산한다.
+//   회수: 없다. 이번 커밋은 규칙 본문을 안 건드린다(대상 확대뿐).
+//   상한을 **올린** 재핀은 이번이 13번째다 — 단 이번 것은 앞 12번과 성격이 다르다(규칙 증가가
+//   아니라 측정 범위 확대). 앞으로 세는 사람이 헷갈리지 않게 여기 적어 둔다.
+// 2026-08-12 +40 (26614 → 26654): **규칙 삭제·축약 없음.** 자리 참조 3문장을 이름 기반으로
+//   다시 쓴 델타다(조각 순서 뒤섞임 대응 — 실측 6회 6회 전부 섞였고, 무인 시행에서는 부록
+//   조각이 첫 번째로 도착했다).
+//     operating-rules.md 20690 → 20710 (+20): `:133` 제목 "restated at the end" →
+//       "restates the other sections" · `:135` "each section above" → "the named section in each line".
+//     unattended-appendix.md 5924 → 5944 (+20): `:3` "위 코어" → "운영 규칙 `Stop rules` 절"
+//       (메인 세션 결정 — 계획서 §8-5 는 "알고 남긴다"였으나 고치는 쪽으로 뒤집혔다).
+//   회수: 없다. 세 문장 다 **다시 쓰기이지 줄이기가 아니다** — 뜻을 그대로 두고 자리 대신 이름으로
+//   가리키게 바꿨고, 그 과정에서 이름이 자리 낱말보다 길어 20B씩 늘었다.
+const CEILING_BYTES = 26654;
 // 밴드 폭. 선언을 여기 두는 이유 = 위 상한 테스트의 실패 메시지가 이 값을 참조하는데,
 // 그 메시지는 콜백 실행마다 평가되므로 선언이 아래 있으면 러너의 실행 시점 규약에 의존하게 된다.
 const BAND_BYTES = 64;
 
-test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
-  const bytes = normBytes(CORE);
+test(`주입되는 규칙 소스 전체(${INJECTED.join(" + ")})가 상한 ${CEILING_BYTES} bytes 이하 — 팽창은 one-in-one-out`, () => {
+  const bytes = injectedBytes();
   assert.ok(
     bytes <= CEILING_BYTES,
-    `operating-rules.md = ${bytes} bytes > 상한 ${CEILING_BYTES}. ` +
-    `코어는 매 세션 상시 주입이라 팽창은 모든 세션 비용·규칙 희석을 부른다. ` +
+    `주입 규칙 소스 합계(${INJECTED.join(" + ")}) = ${bytes} bytes > 상한 ${CEILING_BYTES}. ` +
+    `규칙은 매 세션 상시 주입이라 팽창은 모든 세션 비용·규칙 희석을 부른다. ` +
     `다른 규칙을 줄여 상쇄하거나(one-in-one-out), 정말 필요하면 CEILING_BYTES를 ` +
     `**현재 정확한 크기로 다시 박고**(밴드 ${BAND_BYTES}B — 옛 "+2KB 이내" 안내는 밴드 도입으로 폐기) ` +
     `커밋에 "왜 코어가 커져야 하나 + 스킬 위임 검토" 근거를, 장부 주석에 델타 한 줄을 남겨라.`
@@ -179,8 +226,10 @@ test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 
 // 한계(정직 회계 — 축소해서 적지 않는다):
 //  1. 64바이트 미만 조각 **한 번**은 못 잡는다(누적되면 잡힌다).
 //  2. 코어에 다른 글자를 그만큼 더하면서 동시에 빼면 상쇄돼 못 잡는다.
-//  3. **받는 쪽(src/skills·src/agents·`src/rules/unattended-appendix.md`)에 크기 핀이 하나도 없다** → **새 규칙을 처음부터 코어가
+//  3. **받는 쪽(src/skills·src/agents)에 크기 핀이 하나도 없다** → **새 규칙을 처음부터 코어가
 //     아니라 스킬에만 넣으면 이 검사는 침묵한다**(코어 크기가 안 변하므로). 이게 진짜 사각이다.
+//     (v0.64.1 에서 `src/rules/unattended-appendix.md` 는 이 목록에서 빠졌다 — 위 INJECTED 가
+//     APPENDICES 에서 뽑아 함께 재기 시작했다. 스킬·에이전트는 여전히 사각이다.)
 //     ("코어에 원본을 남긴 채 스킬에 복제"는 사고가 아니다 — 코어 원본이 계속 주입돼 규칙이 안 꺼진다.)
 //  4. 비용: 재핀 후 헤드룸이 0이라 코어를 1바이트만 고쳐도 상수 재핀 + 장부 한 줄이 매번 따라온다.
 //     의도된 마찰이다. 잦다는 이유로 **BAND_BYTES를 넓히지 말 것** — 512가 왜 틀렸는지가 위에 있다.
@@ -188,17 +237,38 @@ test(`Claude 코어(operating-rules.md)가 상한 ${CEILING_BYTES} bytes 이하 
 //     그 재핀은 아래 실패 메시지가 직접 안내하는 정식 절차다. 즉 이 검사의 실체는 축소를 **막는**
 //     자물쇠가 아니라 **상수 diff 한 줄을 사람 눈에 띄게 만드는 도장**이다. 위 '누적된다'는 성질도
 //     재핀하지 않을 때만 성립한다(pr-reviewer low). 최종 방어선은 그 한 줄을 보는 리뷰어다.
-test(`코어가 상한에 붙어 있다(헤드룸 0~${BAND_BYTES}B) — 조용한 축소·느슨한 상한 차단`, () => {
-  const headroom = CEILING_BYTES - normBytes(CORE);
+test(`주입 규칙 소스가 상한에 붙어 있다(헤드룸 0~${BAND_BYTES}B) — 조용한 축소·느슨한 상한 차단`, () => {
+  const headroom = CEILING_BYTES - injectedBytes();
   assert.ok(
     headroom >= 0 && headroom <= BAND_BYTES,
-    `코어 헤드룸 ${headroom} bytes (허용 0~${BAND_BYTES}). ` +
+    `주입 규칙 소스(${INJECTED.join(" + ")}) 헤드룸 ${headroom} bytes (허용 0~${BAND_BYTES}). ` +
     `음수 = 상한 초과(위 테스트 메시지 참조). ` +
-    `${BAND_BYTES} 초과 = 코어가 상한보다 그만큼 작다 — 둘 중 하나다. ` +
+    `${BAND_BYTES} 초과 = 규칙 소스가 상한보다 그만큼 작다 — 둘 중 하나다. ` +
     `(a) 규칙을 줄였다 → CEILING_BYTES를 현재 정확한 크기로 다시 박고 장부에 사유 한 줄을 남겨라. ` +
     `(b) 규칙을 지연 로드 스킬로 옮겼다 → 그 스킬의 발동률 근거를 커밋 메시지에 남겨라. ` +
     `옮긴 규칙은 그 스킬이 안 뜬 세션에서 조용히 꺼진다. **그리고 (a)와 똑같이 상수를 다시 박아야** ` +
     `초록이 된다 — 근거만 적고 상수를 안 고치면 계속 빨간불이다. ` +
     `⚠ BAND_BYTES를 넓혀서 통과시키지 마라 — 그러면 이 검사의 존재 이유가 사라진다.`
   );
+});
+
+test(`주입 규칙 **파일별** 핀(밴드 0~${BAND_BYTES}B) — 파일 사이로 글을 옮겨 합계 핀을 피하는 길을 막는다`, () => {
+  // 대상 목록이 곧 핀 목록이어야 한다(양방향). 부록을 새로 등록하면서 핀을 안 박으면 그 파일은
+  // 파일별 축에 안 잡히고, 합계 핀만 재핀하면 통과해 버린다.
+  assert.deepEqual(Object.keys(FILE_CEILINGS).sort(), [...INJECTED].sort(),
+    "FILE_CEILINGS 와 주입 대상(INJECTED)이 어긋난다 — 새 부록을 등록했으면 파일별 핀도 함께 박아라.");
+  // 두 장부가 따로 놀지 못하게 묶는다. 한쪽만 재핀하면 여기서 빨간불이다.
+  const sum = Object.values(FILE_CEILINGS).reduce((a, b) => a + b, 0);
+  assert.equal(sum, CEILING_BYTES,
+    `파일별 핀 합계 ${sum} ≠ 합계 핀 ${CEILING_BYTES}. 재핀은 **두 장부를 함께** 고쳐야 한다 ` +
+    "— 한쪽만 고치면 합계는 맞는데 파일별로는 틀리거나 그 반대가 된다.");
+  for (const f of INJECTED) {
+    const headroom = FILE_CEILINGS[f] - normBytes(join(RULES_DIR, f));
+    assert.ok(headroom >= 0 && headroom <= BAND_BYTES,
+      `${f} 헤드룸 ${headroom} bytes (허용 0~${BAND_BYTES}). ` +
+      "음수 = 그 파일이 커졌다. 초과 = 그 파일이 작아졌다(다른 파일로 옮겼을 수 있다 — " +
+      "합계 핀은 그 이동에 침묵한다. 코어는 **모든 세션**, 부록은 **무인 세션만** 비용이라 " +
+      "옮기는 방향에 따라 상시 비용이 조용히 늘거나 준다). " +
+      "둘 다 처방은 같다: FILE_CEILINGS 와 CEILING_BYTES 를 **함께** 현재 크기로 다시 박고 장부에 사유 한 줄.");
+  }
 });
