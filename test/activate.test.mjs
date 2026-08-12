@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -106,3 +107,37 @@ test("조각 5개를 이어 붙이면 규칙 본문이 하나도 안 빠지고, 
   const stripped = out.map((s) => s.slice(s.indexOf("\n\n") + 2)).join("");
   assert.equal(stripped, RULES, "훅이 실제로 낸 것을 이어 붙였더니 원본과 다르다");
 });
+
+// 🛑 설치가 깨졌을 때 **침묵하지 않는다**(pr-reviewer 1차 medium).
+//    최상위 `require` 는 모듈 로드 시점에 던져서 파일 안 어떤 try/catch 도 못 잡는다. 그 자리에
+//    두면 배포판에서 activate-core.js 하나가 없어질 때 훅 6개가 전부 아무 글도 안 내고,
+//    "설치를 확인하세요" 안내까지 함께 사라진다 — 세션은 멀쩡히 시작되는데 규칙이 한 줄도 안 닿는다.
+//    소스에서는 파일이 늘 있으니 **소스에서만 초록이고 배포판에서만 죽는다.** 그래서 파일이 없는
+//    상태를 실제로 만들어 재현한다.
+function brokenInstall(omit) {
+  const root = tmpDir("activate-broken-");
+  mkdirSync(join(root, "hooks"), { recursive: true });
+  mkdirSync(join(root, "rules"), { recursive: true });
+  const files = [
+    ["hooks", "activate.js"], ["hooks", "activate-core.js"], ["rules", "operating-rules.md"],
+  ];
+  for (const [dir, f] of files) {
+    if (f === omit) continue;
+    copyFileSync(join(ROOT, "src", dir, f), join(root, dir, f));
+  }
+  return join(root, "hooks", "activate.js");
+}
+
+const INSTALL_HELP = "차근: 운영 규칙 파일을 찾지 못함. 설치를 확인하세요.";
+
+for (const omit of ["activate-core.js", "operating-rules.md"])
+  test(`설치가 깨져도(${omit} 없음) 안내가 나온다 — 조각 훅이 통째로 침묵하지 않는다`, () => {
+    const hook = brokenInstall(omit);
+    for (const args of [[], ["1"], ["4"], ["6"]]) {
+      const r = spawnSync(process.execPath, [hook, ...args], { env: BASE, encoding: "utf8" });
+      assert.equal(r.status, 0, `인자 ${JSON.stringify(args)}: 훅이 0 아닌 코드로 죽었다`);
+      assert.equal(r.stdout, INSTALL_HELP,
+        `인자 ${JSON.stringify(args)}: 안내가 안 나왔다(stdout ${r.stdout.length}자). ` +
+        "require 가 try 밖으로 나가면 이 자리가 통째로 침묵한다.");
+    }
+  });
