@@ -179,7 +179,12 @@ const REASONS = {
   "sql-delete-no-where": "차단: WHERE 없는 DELETE는 테이블 전체를 지웁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "sql-update-no-where": "차단: WHERE 없는 UPDATE는 테이블 전체를 덮어씁니다. 조건(WHERE)을 넣거나 대상을 확인하세요.",
   "deploy": "차단(배포는 되돌리기 어려움): 사용자 확인 후 진행하려면 세션에 CHAGEUN_ALLOW_DEPLOY=1을 설정하세요(그 세션 동안 배포 검사가 꺼집니다). 이 브레이크는 CLI 배포만 막고 git push→자동배포(Vercel/Netlify 깃연동)는 못 막습니다 — 그건 멈춤 규칙으로 확인하세요.",
-  "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). pr-reviewer에게 **재검토를 요청**하세요 — 이미 돌린 리뷰어를 SendMessage로 이어 부른 재검토도 인정됩니다(새 Agent로 다시 띄워도 됩니다. 그땐 **프롬프트에 `재리뷰 회차: N`과 지난 회차 blocker/high 제목을 적으세요** — 새로 띄우면 회차 소스가 그것뿐이라 안 적으면 몇 번째인지 아무도 못 셉니다). 예외로 건너뛰어야 하면 **세션 자체를 CHAGEUN_SKIP_GATE_CHECK=1로 시작**해야 합니다(명령 앞에 인라인으로 붙이는 건 훅 프로세스에 안 닿아 안 켜집니다).",
+  // v0.65.0 F-28: **감독(supervisor)을 띄운 세션도 여기 걸린다**(DELEGATE_AGENTS 주석). 감독은 파일을
+  //   안 고치는데도 걸리므로, "코드를 다시 수정했으면"만 적혀 있으면 **코드를 안 고친 사람에게
+  //   사실과 다르게 읽힌다.** 그래서 한 조각을 더한다. 🛑 REASONS_SUBAGENT["gate-skip"] 은 안 건드린다
+  //   — 감독을 띄우는 것은 메인뿐이라 서브에이전트용 문구가 이 상황을 만날 일이 없고, 그 문구는
+  //   회복 경로를 네 회차에 걸쳐 다듬은 자리라 손대면 잃는 것이 크다.
+  "gate-skip": "차단: PR 생성·push 전에 pr-reviewer 게이트를 거치세요(이 세션에 신선한 실행 흔적이 없습니다 — 리뷰 후 코드를 다시 수정했으면 재실행이 필요합니다). **감독(`supervisor`)을 띄운 세션도 여기 포함됩니다** — 감독은 파일을 안 고치지만, 감독이 띄운 일꾼이 고쳤을 수 있어 한 번 더 검토를 받습니다. pr-reviewer에게 **재검토를 요청**하세요 — 이미 돌린 리뷰어를 SendMessage로 이어 부른 재검토도 인정됩니다(새 Agent로 다시 띄워도 됩니다. 그땐 **프롬프트에 `재리뷰 회차: N`과 지난 회차 blocker/high 제목을 적으세요** — 새로 띄우면 회차 소스가 그것뿐이라 안 적으면 몇 번째인지 아무도 못 셉니다). 예외로 건너뛰어야 하면 **세션 자체를 CHAGEUN_SKIP_GATE_CHECK=1로 시작**해야 합니다(명령 앞에 인라인으로 붙이는 건 훅 프로세스에 안 닿아 안 켜집니다).",
   "env-encoder": "차단: .env를 인코딩·조각내 노출하려는 시도입니다(G7). 시크릿 값은 화면에 찍지 말고 이름/존재만 다뤄주세요. 설정에 값을 넣어야 하면 값을 출력하지 않는 셸(cp·sed)로 옮기세요.",
   "ra-write": "차단: 리뷰 에이전트는 자기 `~/.claude/agent-memory/` 밖 파일을 수정할 수 없습니다 — 고치지 말고 발견으로 보고하세요. 검토는 Read/Grep으로 계속하세요.",
   "ra-bash": "차단: 리뷰 에이전트의 Bash는 **git 읽기 명령 하나**만 허용됩니다(diff·log·status·show·grep·ls-files·ls-tree·blame·rev-parse·rev-list·shortlog·describe·cat-file·for-each-ref·name-rev·whatchanged·check-ignore, 그리고 **branch는 읽기 형태만** — `--show-current`·`--list`·`--contains`·`-a`·`-r`·`-v` 등이나 인자 없는 `git branch`. 브랜치 이름을 인자로 주거나 `-d`·`-m`·`-f`를 붙이면 쓰기라 막힙니다). 막히는 것: 앞머리 `cd`·`echo`, `2>/dev/null` 같은 오류 감추기, 그 밖의 리다이렉션·명령치환, 다른 명령·파일 쓰기·파괴적 git·테스트 실행. 분량 줄이는 `| head -50`은 됩니다. 오류 메시지까지 보려면 `2>&1`은 됩니다(감추는 게 아니라 화면으로 끌어오는 것이라 허용합니다). 단 **앞뒤를 띄어 쓰세요** — `2>&1| head`처럼 붙여 쓰면 안 열립니다(`… 2>&1 | head`). 정규식·글롭은 따옴표로 감싸세요(`--grep='fix$'` · `-- '*.ts'`), 붙임형 인자는 띄어 쓰세요(`-S OAuth`). 자주 막히던 것의 이미 허용된 대체: 현재 브랜치는 `git rev-parse --abbrev-ref HEAD`, 특정 커밋을 담은 브랜치는 `git for-each-ref --contains <sha>`. `check-ignore`는 **종료코드 1 = 무시되지 않음**(오류 아님)입니다. 파일 열람은 Read, 검색은 Grep·Glob. 고치지 말고 발견으로 보고하세요.",
@@ -277,7 +282,7 @@ function isPrCreate(toolName, toolInput) {
 }
 
 // ── routing 리마인더(soft) — batch6 ─────────────────────────────────────────
-// "구현 에이전트(아래 IMPLEMENTER_AGENTS) 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
+// "구현 에이전트(아래 DELEGATE_AGENTS) 위임 직전인데 이번 세션에 chageun:routing 스킬 로드 흔적이 없다"의
 // 첫 1회만 참(이미 일꾼 스폰 흔적이 있으면 침묵 — 첫 위임 전에만 알린다).
 // 차단이 아니라 리마인더 주입 판정. 게이트(plan-validator/pr-reviewer) 스폰은 대상 아님
 // (게이트 모델은 각 agent frontmatter·라우팅 규칙이 관장). 순수함수(fs 없음).
@@ -287,8 +292,19 @@ function isPrCreate(toolName, toolInput) {
 // 일을 맡는 쪽이라, 이번에 넣은 안전 문장(BLOCKED 계약·push 금지·게이트 재실행)이 가장
 // 필요한 경로에서 안 걸렸다. 정규식에 갈래를 붙이는 방식은 다음 사람이 한쪽만 고쳐도
 // 조용히 통과하므로, 아래 두 자리(스폰 판정·이미-위임 판정)가 **같은 배열**을 쓰게 한다.
-const IMPLEMENTER_AGENTS = ["code-implementer", "deep-implementer"];
-const isImplementer = (who) => IMPLEMENTER_AGENTS.some((n) => String(who).indexOf(n) !== -1);
+//
+// v0.65.0 F-28: **감독(supervisor)이 여기 들어온다. 그래서 이름이 더는 '구현'만 뜻하지 않아
+//   배열과 판정기 이름을 뜻에 맞게 바꿨다**(IMPLEMENTER_AGENTS·isImplementer → DELEGATE_AGENTS·isDelegate).
+//   왜 감독이 여기 드는가: 메인이 일꾼 대신 감독을 띄우면 **메인 기록에는 감독 스폰 한 줄만 남는다.**
+//   그러면 (1) 검토 뒤에 코드가 바뀌어도 신선도 검사가 스스로 안 깨지고 (2) 라우팅 리마인더도 안 뜬다.
+//   v0.64.0 이 deep-implementer 로 이미 겪은 것과 **같은 사고**다.
+//   🛑 감독은 **읽기만 하는데도** 여기 든다 — 감독이 띄운 일꾼이 고쳤을 수 있기 때문이다.
+//   거래는 옳다: 과하게 세면 검토가 한 번 더 돌 뿐이고, 덜 세면 **검토 안 받은 코드가 나간다.**
+//   그 대신 REASONS["gate-skip"] 문구가 "감독을 띄운 세션도 포함"이라고 사람에게 밝힌다
+//   (코드를 안 고친 사장님께 "코드를 다시 수정했으면"만 보이면 사실과 다르게 읽힌다).
+// 판정은 **부분 문자열 그대로 넓게** 둔다(네임스페이스 접두사가 붙어 와도 걸리게).
+const DELEGATE_AGENTS = ["code-implementer", "deep-implementer", "supervisor"];
+const isDelegate = (who) => DELEGATE_AGENTS.some((n) => String(who).indexOf(n) !== -1);
 const AGENT_TOOLS_RE = /^(Task|Agent)$/;
 // 차근이 **무엇을 띄우는지 못 읽는** 통로. 각본은 문자열 이어붙이기·계산값·외부 파일(scriptPath)·
 //   재개(resumeFromRunId)로 올 수 있어 정적 해석이 못 버틴다. REPL 은 임의 코드에 상태까지 유지된다.
@@ -296,7 +312,7 @@ const OPAQUE_SPAWN_TOOLS_RE = /^(Workflow|REPL)$/;
 function subagentOf(inp) { return String((inp && (inp.subagent_type || inp.agentType || inp.agent_type)) || ""); }
 
 // ── 스폰 판정 단일 출처(v0.65.0 F-29) ───────────────────────────────────────
-// 이 파일은 같은 실패를 이미 겪었다(바로 위 IMPLEMENTER_AGENTS 주석): 판정을 정규식에 박으면
+// 이 파일은 같은 실패를 이미 겪었다(바로 위 DELEGATE_AGENTS 주석): 판정을 정규식에 박으면
 //   갈래가 늘 때 한쪽만 고쳐져 조용히 통과한다. 그래서 스폰 판정도 **여기 한 곳**에 모은다.
 //   🛑 새로 스폰 판정이 필요하면 정규식을 새로 적지 말고 이 함수를 부르라.
 //
@@ -326,7 +342,7 @@ function spawnIntent(toolName, toolInput) {
   const nm = String(toolName || "");
   if (OPAQUE_SPAWN_TOOLS_RE.test(nm)) return { kind: "opaque", via: "name", agentType: "" };
   if (AGENT_TOOLS_RE.test(nm)) return { kind: "readable", via: "name", agentType: subagentOf(toolInput) };
-  // 값이 빈 칸은 스폰으로 안 본다 — 이름을 못 얻으면 어느 소비자도 판정을 못 하고(gateOf·isImplementer
+  // 값이 빈 칸은 스폰으로 안 본다 — 이름을 못 얻으면 어느 소비자도 판정을 못 하고(gateOf·isDelegate
   //   전부 거짓), 그 상태를 readable 로 올리면 "판정된 스폰"으로 잘못 읽힌다.
   const shaped = subagentOf(toolInput);
   return shaped ? { kind: "readable", via: "shape", agentType: shaped } : null;
@@ -338,7 +354,7 @@ function spawnIntent(toolName, toolInput) {
 const SUPERVISOR_SPAWN_CAP = 6;
 // 기록 속 스폰 수를 센다. 🛑 **`Task|Agent` 정규식을 새로 만들지 않는다** — 무엇이 '스폰 통로'인지는
 //   위 `spawnIntent` 하나가 정한다. 사본을 만들면 (1) 통로가 늘 때 한쪽만 고쳐져 조용히 갈라지고
-//   (바로 위 IMPLEMENTER_AGENTS 주석의 그 사고) (2) "정규식 리터럴은 spawnIntent 정의 1곳뿐"을
+//   (바로 위 DELEGATE_AGENTS 주석의 그 사고) (2) "정규식 리터럴은 spawnIntent 정의 1곳뿐"을
 //   거는 F-29 검사가 빨개진다. 그래서 **불투명 통로 스폰도 상한에 함께 들어간다**(그 갈래는
 //   subagentGateSpawn 이 먼저 막지만, 세는 규칙이 통로마다 갈리지 않는다).
 // 대상은 안 가린다 — 상한은 "감독이 무엇을 띄웠나"가 아니라 "몇을 띄웠나"를 센다.
@@ -375,7 +391,7 @@ function routingReminderNeeded(objs, toolName, toolInput) {
   //   불투명 통로는 무엇을 띄우는지 못 읽으니 라우팅 리마인더 판정 자체가 성립하지 않는다.
   const si = spawnIntent(toolName, toolInput);
   if (!si || si.kind !== "readable") return false;
-  if (!isImplementer(si.agentType)) return false;
+  if (!isDelegate(si.agentType)) return false;
   if (!Array.isArray(objs)) return false;
   for (const o of objs) {
     const m = (o && o.message) || o; const c = m && m.content;
@@ -385,7 +401,7 @@ function routingReminderNeeded(objs, toolName, toolInput) {
       const nm = String(b.name || "");
       if (nm === "Skill" && /routing/.test(String((b.input && b.input.skill) || ""))) return false; // 로드됨
       const prev = spawnIntent(nm, b.input);
-      if (prev && prev.kind === "readable" && isImplementer(prev.agentType)) return false; // 이미 위임 시작(1회 보장)
+      if (prev && prev.kind === "readable" && isDelegate(prev.agentType)) return false; // 이미 위임 시작(1회 보장)
     }
   }
   return true;
@@ -399,7 +415,7 @@ function routingReminderNeeded(objs, toolName, toolInput) {
 // v0.64.0 H-1: **구현 에이전트 스폰도 코드 수정으로 센다.** 구현을 서브에이전트에 맡기면 메인
 //   기록엔 Task 한 줄만 남아 Edit/Write 가 0 이 되고, 리뷰 뒤에 파일이 바뀌어도 push 가 그대로
 //   통과했다(v0.64.0 이 그 위임을 **기본 경로**로 만들었으므로 반드시 닫아야 하는 자리다).
-//   판정은 위 `isImplementer`(IMPLEMENTER_AGENTS 배열) 한 곳을 공유한다 — 정규식에 이름을 박으면
+//   판정은 위 `isDelegate`(DELEGATE_AGENTS 배열) 한 곳을 공유한다 — 정규식에 이름을 박으면
 //   일꾼이 늘 때 한쪽만 고쳐져 조용히 통과한다(같은 사고가 라우팅 리마인더에서 이미 났다).
 //   이어부르기(SendMessage)도 같이 센다: 백그라운드 일꾼에게 "이것도 고쳐줘"를 보내면 파일이 바뀐다.
 //   맞바꾼 것(합의): **아무것도 안 고친 위임 뒤에도 재리뷰가 강제된다.** 스폰 시점 계상이라
@@ -503,12 +519,12 @@ function hasPrReviewer(objs) {
       if (nm === "TaskOutput") {
         // 백그라운드 결과 회수 = 그 일꾼이 끝났다는 두 번째 신호(H-1b (b)).
         const tid = String(inp.task_id || "");
-        if (tid && isImplementer(String(agentTypeById.get(tid) || ""))) lastCodeEdit = seq;
+        if (tid && isDelegate(String(agentTypeById.get(tid) || ""))) lastCodeEdit = seq;
       } else if (nm === "SendMessage") {
         const to = String(inp.to || inp.recipient || "");
         const type = to ? String(agentTypeById.get(to) || "") : "";
         if (/pr-reviewer/.test(type)) lastReview = seq;
-        else if (isImplementer(type)) lastCodeEdit = seq;      // 이어부르기로 더 고치게 시킨 것도 같다
+        else if (isDelegate(type)) lastCodeEdit = seq;      // 이어부르기로 더 고치게 시킨 것도 같다
       } else if (EDIT_TOOLS_RE.test(nm)) {
         if (isCodeTarget(inp.file_path || inp.notebook_path)) lastCodeEdit = seq;
       } else {
@@ -526,8 +542,8 @@ function hasPrReviewer(objs) {
           lastCodeEdit = seq;
         } else if (si && si.via === "name") {
           if (/pr-reviewer/.test(si.agentType)) lastReview = seq;
-          else if (isImplementer(si.agentType)) lastCodeEdit = seq; // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
-        } else if (si && isImplementer(si.agentType)) {
+          else if (isDelegate(si.agentType)) lastCodeEdit = seq; // 위임 = 이 시점의 코드 수정(v0.64.0 H-1)
+        } else if (si && isDelegate(si.agentType)) {
           // `via:"shape"` = 입력 칸으로만 잡힌 스폰. 호출하는 쪽이 칸 하나로 만들어 낼 수 있으므로
           //   **닫는 쪽에만** 쓴다(일꾼이면 코드 수정 계상). 리뷰어여도 여기서는 아무 일도 안 한다 —
           //   그것이 `아무도구({agentType:"chageun:pr-reviewer"})` 한 줄이 리뷰 도장이 되는 것을 막는다.
@@ -554,7 +570,7 @@ function finishedImplementerHere(o, agentTypeById) {
   //     이 자리는 "완료만" 보지 않는다). 노리는 것은 앞에 두고 기다린 스폰의 완료 레코드이고,
   //     런타임이 백그라운드에도 완료 레코드를 싣기 시작하는 날 이 줄이 그대로 받는다.
   const tur = o.toolUseResult;
-  if (tur && typeof tur === "object" && tur.agentId && isImplementer(typeOf(tur.agentId))) return true;
+  if (tur && typeof tur === "object" && tur.agentId && isDelegate(typeOf(tur.agentId))) return true;
   // (a) <task-notification> 알림. 문자열 content · 배열 content 의 text 블록 · attachment.prompt 셋 다.
   const m = o.message || o;
   const c = m && m.content;
@@ -571,7 +587,7 @@ function finishedImplementerHere(o, agentTypeById) {
     const re = /<task-id>([^<]+)<\/task-id>/g;
     let hit;
     while ((hit = re.exec(txt)) !== null) {
-      if (isImplementer(typeOf(hit[1].trim()))) return true;
+      if (isDelegate(typeOf(hit[1].trim()))) return true;
     }
   }
   return false;
@@ -1091,7 +1107,7 @@ function isReviewAgent(agentType) {
 // 🛑 **세 자리가 이 함수 하나를 공유한다**: (1) 문(subagentGateSpawn 이 감독에게만 게이트를 열어 준다)
 //   (2) 감독 스폰 차단(감독이 감독을 못 낳는다) (3) 쓰기 차단(supervisorBlock 호출 가드).
 //   정규식을 세 군데 박으면 한쪽만 고쳐져 조용히 갈라진다 — 이 저장소에서 같은 사고가 두 번 났다
-//   (바로 위 REVIEW_AGENT_RE 의 리브랜드 교훈 · IMPLEMENTER_AGENTS 주석의 일꾼 추가 교훈).
+//   (바로 위 REVIEW_AGENT_RE 의 리브랜드 교훈 · DELEGATE_AGENTS 주석의 일꾼 추가 교훈).
 // 🛑 **세 자리가 다 '좁은 판정'이다.** 이 저장소의 평소 방향("막는 판정은 넓게")과 반대인데
 //   여기서는 그게 맞다 — **문을 지나는 집합과 쓰기가 막히는 집합이 정확히 같아야 하기 때문**이다.
 //   두 집합이 어긋나면 한쪽에 틈이 생긴다. 넓은 쓰기 차단 + 좁은 문이면 감독이 아닌 에이전트가

@@ -544,6 +544,13 @@ test("routing 리마인더: code-implementer 를 먼저 띄운 뒤 deep-implemen
   assert.equal(routingReminderNeeded(objs, "Task", spawnDI), false,
     "이름 배열이 한 벌이라 두 번째 위임에는 안 뜬다. 잔소리를 막는 쪽으로 고른 절충이다");
 });
+// v0.65.0 F-28: 감독도 위임이다. 메인이 일꾼 대신 감독을 띄우면 메인 기록에 감독 스폰 한 줄만
+// 남아 라우팅 리마인더가 조용히 안 뜨던 자리다(deep-implementer 가 겪은 것과 같은 사고).
+test("routing 리마인더: supervisor 위임에도 켜진다(F-28)", () => {
+  const spawnSV = { subagent_type: "chageun:supervisor", prompt: "지휘" };
+  assert.equal(routingReminderNeeded([], "Task", spawnSV), true);
+  assert.equal(routingReminderNeeded([], "Agent", spawnSV), true, "Agent 도구명도 동일");
+});
 test("routing 리마인더: 다른 스킬 로드는 로드로 안 침(routing만)", () => {
   const objs = [{ message: { role: "assistant", content: [{ type: "tool_use", name: "Skill", input: { skill: "chageun:finish-check" } }] } }];
   assert.equal(routingReminderNeeded(objs, "Task", spawnCI), true);
@@ -877,6 +884,36 @@ test("H-1b hasPrReviewer: 리뷰 뒤에 일꾼이 끝나면 stale(false) — 백
     assert.equal(hasPrReviewer(objs), false,
       label + ": 리뷰 뒤에 끝난 일꾼의 편집이 검사 도장을 달고 나간다");
   }
+});
+
+// v0.65.0 F-28: 감독 위임도 "코드가 바뀐 것"으로 센다. 감독은 **읽기만 하는데도** 여기 든다 —
+// 감독이 띄운 일꾼이 고쳤을 수 있고, 그 편집은 메인 기록에 안 남기 때문이다(메인 기록에는 감독
+// 스폰 한 줄뿐). 이 칸이 빠지면 검토 뒤에 감독이 고쳐 놓은 코드가 검사 도장을 달고 push 된다.
+test("H-1b hasPrReviewer: 리뷰 뒤에 감독을 띄우면 stale(false) — F-28", () => {
+  const objs = [
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+    TU("Agent", { subagent_type: "chageun:supervisor", prompt: "지휘" }),
+  ];
+  assert.equal(hasPrReviewer(objs), false, "감독 위임 뒤의 리뷰 도장은 낡았다");
+  // 반대 순서(감독 → 리뷰)는 정상이라 막지 않는다(과차단 확인).
+  assert.equal(hasPrReviewer([
+    TU("Agent", { subagent_type: "chageun:supervisor", prompt: "지휘" }),
+    TU("Task", { subagent_type: "chageun:pr-reviewer" }),
+  ]), true, "정상 순서까지 막으면 재리뷰가 영영 안 끝난다");
+});
+
+// B-L1: 감독은 파일을 안 고치는데도 신선도에 걸린다. 그때 뜨는 문구가 "코드를 다시 수정했으면"
+// 뿐이면 **코드를 안 고친 사람에게 사실과 다르게 읽힌다.** 문구를 다듬다 이 조각이 사라지는 것을 막는다.
+test("F-28 gate-skip 문구: 사람용에는 감독 조각이 있고, 서브에이전트용은 안 건드렸다", () => {
+  const { reasonFor } = require(F28_CORE);
+  const human = reasonFor("gate-skip", false);
+  assert.ok(human.includes("감독(`supervisor`)을 띄운 세션도 여기 포함됩니다"),
+    "감독을 띄운 세션이 왜 걸리는지 사람에게 밝혀야 한다");
+  assert.ok(human.includes("감독이 띄운 일꾼이 고쳤을 수 있어"), "왜 한 번 더 받는지의 이유가 함께 있어야 한다");
+  const sub = reasonFor("gate-skip", true);
+  assert.ok(!sub.includes("감독(`supervisor`)을 띄운 세션도 여기 포함됩니다"),
+    "서브에이전트용 문구는 안 건드린다 — 감독을 띄우는 것은 메인뿐이라 이 상황을 만날 일이 없고, 그 문구는 회복 경로를 네 회차에 걸쳐 다듬은 자리다");
+  assert.notEqual(human, sub, "사람용과 서브에이전트용은 여전히 다른 문구다");
 });
 
 // ⚠ 정직 고지(리뷰 3회차): 이 검사와 바로 아래 검사는 **finishedImplementerHere 를 통째로 꺼도 초록이다**
