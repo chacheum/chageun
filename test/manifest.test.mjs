@@ -10,7 +10,7 @@ test("loadManifest는 정본 필드를 읽는다", () => {
   const m = loadManifest(SRC);
   assert.equal(m.name, "chageun");
   assert.equal(m.version, "0.64.1");
-  assert.equal(m.components.skills.length, 12);
+  assert.equal(m.components.skills.length, 13);
 });
 
 test("claudePluginJson은 현 plugin.json과 의미 동일", () => {
