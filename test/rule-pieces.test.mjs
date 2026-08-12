@@ -156,3 +156,12 @@ test("조합 생성기가 등록된 부록을 하나도 빠뜨리지 않는다 (
   const covered = [...new Set(combos().flatMap((c) => c.on))].sort();
   assert.deepEqual(covered, wired, "combos() 가 등록된 부록 중 일부를 안 돈다");
 });
+
+test("배선 개수와 조각 개수가 같다 — 조각을 늘리고 배선을 안 늘리면 그 조각은 영원히 안 나간다", () => {
+  const wiring = JSON.parse(readFileSync(join(ROOT, "src", "hooks", "hooks.claude.json"), "utf8"));
+  const cmds = wiring.hooks.SessionStart.flatMap((g) => g.hooks).map((h) => h.command)
+    .filter((c) => c.includes("activate.js"));
+  assert.equal(cmds.length, core.PIECES.length + 1, "조각 5개 + 부록 1개 = 6개가 배선돼야 한다");
+  const args = cmds.map((c) => c.trim().split(/\s+/).pop()).sort();
+  assert.deepEqual(args, ["1", "2", "3", "4", "5", "6"], "조각 번호가 빠지거나 겹친다");
+});
