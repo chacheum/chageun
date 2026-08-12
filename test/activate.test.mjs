@@ -130,6 +130,34 @@ function brokenInstall(omit) {
 
 const INSTALL_HELP = "차근: 운영 규칙 파일을 찾지 못함. 설치를 확인하세요.";
 
+// 🛑 부록 결손은 갈래가 다르다. 조각 1~5 는 **코어가 본체**라 부록이 없어도 계속 나가야 하고,
+//    조각 6 은 **부록이 전부**라 조용히 삼키면 완전 침묵이 된다. 그 침묵이 하필 무인 세션에서만
+//    일어난다: 나머지 5조각이 멀쩡히 도착해 세션은 완전히 정상으로 보이는데, 무인의 유일한
+//    안전 상세(멈추는 법 · 8시간/2,000번 한도 · 바깥 통신 차단의 한계)만 통째로 빠진 채
+//    **사람 없이** 돈다. 알아챌 사람이 자리에 없다는 것이 이 갈래의 전부다.
+test("설치가 깨져도(unattended-appendix.md 없음) 무인 조각 6이 침묵하지 않는다", () => {
+  const hook = brokenInstall("unattended-appendix.md");
+  const U = { ...BASE, CHAGEUN_UNATTENDED: "1" };
+
+  const r6 = spawnSync(process.execPath, [hook, "6"], { env: U, encoding: "utf8" });
+  assert.equal(r6.status, 0);
+  assert.notEqual(r6.stdout, "",
+    "무인 세션에서 부록이 사라졌는데 조각 6이 통째로 침묵했다 — " +
+    "다른 5조각이 정상 도착해 세션은 멀쩡해 보이고, 무인 안전 상세만 조용히 빠진다.");
+  assert.ok(r6.stdout.includes("unattended-appendix.md"),
+    `어느 부록이 없는지 이름이 없다: ${JSON.stringify(r6.stdout)}`);
+  assert.ok(r6.stdout.includes("설치를 확인하세요"), "설치를 의심하라는 안내가 없다");
+
+  // 부록 결손이 코어 주입까지 죽이면 안 된다(조각 1~5 는 코어가 본체다).
+  const r4 = spawnSync(process.execPath, [hook, "4"], { env: U, encoding: "utf8" });
+  assert.ok(r4.stdout.includes("# Stop rules"), "부록 결손이 코어 조각까지 죽였다");
+
+  // 평시 세션에서는 부록이 조건에 안 맞아 읽지도 않는다 — 그때까지 안내를 내면 시끄럽기만 하다.
+  const rn = spawnSync(process.execPath, [hook, "6"], { env: BASE, encoding: "utf8" });
+  assert.equal(rn.stdout, "",
+    "조건이 안 맞는 부록의 결손까지 안내를 내면 평범한 세션이 매번 시끄러워진다");
+});
+
 for (const omit of ["activate-core.js", "operating-rules.md"])
   test(`설치가 깨져도(${omit} 없음) 안내가 나온다 — 조각 훅이 통째로 침묵하지 않는다`, () => {
     const hook = brokenInstall(omit);
