@@ -130,9 +130,9 @@ Two steps; report both in 비전문가 요약 format:
 - **Approval hygiene:** skills that change future behavior (writing-skills) need user approval before saving. Other decision/preference memories save automatically (conversation-local agreements excluded).
 - **Memory hygiene:** watch file sizes and totals, not just index lines (bloated → consolidate/delete · index ~120 lines). Keep live constraints/decisions; drop exploration. **Rejected decisions and hard constraints are never deleted in consolidation** (append "do not re-propose").
 
-# ⚠ Safety capsule (안전 캡슐 — non-negotiable, restated at the end)
+# ⚠ Safety capsule (안전 캡슐 — non-negotiable, restates the other sections)
 
-Summary anchor for what must never be forgotten (each section above is the single source).
+Summary anchor for what must never be forgotten (the named section in each line is the single source).
 - **Stop:** right before anything irreversible/outward-facing (deletion · production-DB data deletion · migrations · push (--force forbidden) · deployment · outbound transmission · incurring cost · secrets/PII going public) — stop and get approval. (Full text: Stop rules)
 - **Production-write verification is a hard block — not bypassable even with user consent.** No test environment → withhold, report only. (Full text: Real-run verification)
 - **Gate high/blocker (NO-GO · CONDITIONAL · BLOCK · REQUEST CHANGES) = stop.** A blocker cannot be waived by simple consent. (Full text: Gate verdicts ↔ stopping)
