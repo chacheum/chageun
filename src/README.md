@@ -138,7 +138,7 @@ Plus **scheduled monitoring · security scans · design verification** for the o
 /plugin install chageun
 ```
 
-The workflow turns on automatically when a new session starts — no config files to edit. Superpowers is auto-installed as a dependency (works reliably on recent Claude Code, v2.1.143+). If you don't see an activation notice, install Superpowers manually from the same `claude-plugins-official` source, check `node -v`, and run `/reload-plugins`.
+The workflow turns on automatically when a new session starts — no config files to edit. Superpowers is auto-installed as a dependency (works reliably on recent Claude Code, v2.1.143+). chageun uses some Superpowers methodology skills (plan execution, test-first/TDD), but **planning conversations, plan writing, and debugging are chageun's own skills now**, so those three slots no longer use Superpowers; the dependency stays for the slots that remain. If you don't see an activation notice, install Superpowers manually from the same `claude-plugins-official` source, check `node -v`, and run `/reload-plugins`.
 
 > Language-adaptive: the workflow replies in the language you use (defaults to Korean). The source content is Korean; Claude reads it and answers you in your language.
 

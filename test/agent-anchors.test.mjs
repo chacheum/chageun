@@ -158,6 +158,22 @@ test("routing '누가 무엇을 맡나' 절의 안전 문장이 살아 있다", 
     assert.ok(routingSkill.includes(m), `routing/SKILL.md에 누락: ${m}`);
 });
 
+// 🛑 이 줄은 "태스크별 순차 계획 실행은 `chageun:routing` 이 직접 갖는다"였다. 그 절차는 이 파일에
+//    없고, 코어 '작업 유형별 진행'은 `executing-plans` 또는 라우팅 표에 따른 위임을 가리킨다.
+//    없는 절차의 소유를 주장하면 읽는 쪽이 이 파일에서 찾다가 못 찾고 스스로 만들어 낸다(문서 셋이
+//    서로 다른 말을 하던 자리다: 코어 · 이 스킬 · README). 소유 주장 문투의 **부재**로 잰다.
+test("routing 이 순차 계획 실행의 소유를 주장하지 않는다", () => {
+  const lines = routingSkill.split("\n").filter((l) => l.includes("순차 계획 실행"));
+  assert.ok(lines.length > 0,
+    "routing/SKILL.md 에서 '순차 계획 실행'을 다루는 줄이 사라졌다 - 병렬 위임과의 축 구분이 없어졌다");
+  for (const l of lines) {
+    assert.ok(!/직접\s*갖는다/.test(l),
+      `routing 이 순차 계획 실행을 직접 갖는다고 다시 주장한다(그 절차는 이 파일에 없다): ${l}`);
+    assert.ok(l.includes("executing-plans"),
+      `순차 계획 실행 줄이 코어와 같은 말(\`executing-plans\`)을 안 가리킨다: ${l}`);
+  }
+});
+
 // 서브에이전트 `description` 은 나중에 사용자 화면에 그대로 뜨는 **이름**이라 짧아야 한다.
 // 길면 잘려서 무슨 일이 도는지 안 보인다(실측: `계획서…` · `P…`). 이 줄이 지워지면
 // 다시 개발자용 식별자처럼 길게 짓게 된다.

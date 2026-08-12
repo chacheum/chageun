@@ -32,6 +32,31 @@ test("planning 스킬에 절차·안전 앵커가 존재(삭제 회귀 바닥)",
   for (const a of ANCHORS) assert.ok(skill.includes(a), `src planning SKILL.md에 누락: ${a}`);
 });
 
+// 🛑 0번과 6번은 **서로 어긋났던 자리**다: 0번이 모드 안에서 하는 일을 "읽기·검색·질문·선택지"로만
+//    적어 두고, 바로 다음 줄이 그 안에서 스펙 파일을 쓰라고 했다. 고친 모양의 핵심은 둘이다.
+//    (가) 회복로: 쓰기가 막힐 때 갈 길을 미리 정해 둔다. 빠지면 막힌 자리에서 즉흥 대응이 나온다.
+//    (나) 순서: 어느 갈래로 가든 확인 게이트(🙋)가 마지막이다. 빠지면 사용자가 스펙 없이 승인한다.
+//    모드 안 쓰기가 되는 것은 봤지만 표본이 1대 1회(권한 확인을 끈 컴퓨터)라, 회복로를 지운 근거로
+//    "되니까 필요 없다"를 쓸 수 없다.
+const RECOVERY = "모드가 스펙 파일 쓰기를 막으면 그 자리에서 `ExitPlanMode` 승인을 먼저 받고 쓴다";
+const GATE_LAST = "어느 갈래로 가든 확인 게이트(🙋)는 스펙 파일이 있는 상태에서 마지막에 돈다";
+
+test("planning 0번·6번에 스펙 쓰기 회복로와 '확인 게이트가 마지막'이 둘 다 있다", () => {
+  const section = (head) => {
+    const i = skill.indexOf(head);
+    assert.notEqual(i, -1, `절 제목이 사라졌다: ${head}`);
+    const j = skill.indexOf("\n## ", i + 1);
+    return skill.slice(i, j === -1 ? undefined : j);
+  };
+  const zero = section("## 0. 계획 모드로 들어간다");
+  const six = section("## 6. 스펙 파일로 적는다");
+  assert.ok(zero.includes(RECOVERY), `0번에 회복로 문장이 없다: ${RECOVERY}`);
+  assert.ok(six.includes(RECOVERY), `6번에 회복로 문장이 없다(두 갈래가 한쪽만 남았다): ${RECOVERY}`);
+  assert.ok(six.includes(GATE_LAST), `6번에 게이트 순서 문장이 없다: ${GATE_LAST}`);
+  assert.ok(zero.includes("읽기·검색·질문·선택지 제시, 그리고 6번의 스펙 파일 쓰기"),
+    "0번의 '모드 안에서 하는 것' 목록에서 스펙 파일 쓰기가 빠졌다(6번과 다시 어긋난다)");
+});
+
 // 과발동 방지 조건이 프론트매터에 있어야 한다. 없으면 오타 한 글자 수정에도 기획 대화가 열린다.
 test("planning 프론트매터에 과발동 방지 조건이 있다", () => {
   const fm = skill.slice(0, skill.indexOf("\n---", 4));
