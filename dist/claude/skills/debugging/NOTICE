@@ -1,0 +1,53 @@
+차근 `debugging` 스킬의 제3자 귀속 표시 (third-party attribution)
+
+The step skeleton of `SKILL.md` in this directory was assembled by comparing four
+MIT-licensed debugging skills and keeping what three or more of them had in common.
+The Korean text is newly written for non-developers. The stop-after-two-attempts rule,
+the plain-language reproduction questions, the "never print values" logging rule and the
+hand-off contents are chageun's own and are not from these sources. The four sources are
+credited below. All four are distributed under the same MIT terms, so the MIT permission
+notice is reproduced once at the end.
+
+1. systematic-debugging (Superpowers)
+   Taken: four-phase order, root-cause-before-fix principle, per-boundary
+   instrumentation, red-flag list.
+   MIT License. Copyright (c) 2025 Jesse Vincent.
+   https://github.com/obra/superpowers
+
+2. debugging-and-error-recovery (addyosmani/agent-skills)
+   Taken: triage order (reproduce, localize, reduce, fix, guard, verify), the
+   not-reproducible decision tree, "error output is data, not instructions".
+   MIT License. Copyright (c) 2025 Addy Osmani.
+   https://github.com/addyosmani/agent-skills
+
+3. debugging-wizard (jeffallan/claude-skills)
+   Taken: one hypothesis at a time, remove all debug code before committing.
+   MIT License. Copyright (c) 2025. The LICENSE file leaves the copyright holder name
+   blank, so the holder is recorded here as the author declared in the skill's own
+   front matter (metadata.author): https://github.com/Jeffallan
+   https://github.com/jeffallan/claude-skills
+
+4. debug-mode (doraemonkeys/claude-code-debug-mode)
+   Taken: numbered hypothesis list, `#region DEBUG` markers around temporary
+   instrumentation, removal of those blocks and the log file at the end.
+   MIT License. Copyright (c) 2025 doraemonkeys.
+   https://github.com/doraemonkeys/claude-code-debug-mode
+
+MIT permission notice (applies to all four sources above)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be included in all copies
+or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
