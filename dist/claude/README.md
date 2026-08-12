@@ -24,7 +24,7 @@ AI 시대엔 사람의 일이 '만들기'에서 **'검증·판단'으로 옮겨�
 
 ### 무엇을 해주나
 
-chageun는 [Superpowers](#함께-설치되는-것-중요) 위에 얹혀 **기획 → 게이트 → 구현 → 검증 → 마무리** 흐름 전체를 받칩니다(위 그림).
+chageun는 **기획 → 게이트 → 구현 → 검증 → 마무리** 흐름 전체를 직접 받칩니다(위 그림).
 
 - **기획** — 레퍼런스 조사, 기능 명세 + 화면 구조(IA)를 살아있는 문서로
 - **게이트** — 독립된 심판이 계획·코드를 적대적으로 검수, 통과 못 하면 멈춤
@@ -61,7 +61,7 @@ chageun는 [Superpowers](#함께-설치되는-것-중요) 위에 얹혀 **기획
 
 ### 함께 설치되는 것 (중요)
 
-이 플러그인은 `claude-plugins-official` 마켓플레이스의 **Superpowers** 방법론 스킬(아이디어 정리·계획·디버깅 등)을 사용합니다.
+이 플러그인은 `claude-plugins-official` 마켓플레이스의 **Superpowers** 방법론 스킬 가운데 **계획 실행·테스트 먼저(TDD)** 등을 사용합니다. **기획 대화·계획서 쓰기·디버깅은 chageun가 직접 갖습니다**(그 세 자리는 이제 Superpowers를 안 씁니다). 남는 자리 때문에 의존성은 그대로 둡니다.
 
 - Superpowers는 **의존성으로 자동 설치**됩니다(따로 설치하지 않아도 됩니다).
 - 자동 설치는 **최신 Claude Code(권장 v2.1.143+)**에서 안정적입니다.
@@ -113,7 +113,7 @@ No jargon required. **Claude handles the code; you read plain-language explanati
 
 ### What it does
 
-chageun sits on top of Superpowers and steadies the whole flow — **plan → gate → build → verify → wrap** (see the diagram above).
+chageun steadies the whole flow itself — **plan → gate → build → verify → wrap** (see the diagram above).
 
 - **Plan** — reference research, a living feature spec + screen map (IA)
 - **Gate** — an independent judge reviews plan & code adversarially; blocks until it passes

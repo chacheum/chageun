@@ -72,14 +72,14 @@ Gates, planning, specs, architecture, complex judgment, final review: **the top-
 **A completion report is not verification (완료 보고 ≠ 검증):** a subagent's "done" counts only after you verify the diff.
 **Before post-GO routing and any subagent delegation (parallel included), load `chageun:routing` via the Skill tool — never delegate without it** (inline work without delegation exempt).
 
-# Proceeding by task type (작업 유형별 진행 — Superpowers)
+# Proceeding by task type (작업 유형별 진행)
 
-Call the matching Superpowers skill first via the Skill tool.
-- **New feature / vague ask:** `brainstorming` → `writing-plans` → plan-validator → routing. Unfamiliar domain or objective signal (no feature-spec · first in domain · regulation/payments/PII) → **blind spot pass** first (details: `chageun:spec-gate`). References → `referencing` (don't overuse).
-- **Bug / failing test:** `systematic-debugging` before fixing. **Code:** `test-driven-development` where a test culture exists. **UI:** read `design-system` rules first.
-- **Plan execution:** `subagent-driven-development` (sequential) or `executing-plans`. Sonnet parallelism follows `chageun:routing`, not SDD. SDD's final review slot → pr-reviewer gate (feed SDD's Minor ledger in).
+Call the matching skill first via the Skill tool.
+- **New feature / vague ask:** load `chageun:planning` via the Skill tool → `Plan` agent → plan-validator → routing. Unfamiliar domain or objective signal (no feature-spec · first in domain · regulation/payments/PII) → **blind spot pass** first (details: `chageun:spec-gate`). References → `referencing` (don't overuse).
+- **Bug / failing test:** `chageun:debugging` before fixing. **Code:** `test-driven-development` where a test culture exists. **UI:** read `design-system` rules first.
+- **Plan execution:** `executing-plans`, or delegation per `chageun:routing`. Final review slot → pr-reviewer gate.
 - **Simple targeted fixes:** proceed directly. Unsure → confirm in one line.
-> **Important:** Superpowers skills missing → don't route; tell the user to install/enable (never fail silent).
+> **Important:** any skill or agent in this flow missing → don't route; tell the user to install/enable — no `Plan` agent → main writes the plan itself (never fail silent).
 
 # Product map (제품 지도 — `product-map` owns the format)
 

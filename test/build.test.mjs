@@ -61,3 +61,24 @@ test("components.hooks ↔ src/hooks/*.js 가 양방향으로 같고 전부 dist
     "매니페스트 등재와 실제 훅 파일이 어긋난다 — 빠진 파일은 배포판에만 없어 남의 컴퓨터에서만 죽는다");
   for (const f of listed) assert.ok(existsSync(join(out, "hooks", f)), "dist 에 안 실림: " + f);
 });
+
+// 🛑 같은 칸을 스킬에도 뚫는다(M8 · v0.66.0 에 스킬 2개가 새로 등재되는 지금이 가장 싸다).
+//    `skills` 는 훅과 달리 **매니페스트 목록이 아니라 폴더를 통째로** 복사한다(copyTree) — 등재를
+//    잊어도 배포물에는 실려서 "등재 = 그냥 문서"라는 착각이 남고, 개수 단언(13→15)만으로는
+//    **이름이 어긋나는 경우**를 못 잡는다.
+//    NOTICE 도착 단언을 같은 칸에 둔 이유: `test/dist-committed.test.mjs` 는 같은 src 로 갓 빌드한
+//    것과 비교하므로 **복사에서 빠진 파일은 양쪽에 똑같이 없어 "일치"가 된다** — 그 축으로는 못 잡는다.
+//    귀속 표시가 배포물에서 빠지면 MIT 동봉 의무가 조용히 깨진다.
+test("components.skills ↔ src/skills/* 가 양방향으로 같고 전부 dist 에 도착한다", () => {
+  const out = join(tmpDir("bc-skills-"), "claude");
+  buildClaude(SRC, out);
+  const m = JSON.parse(readFileSync(join(SRC, "manifest.src.json"), "utf8"));
+  const listed = [...m.components.skills].sort();
+  const actual = readdirSync(join(SRC, "skills"), { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  assert.deepEqual(listed, actual,
+    "매니페스트 등재와 실제 스킬 폴더가 어긋난다 — 등재 없이도 복사는 되므로 이 어긋남은 배포물이 아니라 문서에서 드러난다");
+  for (const s of listed) assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), "dist 에 안 실림: " + s);
+  assert.ok(existsSync(join(out, "skills", "debugging", "NOTICE")),
+    "귀속 표시(NOTICE)가 배포물에 안 실렸다 — MIT 동봉 의무가 조용히 깨진다(골든·dist 대조로는 못 잡는 축)");
+});
