@@ -192,6 +192,17 @@ const REASONS = {
   "gate-model-downgrade": "차단: 검증 게이트를 기본보다 약한 모델로 띄우려 했습니다. 게이트는 \"검토 대상보다 최소 같거나 강한 독립 심판\"이라 약한 모델로 내리면 게이트의 의미가 사라집니다(심판이 일꾼보다 약해짐). **`model` 파라미터를 빼면** 에이전트 설정의 기본 모델이 그대로 쓰입니다 — 그게 정답인 경우가 대부분입니다. 그 모델을 못 쓰는 환경이면 실행 전 사용자가 CHAGEUN_ALLOW_GATE_MODEL=1로만 열 수 있습니다(게이트를 아예 안 부르는 것보다는 약한 심판이 낫기 때문입니다).",
   "design-color": "차단(차근 색 백스톱): 새로 넣는 코드에 디자인 토큰 대신 직접 색이 있습니다. 팔레트 색 클래스(`bg-blue-500` 등)·임의값(`-[#hex]`) 대신 docs/design-system.md의 토큰을 쓰세요. 색 견본판·Tailwind safelist처럼 색 이름이 원래 나열되는 파일이면, design-system.md front-matter의 `lint-allow-colors`에 그 팔레트명을 선언하거나 그 줄에 `design-lint-ignore` 주석을 붙이세요(그 줄만 통과). 전체 우회는 실행 전 사용자가 CHAGEUN_SKIP_DESIGN_LINT=1로만 켤 수 있습니다.",
   "component-boundary": "차단(공용 컴포넌트 경계): 페이지와 라우트는 등록된 공용 컴포넌트만 조립할 수 있습니다. 직접 UI는 공용 컴포넌트로 옮기고 레지스트리와 코드 표식을 맞추세요.",
+  // ── v0.65.0 F-27(상황판) 하드 차단 둘 ────────────────────────────────────
+  // 둘 다 **탈출구 환경변수가 없다.** 그래서 문구가 유일한 안내다 — 회복법이 안 닿으면
+  //   막힌 채로 끝난다. 이 열쇠를 REASONS 에 안 넣으면 일반 문구("되돌리기 어려운 고위험
+  //   명령")로 떨어져 그 사고가 그대로 난다.
+  // ⚠ 오탐이 실제로 난다: secret-scan-core 의 looksLikeToken 은 **이름이 무엇이든** 값이
+  //   12자 이상이고 글자·숫자가 섞이면 비밀로 본다. 상황판은 프로젝트 이름·버전·서버
+  //   이름을 적는 자리라 `DB_HOST=mssql-server-01` 같은 평범한 값도 걸린다. 탐지 규칙을
+  //   두 벌로 만들지 않고(같은 저장소에 잣대가 둘이면 어느 쪽이 진짜인지 아무도 모른다)
+  //   **회복 문장**으로 푼다.
+  "statusboard-secret": "차단: 상황판에 `.env` 의 비밀 값이 새로 들어갑니다. 상황판은 비밀번호가 없는 평문 보고서라 그대로 밖으로 열릴 수 있고, 살아 있는 열쇠가 나가면 되돌릴 수 없습니다. **값은 여기 다시 적지 않습니다** — 걸린 열쇠 이름만 아래 `(위반:` 에 있습니다. 회복: 그 값을 빼고 다시 쓰세요. **그 값이 비밀이 아니면 다르게 적으세요** — 예: `v0.65.0-beta1` → `버전 v0.65.0`. 이미 파일에 들어 있는 값은 이 검사가 안 봅니다(새로 쓰는 글만 봅니다) — 지우는 편집은 그대로 됩니다.",
+  "statusboard-unignored": "차단: 이 상황판이 git 에 올라갈 수 있습니다. 평문 업무 보고가 저장소에 실리면 커밋 이력에 남아 나중에 지워도 흔적이 남습니다. 회복은 상태에 따라 둘입니다. (1) **아직 추적 안 된 파일**이면 `chageun:statusboard` 의 무시 절차를 밟으세요(`.git/info/exclude` 에 한 줄 넣고 `git check-ignore -q status.md` 로 재확인). (2) **이미 추적 중**이면 먼저 `git rm --cached status.md` 로 추적을 끊어야 합니다 — 차근이 대신 돌리지 않습니다. 사용자에게 그 명령을 보여 드리고 사용자가 돌립니다. 🛑 **추적을 끊은 뒤에 무시 절차를 한 번 더 밟아야 풀립니다** — 추적 중인 파일은 무시 줄만 넣어서는 `check-ignore` 가 계속 1이라 안 풀립니다. 이 차단을 여는 스위치는 없습니다.",
 };
 
 // 어떤 도구·입력이 위험한지 판정. 위험하면 사유 키를, 아니면 null.
@@ -831,6 +842,23 @@ function planScaleBlock(toolName, toolInput, opts) {
 const SCRATCH_ROOT_RE = /^\/(?:var\/)?tmp\//;
 function isScratchPath(s) {
   return SCRATCH_ROOT_RE.test(s) || s.indexOf("/.cache/claude-tmp/") !== -1;
+}
+// 상황판 안내(v0.65.0 F-27)를 낼 자리인가. **순수 판정**이다(fs 없음).
+// 두 번째 인자는 **`null` 일 수 있다** — 위임 도구(`Task`·`Agent`·불투명 통로)에는
+//   `file_path` 칸이 아예 없다. null 이면 스크래치 판정을 건너뛰고 도구 이름만 본다.
+// 🛑 경로는 **래퍼에서 절대화해** 넘긴다. `isScratchPath` 는 절대 경로 전제라
+//   상대 경로(`./scratch/x.md`)로 들어오면 안 걸린다.
+// 🛑 위임 갈래는 `spawnIntent` 로 판정한다 — **새 정규식을 만들지 않는다.** 같은 판에서
+//   F-29 가 "위임 도구는 그 두 이름이 아니다"를 사실로 만들었고, 사본을 만들면 통로가
+//   늘 때 한쪽만 고쳐져 **위임만 하는 세션에 안내가 영영 안 나간다**.
+// 정직 고지(안 고치는 절반): macOS 의 `$TMPDIR`(`/var/folders/…`)은 절대 경로여도
+//   `isScratchPath` 에 안 걸린다. 🛑 그 함수를 넓히지 않는다 — `isCodeTarget` 을 거쳐
+//   push 게이트와 계획 리마인더도 쓰므로 넓히면 그 둘이 함께 헐거워진다. 대가는 안내가
+//   한 번 더 뜨는 것뿐이고 **차단이 아니다**.
+function statusboardTrigger(toolName, absTargetPath, toolInput) {
+  const nm = String(toolName || "");
+  if (EDIT_TOOLS_RE.test(nm)) return !(absTargetPath && isScratchPath(absTargetPath));
+  return spawnIntent(nm, toolInput) !== null;
 }
 function isCodeTarget(p) {
   const s = String(p || "");
@@ -1509,4 +1537,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP };
+module.exports = { statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, SUPERVISOR_SPAWN_CAP };
