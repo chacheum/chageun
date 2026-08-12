@@ -51,12 +51,48 @@ function bodyOfPiece(text, n) {
 const PIECE_MAX_CHARS = 8000;       // 우리가 지키는 선. 여유 2,000자.
 const CLI_TRUNCATION_CHARS = 10000; // CLI 바이너리 상수. 우리가 올려도 CLI 는 안 올라간다.
 
+// 상황판 부록 다듬기. **순수 함수**다 — 파일을 안 읽고, 바깥 사실은 ctx 로 받는다.
+// 두 가지를 한다:
+//   1. `{{BOARD_SERVER}}` 자리에 설치본의 절대 경로를 박는다(길이가 기계마다 다르다 —
+//      그래서 크기 검사는 로컬 경로가 아니라 가정값으로 잰다).
+//   2. 표식이 온전하면 안내 한 줄을 **뗀다**. 모델이 판단할 조건문이 아니라 파일을 보고 내는 사실이다.
+//      즉 긴 쪽은 "표식깨짐"이고, 크기 검사의 최악 판은 그쪽이다.
+const BOARD_SERVER_SLOT = "{{BOARD_SERVER}}";
+const APPENDIX_SPLIT = "<!-- chageun:appendix:if-no-markers -->";
+
+function renderStatusboard(text, variant, ctx) {
+  const out = text.replace(BOARD_SERVER_SLOT, (ctx && ctx.boardServer) || "");
+  const cut = out.indexOf(APPENDIX_SPLIT);
+  if (cut === -1) return out;
+  // 구분 표식 자체는 어느 쪽으로도 출력에 안 샌다.
+  return variant === "표식온전" ? out.slice(0, cut) : out.replace(APPENDIX_SPLIT + "\n", "");
+}
+
 // 조건부 부록 등록부. 파일 목록(src/rules/)과 **양방향**으로 대조된다
 // (test/rule-pieces.test.mjs) — 주입은 되는데 등록이 안 된 부록이 생기면 그 부록은
 // 조합 매트릭스에도 바이트 예산에도 안 잡힌다. 이번 사고와 같은 방향의 구멍이다.
+//
+// 등록부 한 칸이 갖는 것 넷:
+//   applies(ctx)    조건이 맞나. ctx 는 activate.js 가 모아 준 **바깥 사실**(env · 파일 존재 여부).
+//   variants        조건이 맞았을 때 낼 수 있는 **서로 다른 글**의 이름들. 조합 매트릭스가
+//                   이 목록에서 자동으로 늘어난다(부록 하나가 만드는 상태 = 꺼짐 1 + 변형 수).
+//   variantOf(ctx)  ctx 를 보고 그중 어느 변형인지 고른다. 훅이 부른다.
+//   render(t,v,ctx) 원문을 그 변형의 최종 글로 다듬는다. **훅과 검사가 이 함수를 같이 부른다** —
+//                   검사가 자기 나름의 다듬기를 다시 짜면 실제 주입되는 글과 다른 것을 재게 된다.
+// 🛑 변형을 늘리면서 render 가 그 이름으로 갈라지지 않으면, 매트릭스는 늘어나는데 두 칸이
+//    같은 글을 재는 헛검사가 된다. test/rule-pieces.test.mjs 가 변형끼리 글이 다른지 본다.
 const APPENDICES = [
   { id: "unattended", file: "unattended-appendix.md",
-    applies: (ctx) => ctx.env.CHAGEUN_UNATTENDED === "1", variants: ["only"] },
+    applies: (ctx) => ctx.env.CHAGEUN_UNATTENDED === "1",
+    variants: ["only"],
+    variantOf: () => "only",
+    render: (text) => text },
+  // 🛑 무인 **다음**에 등록한다. 등록 순서 = 붙는 순서이고, 무인 안전 규칙이 먼저 읽혀야 한다.
+  { id: "statusboard", file: "statusboard-appendix.md",
+    applies: (ctx) => ctx.board === true,
+    variants: ["표식온전", "표식깨짐"],
+    variantOf: (ctx) => (ctx.boardMarkersIntact ? "표식온전" : "표식깨짐"),
+    render: renderStatusboard },
 ];
 
 // 부록 조각의 번호. 본문 조각 뒤 한 자리.
@@ -102,5 +138,6 @@ function assemble({ rulesText, n, rulesPath, appendixTexts }) {
 module.exports = {
   PIECES, sectionsOf, bodyOfPiece,
   PIECE_MAX_CHARS, CLI_TRUNCATION_CHARS, APPENDICES, APPENDIX_PIECE,
+  BOARD_SERVER_SLOT, APPENDIX_SPLIT, renderStatusboard,
   LEGACY_HEADER, ROSTER, headerFor, assemble,
 };

@@ -22,8 +22,14 @@ const BASE = { ...process.env };
 delete BASE.CHAGEUN_UNATTENDED;
 delete BASE.CLAUDE_PLUGIN_ROOT;
 
+// 🛑 `cwd` 를 임시 폴더로 고정한다. **이 파일의 모든 훅 실행이 그렇다.** 안 잡으면 검사는
+//    저장소 루트에서 도는데, 이 저장소 루트에는 실제 status.md 가 있어 상황판 부록이 섞인
+//    출력을 재게 된다 — 아래 케이스(코어 주입·무인 부록 유무·조각 재구성)의 뜻이 흐려지고,
+//    상황판을 지운 다른 기계에서는 **다른 출력을 재는** 검사가 된다. 상황판 쪽 조건은
+//    test/statusboard-activate.test.mjs 가 자기 임시 폴더를 만들어 따로 잰다.
+const CWD = tmpDir("activate-");
 function run(env) {
-  return spawnSync(process.execPath, [HOOK], { env: { ...BASE, ...env }, encoding: "utf8" });
+  return spawnSync(process.execPath, [HOOK], { cwd: CWD, env: { ...BASE, ...env }, encoding: "utf8" });
 }
 
 const CORE_MARK = "차근 워크플로우 활성";      // 코어 주입 머리
@@ -63,7 +69,7 @@ test("지연로드: 코어에 절차 스킬 포인터 존재 + 이관된 살 부
 // 다른 축이라 서로를 대신하지 못한다 — activate.js 가 꼬리에 한 글자만 덧붙여도 함수 축은 영영 못 본다.
 
 test("조각 호출: 인자 4번은 멈춤 규칙만 내고 게이트 절은 안 낸다", () => {
-  const r = spawnSync(process.execPath, [HOOK, "4"], { env: BASE, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [HOOK, "4"], { cwd: CWD, env: BASE, encoding: "utf8" });
   assert.equal(r.status, 0);
   assert.ok(r.stdout.startsWith("차근 워크플로우 활성"), "표식이 첫 줄 맨 앞에 없다");
   assert.ok(r.stdout.includes("조각 4/5"), "조각 번호 표시 없음");
@@ -72,14 +78,14 @@ test("조각 호출: 인자 4번은 멈춤 규칙만 내고 게이트 절은 안
 });
 
 test("부록 조각: 평범한 세션에서는 아무것도 안 낸다", () => {
-  const r = spawnSync(process.execPath, [HOOK, "6"], { env: BASE, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [HOOK, "6"], { cwd: CWD, env: BASE, encoding: "utf8" });
   assert.equal(r.status, 0);
   assert.equal(r.stdout, "", "조건이 하나도 안 맞는데 부록 조각이 뭔가를 냈다");
 });
 
 test("부록 조각: 무인 세션에서는 무인 상세가 글자 하나까지 그대로 나온다", () => {
   const r = spawnSync(process.execPath, [HOOK, "6"],
-    { env: { ...BASE, CHAGEUN_UNATTENDED: "1" }, encoding: "utf8" });
+    { cwd: CWD, env: { ...BASE, CHAGEUN_UNATTENDED: "1" }, encoding: "utf8" });
   assert.ok(r.stdout.includes(APPENDIX_MARK), "무인 부록이 안 나왔다");
   // 🛑 문구 하나 includes 로는 부족하다. 이 3,114자는 무인 세션의 **유일한 안전 상세**다
   //    (STOP 거는 법 · 8시간/2000번 한도 · egress 차단의 한계). 머리말을 뗀 나머지가 원문과 같은지 본다.
@@ -91,13 +97,13 @@ test("부록 조각: 무인 세션에서는 무인 상세가 글자 하나까지
 });
 
 test("인자 없이 부르면 옛날처럼 전부 낸다 (설치본 배선이 옛것이어도 침묵하지 않는다)", () => {
-  const r = spawnSync(process.execPath, [HOOK], { env: BASE, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [HOOK], { cwd: CWD, env: BASE, encoding: "utf8" });
   assert.equal(r.stdout, "차근 워크플로우 활성. 아래 운영 규칙을 이번 세션 내내 따른다:\n\n" + RULES);
 });
 
 test("조각 5개를 이어 붙이면 규칙 본문이 하나도 안 빠지고, 조각마다 상한 아래다", () => {
   const out = [1, 2, 3, 4, 5].map((n) =>
-    spawnSync(process.execPath, [HOOK, String(n)], { env: BASE, encoding: "utf8" }).stdout);
+    spawnSync(process.execPath, [HOOK, String(n)], { cwd: CWD, env: BASE, encoding: "utf8" }).stdout);
   // 🛑 길이도 **여기서** 잰다. rule-pieces 는 core.assemble() 의 반환값을 재는데, 잘리는 대상은
   //    훅이 stdout 으로 내보낸 글이다. activate.js 가 꼬리에 줄바꿈 한 글자만 덧붙여도
   //    함수 쪽 검사는 그것을 영원히 못 본다 — 이 저장소가 6주 동안 못 본 사고가 정확히
@@ -118,8 +124,11 @@ function brokenInstall(omit) {
   const root = tmpDir("activate-broken-");
   mkdirSync(join(root, "hooks"), { recursive: true });
   mkdirSync(join(root, "rules"), { recursive: true });
+  // 부록 목록은 **등록부에서 뽑는다**(손으로 안 적는다) — 새 부록을 등록하고 여기 안 적으면
+  // 그 부록은 "설치가 깨진 상태" 재현에서 늘 빠져 있어, 결손 안내가 되는지 영영 안 재게 된다.
   const files = [
     ["hooks", "activate.js"], ["hooks", "activate-core.js"], ["rules", "operating-rules.md"],
+    ...core.APPENDICES.map((a) => ["rules", a.file]),
   ];
   for (const [dir, f] of files) {
     if (f === omit) continue;
@@ -139,7 +148,7 @@ test("설치가 깨져도(unattended-appendix.md 없음) 무인 조각 6이 침�
   const hook = brokenInstall("unattended-appendix.md");
   const U = { ...BASE, CHAGEUN_UNATTENDED: "1" };
 
-  const r6 = spawnSync(process.execPath, [hook, "6"], { env: U, encoding: "utf8" });
+  const r6 = spawnSync(process.execPath, [hook, "6"], { cwd: CWD, env: U, encoding: "utf8" });
   assert.equal(r6.status, 0);
   assert.notEqual(r6.stdout, "",
     "무인 세션에서 부록이 사라졌는데 조각 6이 통째로 침묵했다 — " +
@@ -149,11 +158,11 @@ test("설치가 깨져도(unattended-appendix.md 없음) 무인 조각 6이 침�
   assert.ok(r6.stdout.includes("설치를 확인하세요"), "설치를 의심하라는 안내가 없다");
 
   // 부록 결손이 코어 주입까지 죽이면 안 된다(조각 1~5 는 코어가 본체다).
-  const r4 = spawnSync(process.execPath, [hook, "4"], { env: U, encoding: "utf8" });
+  const r4 = spawnSync(process.execPath, [hook, "4"], { cwd: CWD, env: U, encoding: "utf8" });
   assert.ok(r4.stdout.includes("# Stop rules"), "부록 결손이 코어 조각까지 죽였다");
 
   // 평시 세션에서는 부록이 조건에 안 맞아 읽지도 않는다 — 그때까지 안내를 내면 시끄럽기만 하다.
-  const rn = spawnSync(process.execPath, [hook, "6"], { env: BASE, encoding: "utf8" });
+  const rn = spawnSync(process.execPath, [hook, "6"], { cwd: CWD, env: BASE, encoding: "utf8" });
   assert.equal(rn.stdout, "",
     "조건이 안 맞는 부록의 결손까지 안내를 내면 평범한 세션이 매번 시끄러워진다");
 });
@@ -162,7 +171,7 @@ for (const omit of ["activate-core.js", "operating-rules.md"])
   test(`설치가 깨져도(${omit} 없음) 안내가 나온다 — 조각 훅이 통째로 침묵하지 않는다`, () => {
     const hook = brokenInstall(omit);
     for (const args of [[], ["1"], ["4"], ["6"]]) {
-      const r = spawnSync(process.execPath, [hook, ...args], { env: BASE, encoding: "utf8" });
+      const r = spawnSync(process.execPath, [hook, ...args], { cwd: CWD, env: BASE, encoding: "utf8" });
       assert.equal(r.status, 0, `인자 ${JSON.stringify(args)}: 훅이 0 아닌 코드로 죽었다`);
       assert.equal(r.stdout, INSTALL_HELP,
         `인자 ${JSON.stringify(args)}: 안내가 안 나왔다(stdout ${r.stdout.length}자). ` +
