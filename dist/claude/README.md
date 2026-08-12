@@ -83,6 +83,16 @@ chageun는 [Superpowers](#함께-설치되는-것-중요) 위에 얹혀 **기획
 
 > ⚠ **터미널에서 직접 켠 개발 서버는 "주인 없음"으로 봅니다.** Claude가 켠 것만 주인이 있다고 판단하기 때문입니다. 또 "접속 없음"은 그 순간의 사진이라, 노트북이 절전에서 깨어나 연결만 끊긴 서버(브라우저 탭은 그대로 열려 있음)도 방치로 읽힐 수 있습니다. 끄기 전에 2초 뒤 한 번 더 확인하지만, 그동안 다시 붙지 않으면 종료됩니다. 개발 서버를 손으로 띄워 두고 오래 쓰신다면 위 스위치를 켜 두십시오.
 
+### 작업 상황판 (status.md)
+
+자리를 비운 사이 무슨 일이 있었는지 프로젝트마다 파일 한 장에 모읍니다. 지금 하실 것 · 뒤에서 도는 것 · 정한 것 · 끝난 것이 한 화면에 있습니다.
+
+- 파일 이름은 언어와 상관없이 **`status.md`** 하나입니다.
+- **파일이 원본이라 서버 없이도 됩니다.** 그냥 열어 읽으면 됩니다.
+- **기본은 이 컴퓨터에서만 보이고 git 에도 안 올라갑니다** — 처음 만들 때 `.git/info/exclude` 에 한 줄을 넣습니다(평문 업무 보고라 커밋 이력에 남으면 지워도 흔적이 남습니다).
+- 뒤에서 도는 일감 칸은 **기계가 씁니다**(이름·상태·시각만). 판단이 필요한 칸은 그대로 사람이 씁니다.
+- 밖에서 열고 싶으면 사용자가 직접 여십시오. 차근이 대신 열지 않고, 방법만 안내합니다.
+
 ### 문제 해결
 
 - **개발 서버가 자꾸 꺼진다:** 위 "안 쓰는 개발 서버를 정리합니다"를 보세요. `CHAGEUN_SKIP_REAP=1` 로 끕니다.
@@ -132,13 +142,23 @@ The workflow turns on automatically when a new session starts — no config file
 
 > Language-adaptive: the workflow replies in the language you use (defaults to Korean). The source content is Korean; Claude reads it and answers you in your language.
 
+### Status board (status.md)
+
+One plain file per project holds what happened while you were away: what needs you, what is running in the background, what was decided, what is done.
+
+- The file is always named **`status.md`**, whatever language you work in.
+- **The file is the source of truth — no server needed.** Just open it.
+- **By default it stays on your machine and out of git** — one line goes into `.git/info/exclude` when it is created (it is a plain-language work report; once committed, deleting it later still leaves it in history).
+- The "running in the background" section is **written by the machine** (name, state, time only). Sections that need judgment stay yours.
+- To reach it from outside your machine, do that yourself. chageun explains how; it does not open anything for you.
+
 ---
 
 ## 구성 / Components
 
 - `rules/operating-rules.md` — 워크플로우 본체(세션 시작 시 자동 적용)
 - `skills/` — referencing(레퍼런스) · product-map(명세+IA) · design-system(디자인 규칙) · monitoring(정기 점검) · security-scan(보안 스캔)
-- `agents/` — plan-validator(계획 게이트) · pr-reviewer(코드 게이트) · code-implementer(기계적 구현) · deep-implementer(판단 걸린 구현)
+- `agents/` — plan-validator(계획 게이트) · pr-reviewer(코드 게이트) · code-implementer(기계적 구현) · deep-implementer(판단 걸린 구현) · supervisor(여러 바퀴 지휘)
 - `hooks/finish-work.js` — 약속-미실행 차단 훅(Stop hook)
 
 ## 라이선스 / License

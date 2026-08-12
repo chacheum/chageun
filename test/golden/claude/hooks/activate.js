@@ -9,6 +9,35 @@ const rulesPath = path.join(root, "rules", "operating-rules.md");
 const arg = process.argv[2];
 const n = arg === undefined || arg === "" ? null : Number(arg);
 
+const MAX_HEAD = 512 * 1024;   // 표시는 파일 앞쪽에 있다(§4 안전 바닥과 같은 상한)
+
+// 큰 파일을 통째로 안 읽는다 — 크기를 먼저 보고 앞부분만 가져온다.
+function head(file, max) {
+  const len = Math.max(0, Math.min(fs.statSync(file).size, max));
+  const fd = fs.openSync(file, "r");
+  try {
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, 0);
+    return buf.toString("utf8");
+  } finally { fs.closeSync(fd); }
+}
+
+// 표시 한 벌이 **짝으로 정확히 하나씩**, 여는 것이 먼저일 때만 온전하다고 본다.
+function pairOk(text, open, close) {
+  const a = text.indexOf(open), b = text.indexOf(close);
+  if (a === -1 || b === -1 || b < a) return false;
+  return text.indexOf(open, a + 1) === -1 && text.indexOf(close, b + 1) === -1;
+}
+
+// 두 벌(§2 · 머리)이 다 온전한가. 🛑 읽기 실패는 침묵이다 — 못 읽으면 안내를 안 붙이고
+// 나머지 부록은 그대로 간다(없는 사실을 지어내지 않는다).
+function markersIntact(file) {
+  let text;
+  try { text = head(file, MAX_HEAD); } catch (_) { return true; }
+  return pairOk(text, "<!-- chageun:auto -->", "<!-- /chageun:auto -->")
+    && pairOk(text, "<!-- chageun:auto:head -->", "<!-- /chageun:auto:head -->");
+}
+
 try {
   // 🛑 `require` 도 이 안이다. 최상위 require 는 **모듈 로드 시점**에 던져서 이 파일 안 어떤
   //    try/catch 도 못 잡는다. 밖에 두면 activate-core.js 하나가 없어질 때(업데이트 중단·백신 격리)
@@ -16,13 +45,33 @@ try {
   //    규칙이 한 줄도 안 닿는다. 소스에는 파일이 늘 있어 **배포판에서만 죽는다.**
   const core = require("./activate-core.js");
   const rulesText = fs.readFileSync(rulesPath, "utf8");
+  // 부록 판정에 필요한 **바깥 사실**을 여기서 모은다. 코어(activate-core.js)는 순수 함수라
+  // fs 를 못 쓴다 — 파일이 있는지·표식이 온전한지는 이 자리에서만 알 수 있다.
+  // 🛑 상황판이 없는 프로젝트의 상시 비용은 `existsSync` 한 번이다. 표식 판정(파일 읽기)은
+  //    상황판이 있을 때만 한다.
+  const boardPath = path.join(process.cwd(), "status.md");
+  const hasBoard = fs.existsSync(boardPath);
+  const ctx = {
+    env: process.env,
+    board: hasBoard,
+    boardMarkersIntact: hasBoard ? markersIntact(boardPath) : true,
+    // CLAUDE_PLUGIN_ROOT 는 Bash 도구에서 비어 있다(실측). 훅에서는 채워지므로 그때
+    // 절대 경로를 박아 넣어 그 구멍을 피한다.
+    boardServer: path.join(root, "skills", "statusboard", "board-server.mjs"),
+  };
   // 조건이 맞는 부록만 읽는다(일반 세션 상시 비용 0).
+  // 🛑 부록은 **반드시 이 등록부를 지난다.** 여기 말고 다른 자리에서 파일을 하나 더 이어 붙이면
+  //    그 글은 실제로 주입되면서 조합 매트릭스에도 바이트 예산에도 안 잡힌다
+  //    (test/rule-pieces.test.mjs 가 src/rules 파일 목록과 양방향으로 대조하는 이유다).
   const appendixTexts = [];
   const appendixMissing = [];
   for (const a of core.APPENDICES) {
-    if (!a.applies({ env: process.env })) continue;
+    if (!a.applies(ctx)) continue;
     try {
-      appendixTexts.push(fs.readFileSync(path.join(root, "rules", a.file), "utf8"));
+      const raw = fs.readFileSync(path.join(root, "rules", a.file), "utf8");
+      // 다듬기(자리표시자·조건부 한 줄)도 코어가 한다 — 훅과 검사가 **같은 함수**를 불러야
+      // 검사가 재는 글이 실제 주입되는 글과 같다.
+      appendixTexts.push(a.render(raw, a.variantOf(ctx), ctx));
     } catch (err) {
       // 부록 읽기 실패해도 코어 규칙 주입은 유지(안전 우선) — 조각 1~5 는 코어가 본체다.
       // 단 조각 6 은 **부록이 전부**라 여기서 삼키면 완전 침묵이 된다. 아래에서 안내를 낸다.
