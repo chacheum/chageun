@@ -62,6 +62,25 @@ test("test-design 본문에 긴 줄표가 0개", () => {
   assert.equal(hits.length, 0, `긴 줄표 ${hits.length}개 발견: ${hits.join(" ")}`);
 });
 
+// 🛑 배선 축: 스킬을 만들어 놓고 **가리키는 자리를 안 고치면** 아무도 이 스킬에 못 온다(1회차 게이트가
+//    "대체가 이름만 남을 수 있다"로 잡은 자리). 옛 이름(`test-driven-development`)이 남아 있으면 그
+//    스킬이 없는 사용자에게 "설치하라"는 막다른 길이 배포된다. 그래서 **양방향**으로 잰다.
+//    `src/` 전체를 훑는 것이 아니라 가리키는 두 자리를 지목한다 - 어디가 끊겼는지가 실패 메시지에 남는다.
+const WIRED = [
+  ["rules/operating-rules.md", join("rules", "operating-rules.md")],
+  ["skills/spec-gate/SKILL.md", join("skills", "spec-gate", "SKILL.md")],
+];
+
+test("테스트 설계를 가리키는 2자리가 새 이름을 쓰고 옛 이름이 안 남았다", () => {
+  for (const [label, rel] of WIRED) {
+    const txt = readFileSync(join(ROOT, "src", rel), "utf8");
+    assert.ok(!txt.includes("test-driven-development"),
+      `${label} 에 옛 이름 test-driven-development 가 남았다 - 없는 스킬로 보내는 막다른 길이다`);
+    assert.ok(txt.includes("chageun:test-design"),
+      `${label} 이 chageun:test-design 을 안 가리킨다 - 이 스킬에 닿을 길이 없다`);
+  }
+});
+
 // 🛑 귀속 표시(NOTICE)는 라이선스 의무다. 파일이 없거나 저작권자가 빠지면 배포물이 MIT 동봉 의무를
 //    조용히 깬다. 스킬 폴더에 두는 이유 = 빌드가 `skills` 를 통째로 복사한다(루트는 README·LICENSE
 //    둘만 복사되므로 루트에 두면 배포물에 안 실린다). 배포물 도착은 build.test.mjs 가 잡는다.

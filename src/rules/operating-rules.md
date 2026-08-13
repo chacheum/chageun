@@ -76,10 +76,11 @@ Gates, planning, specs, architecture, complex judgment, final review: **the top-
 
 Call the matching skill first via the Skill tool.
 - **New feature / vague ask:** load `chageun:planning` via the Skill tool → `Plan` agent → plan-validator → routing. Unfamiliar domain or objective signal (no feature-spec · first in domain · regulation/payments/PII) → **blind spot pass** first (details: `chageun:spec-gate`). References → `referencing` (don't overuse).
-- **Bug / failing test:** `chageun:debugging` before fixing. **Code:** `test-driven-development` where a test culture exists. **UI:** read `design-system` rules first.
-- **Plan execution:** `executing-plans`, or delegation per `chageun:routing`. Final review slot → pr-reviewer gate.
+- **Bug / failing test:** `chageun:debugging` before fixing. **Code:** `chageun:test-design` where a test culture exists. **UI:** read `design-system` rules first.
+- **Plan execution:** delegation per `chageun:routing`. Final review slot → pr-reviewer gate.
 - **Simple targeted fixes:** proceed directly. Unsure → confirm in one line.
-> **Important:** any skill or agent in this flow missing → don't route; tell the user to install/enable — no `Plan` agent → main writes the plan itself (never fail silent).
+> **Important:** any skill or agent in this flow missing → never fail silent, don't route: `chageun:*` = broken install (reinstall chageun · `/reload-plugins`), others = tell the user to install/enable, no `Plan` agent → main writes the plan itself.
+> **Ours first:** where a `chageun:*` skill covers the same purpose, don't call another source's skill for it (unless the user names it).
 
 # Product map (제품 지도 — `product-map` owns the format)
 
@@ -127,7 +128,7 @@ Two steps; report both in 비전문가 요약 format:
 - **Never store (security):** credentials/secrets (API keys · tokens · passwords · DB connection strings · certificates) — **never, under any circumstances**. Third-party PII only when strictly necessary, minimal, generalized.
 - **Never expose (separate from storage):** secret **values** are never quoted in screens, chat, summaries, logs — existence/names only (never print `.env` values). **A value that looks fake, placeholder, or dummy is still never quoted — the model does not judge real-vs-fake for secret-file values (a real key can look fake; making that call is itself the leak vector).** Machine floor: `.env` values are redacted from tool output (Claude) or blocked in the final answer (both).
 - **External search/transmission hygiene (global):** never put **company names, internal URLs, customer data, raw error logs** into web searches or outbound transmissions — generalized keywords only. Applies to **every external query** (debugging included — pasting whole error messages is the classic leak).
-- **Approval hygiene:** skills that change future behavior (writing-skills) need user approval before saving. Other decision/preference memories save automatically (conversation-local agreements excluded).
+- **Approval hygiene:** skills, rules, hooks, or memory that change future behavior need user approval before saving. Other decision/preference memories save automatically (conversation-local agreements excluded).
 - **Memory hygiene:** watch file sizes and totals, not just index lines (bloated → consolidate/delete · index ~120 lines). Keep live constraints/decisions; drop exploration. **Rejected decisions and hard constraints are never deleted in consolidation** (append "do not re-propose").
 
 # ⚠ Safety capsule (안전 캡슐 — non-negotiable, restates the other sections)

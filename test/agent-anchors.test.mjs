@@ -181,9 +181,13 @@ test("routing 이 순차 계획 실행의 소유를 주장하지 않는다", () 
   const planLines = lines.filter((l) => l.includes("순차 계획 실행"));
   assert.ok(planLines.length > 0,
     "routing/SKILL.md 에서 '순차 계획 실행'을 다루는 줄이 사라졌다 - 코어가 가리키는 자리가 없어졌다");
+  // v0.67.0: 코어 `:80` 에서 `executing-plans`(수퍼파워스)를 뺐다. 새 주인은 이 스킬의 위임이고
+  //   코어도 `delegation per chageun:routing` 으로 같은 말을 한다. 그래서 **요구 대상만** 옛 이름에서
+  //   `chageun:routing` 으로 바꾼다 - "코어와 같은 말을 가리킨다"는 이 검사의 뜻은 그대로다.
+  //   🛑 위 `planLines.length > 0`(문구 존재)은 글자 하나도 안 바꿨다. 그것이 문구 소멸을 잡는 칸이다.
   for (const l of planLines) {
-    assert.ok(l.includes("executing-plans"),
-      `순차 계획 실행 줄이 코어와 같은 말(\`executing-plans\`)을 안 가리킨다: ${l}`);
+    assert.ok(l.includes("chageun:routing"),
+      `순차 계획 실행 줄이 코어와 같은 말(\`chageun:routing\` 의 위임)을 안 가리킨다: ${l}`);
   }
 });
 
