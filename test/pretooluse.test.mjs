@@ -88,6 +88,50 @@ test("(나) 실제로 실행되는 위험 명령은 여전히 막힌다: 래퍼�
   assert.equal(isPush("Bash", { command: "for b in a; do git push -u origin $b; done" }), true);
 });
 
+// 🛑🛑 **1회차가 진짜 위험 4건을 열었고, 그때 검사 757개가 전부 초록이었다.** 이 칸이 그 구멍을 잰다.
+//   1회차의 잘못은 목록의 **방향**이었다: "아는 실행기면 안 덮는다" → 목록 밖은 덮인다 = 모르면 열린다.
+//   지금은 뒤집혀 있다: "글자를 먹는 것이 확실하면 덮는다" → 목록 밖은 안 덮는다 = 모르면 닫힌다.
+//   그래서 아래 세 축은 **목록에 없어서 막혀야 하는** 것들이다. 목록을 늘려 고치려 들면 안 된다.
+test("(다) 목록 밖이면 안 덮는다: 전체 경로 표기 · 모르는 도구 · 파이프로 받는 대상", () => {
+  // 축 1: 전체·상대 경로로 부른 실행기. 1회차는 `/bin/sh` 앞의 `/` 때문에 낱말 경계에 안 걸려 열렸다.
+  assert.equal(bash('/bin/sh -c "rm -rf /*"'), "rm-recursive");
+  assert.equal(bash('/bin/bash -c "rm -rf $HOME"'), "rm-recursive");
+  assert.equal(bash('/usr/bin/env sh -c "rm -rf /*"'), "rm-recursive");
+  assert.equal(bash('./run.sh "rm -rf /*"'), "rm-recursive");
+  assert.equal(bash('"$SHELL" -c "rm -rf /*"'), "rm-recursive");
+  assert.equal(isPush("Bash", { command: '/bin/sh -c "git push origin main"' }), true);
+  assert.equal(isPush("Bash", { command: './deploy.sh "git push"' }), true);
+  // 축 2: 목록에 없는 도구. 새 도구가 생겨도 **자동으로 안전측**이어야 한다.
+  assert.equal(bash(`awk 'BEGIN{system("rm -rf /*")}'`), "rm-recursive");
+  assert.equal(bash(`perl -e 'system("rm -rf /*")'`), "rm-recursive");
+  assert.equal(bash(`ansible all -a "rm -rf /*"`), "rm-recursive");
+  assert.equal(bash(`myfunc "rm -rf /*"`), "rm-recursive", "사용자가 만든 함수도 모르는 도구다");
+  assert.equal(isPush("Bash", { command: `awk 'BEGIN{system("git push")}'` }), true);
+  assert.equal(isPush("Bash", { command: 'myfunc "git push origin main"' }), true);
+  // 축 3: 대상을 파이프·find 로 넘겨 rm 자리에 인자가 안 보이는 형태.
+  assert.equal(bash("find / -name '*.log' | xargs rm -rf"), "rm-recursive");
+  assert.equal(bash("find / -print0 | xargs -0 rm -rf"), "rm-recursive");
+  assert.equal(bash("ls / | xargs rm -rf"), "rm-recursive");
+  assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive");
+  // 축 4: 덮을 자격은 **물려받는다**. 바깥이 글자를 먹는 자리가 아니면 안쪽도 못 덮는다.
+  assert.equal(bash(`eval $(echo "rm -rf / ")`), "rm-recursive", "안쪽 echo 만 보고 덮으면 진짜 실행이 샌다");
+  assert.equal(bash(`bash -c "$(echo "rm -rf / ")"`), "rm-recursive");
+  assert.equal(isPush("Bash", { command: `eval $(echo "git push")` }), true);
+});
+
+test("(라) 강제 push 도 같은 짝을 지킨다: 글자는 통과 · 실행은 차단", () => {
+  // 1회차가 남긴 짝. 판정이 마스킹 앞에 있어 커밋 메시지에 적기만 해도 하드 차단이었다.
+  assert.equal(bash('git commit -m "규칙: git push --force 는 금지"'), null);
+  assert.equal(bash("git commit -F - <<'MSG'\n금지: git push --force\nMSG"), null);
+  // 실행은 그대로 막힌다.
+  assert.equal(bash("git push --force origin main"), "force-push");
+  assert.equal(bash("git push -f origin main"), "force-push");
+  assert.equal(bash('/bin/sh -c "git push --force origin main"'), "force-push");
+  assert.equal(bash(`awk 'BEGIN{system("git push --force")}'`), "force-push");
+  assert.equal(bash('echo "git push --force" | bash'), "force-push");
+  assert.equal(bash("git push --force-with-lease origin main"), null, "안전 강제는 그대로 허용");
+});
+
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
   const same = (cmd) => assert.equal(executableText(cmd).length, cmd.length, "길이가 바뀌면 호출자의 인덱스 계산이 어긋난다");
   same('git commit -m "rm -rf /"');
@@ -112,7 +156,15 @@ test("rm 위험 타깃은 그 rm 자신의 인자 구간에서만 본다", () =>
   assert.equal(rmHitsDangerTarget("rm -rf build && cd .."), false, "다른 명령의 `..` 는 이 rm 의 인자가 아니다");
   assert.equal(rmHitsDangerTarget("cd .. && rm -rf build"), false);
   assert.equal(rmHitsDangerTarget("rm -rf build; rm -rf /"), true, "여러 rm 중 하나라도 위험하면 잡는다");
-  assert.equal(rmHitsDangerTarget("rm -rf \\\n  /"), true, "줄 이음은 인자 구간의 끝이 아니다");
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  /"), true, "줄 이음 뒤 위험 대상은 잡는다");
+  // 🛑 줄 이음을 구간의 끝으로 보면 인자가 **빈 것처럼** 보여 아래가 옛 판 검사로 떨어지고,
+  //   남의 자리 `cd /` 때문에 정상 삭제가 막힌다. 위 줄만으로는 이 되돌림이 안 잡힌다
+  //   (거기선 온 명령 검사도 같은 답을 내서 두 배선이 구분되지 않는다).
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  ./build && cd /"), false, "줄 이음 뒤 안전한 대상이 보여야 한다");
+  // 대상이 이 자리에 안 보이면(파이프·자리표) 옛 판대로 온 명령을 본다(안전측 되돌림).
+  assert.equal(rmHitsDangerTarget("ls / | xargs rm -rf"), true, "인자가 비었으면 앞 세그먼트도 본다");
+  assert.equal(rmHitsDangerTarget("find / -exec rm -rf {} \\;"), true, "자리표뿐이면 앞도 본다");
+  assert.equal(rmHitsDangerTarget("ls build | xargs rm -rf"), false, "앞에도 위험 대상이 없으면 안 막는다");
   assert.equal(rmHitsDangerTarget("rm -rf . && ls"), true, "구간을 자르면 `$` 가 인자 끝을 뜻해 오히려 더 잡는다");
 });
 

@@ -28,13 +28,20 @@ const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/
 //   `rm -rf \`(개행)`  /` 같은 진짜 위험이 인자 없는 rm 으로 보여 빠져나간다.
 const RM_RECURSIVE_G = new RegExp(RM_RECURSIVE.source, "g");
 const RM_ARGS_END = /[|;&<>]|(?<!\\)\n/;
+// 🛑 **대상이 이 자리에 안 보이는 형태**: 인자 구간이 비었거나 자리표(`{}`)·`--`·플래그·이스케이프뿐.
+//   `find / -name '*.log' | xargs rm -rf` · `find … -exec rm -rf {} \;` 가 그렇다. 대상은 앞 세그먼트가
+//   파이프로 넘긴다. 1회차가 이 갈래를 놓쳐 **옛 판이 막던 진짜 위험을 통과시켰다**(게이트 적발).
+//   정적으로 못 푸니 그 경우엔 **옛 판대로 온 명령을 본다**(안전측 되돌림 · 과차단 방향).
+const RM_ARGS_OPAQUE = /^(?:\s|\{\}|--|-[a-zA-Z]+|\\.?)*$/;
 function rmHitsDangerTarget(cmd) {
   const s = String(cmd || "");
   RM_RECURSIVE_G.lastIndex = 0;   // 전역 정규식은 상태를 들고 다닌다: 누가 test 를 부르면 시작점이 밀린다
   for (const m of s.matchAll(RM_RECURSIVE_G)) {
     const rest = s.slice(m.index + m[0].length);
     const end = rest.search(RM_ARGS_END);
-    if (RM_DANGER_TARGET.test(end === -1 ? rest : rest.slice(0, end))) return true;
+    const args = end === -1 ? rest : rest.slice(0, end);
+    if (RM_DANGER_TARGET.test(args)) return true;
+    if (RM_ARGS_OPAQUE.test(args) && RM_DANGER_TARGET.test(s)) return true;
   }
   return false;
 }
@@ -160,34 +167,51 @@ function isDeploy(cmd) {
 //   실측(2026-08-13 · 실기록 2,137파일 전수 재생): 서브에이전트 push 차단 9건 중 7건이 이 모양이었다
 //   (`git -C … grep -n "u-push\|git push" -- …` 로 훅을 **검토하던 에이전트 자신이** 막혔다).
 //
-// 🛑 **이 함수는 가드를 여는 쪽이라 방향이 전부 안전측이어야 한다.** 그래서 세 가지를 지킨다.
+// 🛑 **이 함수는 가드를 여는 쪽이라, 목록의 빈칸이 안전측으로 떨어져야 한다.**
+//
+// 🛑🛑 **1회차에 목록의 방향을 거꾸로 잡아 진짜 위험 4건을 열었다**(2026-08-14 게이트가 실행으로
+//   적발). 그 판은 "아는 실행기(`sh|bash|…`)면 안 덮는다"였다. 그러면 **목록 밖은 덮인다** =
+//   모르면 열린다. 실제로 뚫린 것: `/bin/sh -c "rm -rf /*"`(앞이 `/` 라 낱말 경계에 안 걸림) ·
+//   `/bin/bash -c "rm -rf $HOME"` · `awk 'BEGIN{system("rm -rf /*")}'`(목록에 없는 도구).
+//   바로 아래 (1) 이 "화이트리스트는 목록 밖을 통과시키는 쪽으로 틀린다"고 스스로 적어 뒀는데
+//   그 목록 자신이 정확히 그 방향이었다. **목록을 늘려서 고치지 말 것** - 방향이 문제다.
+//
+// 그래서 지금 판은 이렇게 지킨다.
 //   (1) **덜어내는 것은 따옴표 안과 인용 히어독 본문뿐**이다. 그 밖의 셸 문법(키워드·서브셸·
-//       리다이렉션·연산자)은 손대지 않는다. 명령 자리 화이트리스트를 쓰지 않는 이유가 이것이다:
-//       화이트리스트는 목록에 없는 문법(`then git push` · `do git push`)을 **통과**시키는 쪽으로
-//       틀리는데, 안전 가드에서 그 방향은 구멍이다. 여기서는 모르는 문법이면 그대로 검사한다.
-//   (2) **실행되는 인용은 안 덜어낸다.** 같은 세그먼트에서 따옴표 **앞**에 실행기 낱말이 있으면
-//       (`bash -c "git push"` · `ssh host "rm -rf /"` · `eval '…'`) 그 세그먼트는 통째로 원문을 쓴다.
-//       판정은 따옴표 **밖의 낱말**만 본다: 따옴표 안 글자로 이 판정을 흔들 수 없어야 한다.
-//   (3) **모르겠으면 원문**(fail-closed). 따옴표 짝이 안 맞거나 히어독 끝을 못 찾거나 통째로 셸에
+//       리다이렉션·연산자)은 손대지 않는다. 모르는 문법이면 그대로 검사한다.
+//   (2) **글자를 먹는 것이 확실한 명령일 때만 덮는다**(`TEXT_CONSUMER_RE`). 그 목록에 없으면
+//       **안 덮는다.** `/bin/sh -c` 든 `awk` 든 처음 보는 도구든, 모르면 옛 판 그대로 검사한다.
+//       목록에 넣는 근거는 **실측 코퍼스에서 헛막음을 낸 형태**뿐이다(추측으로 넓히지 않는다).
+//   (3) **덮는 자격은 물려받는다.** 명령치환·따옴표 안으로 들어갈 때 바깥이 글자를 먹는
+//       자리가 아니었으면 안쪽도 못 덮는다. 이게 없으면 `eval $(echo "rm -rf / ")` 처럼
+//       안쪽만 보고 덮어 버려 진짜 실행이 샌다.
+//   (4) **모르겠으면 원문**(fail-closed). 따옴표 짝이 안 맞거나 히어독 끝을 못 찾거나 통째로 셸에
 //       먹이는 형태(`echo "…" | bash`)면 마스킹을 아예 안 한다.
 // 길이는 반드시 보존한다(덜어낸 자리는 같은 수의 공백). 호출자가 인덱스로 원문 구간을 되짚는다
 //   (`rmHitsDangerTarget` 의 인자 구간 계산).
 //
-// 남는 구멍(정직): 글자를 파일에 적어 두고 나중에 그 파일을 돌리는 형태(`echo "git push" > f; bash f`)는
-//   못 잡는다. 그 클래스는 이 판 전에도 여러 갈래로 열려 있었고(Write 도구 경로 · `printf 'git ''push'`),
-//   여기서 닫으려면 정적 해석이 못 버티는 크기가 된다.
-const EXECUTORS = "sh|bash|zsh|ksh|dash|eval|sudo|su|env|command|nohup|time|timeout|xargs|exec|watch|flock|script|ssh|docker|kubectl|find|python|python3|node|perl|ruby|php";
-// 따옴표 **밖**에서 실행기가 낱말로 등장하는가. `-c`·경로·`VAR=` 는 낱말이 아니라 걸리지 않는다.
-const EXECUTOR_WORD = new RegExp("(?:^|[\\s(){}!&|;])(?:" + EXECUTORS + ")(?=\\s|$)");
+// 남는 구멍(정직):
+//   - 글자를 파일에 적어 두고 나중에 그 파일을 돌리는 형태(`echo "git push" > f; bash f`)는 못 잡는다.
+//     이 판 전에도 여러 갈래로 열려 있던 클래스다(Write 도구 경로 · `printf 'git ''push'`).
+//   - **파이프로 대상을 받는 삭제**(`… | xargs rm -rf`)는 인자가 그 자리에 안 보인다.
+//     `rmHitsDangerTarget` 이 그 경우 **옛 판대로 온 명령을 본다**(아래 RM_ARGS_OPAQUE). 정적으로
+//     푼 것이 아니라 안전측으로 되돌린 것이라, 앞 세그먼트에 위험 글자가 있으면 과차단이 난다.
+// 이 목록은 **글자를 먹는 쪽**이다: 여기 없으면 안 덮는다(닫히는 쪽으로 틀린다).
+//   근거는 전부 실측 코퍼스다 - `git commit -m/-F`(커밋 메시지 본문) · `git grep`·`grep`(검색어) ·
+//   `echo`·`printf`(시험용 JSON) · `cat`(히어독으로 문서·각본 쓰기). 그 밖은 안 넣었다.
+const TEXT_CONSUMER_RE = /(?:^|[\s(){}!&|;])(?:echo|printf|cat|grep|egrep|fgrep|zgrep)(?=\s|$)|(?:^|[\s(){}!&|;])git\b[^\n]*?\s(?:commit|grep)(?=\s|$)/;
 // 통째로 셸·인터프리터에 **코드로** 먹이는 형태. 이게 보이면 마스킹을 접는다(옛 판 그대로 검사).
-//   `echo "git push" | bash` 는 따옴표 안 글자가 그대로 실행된다 - 여기서 마스킹하면 진짜 실행이 샌다.
+//   `echo "rm -rf / " | bash` 는 따옴표 안 글자가 그대로 실행된다 - 여기서 마스킹하면 진짜 실행이 샌다.
+//   `echo` 는 위 목록에 있으므로 이 백스톱이 없으면 그 한 줄이 통째로 열린다.
 // ⚠ 갈리는 지점은 **인터프리터가 표준입력을 코드로 읽느냐**다. 뒤에 각본 파일이 붙으면
 //   (`| node hook.js` · `| python3 probe.py`) 표준입력은 그냥 **데이터**라 마스킹을 접을 이유가 없다.
 //   이 구분이 없으면 이 저장소가 늘 하는 훅 자기 시험(`printf '{"command":"git push"}' | node hook.js`)이
 //   전부 오차단으로 남는다(실측 2건). 반대로 각본이 없거나 `-`·플래그뿐이면(`| bash` · `| bash -x` ·
 //   `| python3 -` · `| VAR=1 bash`) 표준입력이 코드다.
 // 앞머리 환경변수·sudo·env 는 건너뛴다: 그게 없으면 `| VAR=1 bash` 한 줄로 이 백스톱이 풀린다.
-const PIPE_TARGET = /\|\s*(?:(?:\w+=\S*|sudo|env|command|nohup|exec)\s+)*(sh|bash|zsh|ksh|dash|eval|xargs|python3?|node|perl|ruby|php)\b([^|;&\n]*)/g;
+// 🛑 인터프리터 이름은 **이 상수 하나**다. 두 벌로 두면 한쪽만 늘 때 조용히 어긋난다(1회차 지적).
+const INTERPRETERS = "sh|bash|zsh|ksh|dash|eval|xargs|python3?|node|perl|ruby|php|awk|gawk";
+const PIPE_TARGET = new RegExp("\\|\\s*(?:(?:\\w+=\\S*|sudo|env|command|nohup|exec)\\s+)*(" + INTERPRETERS + ")\\b([^|;&\\n]*)", "g");
 function pipesIntoInterpreter(s) {
   PIPE_TARGET.lastIndex = 0;   // 위 RM_RECURSIVE_G 와 같은 이유
   for (const m of String(s).matchAll(PIPE_TARGET)) {
@@ -237,6 +261,7 @@ function maskQuotedText(s) {
 
   // 겹따옴표 구간. 글자 부분만 덮고, 명령치환(`$( … )`·백틱)은 **실행되는 자리라 다시 훑는다**.
   //   `git commit -m "$(rm -rf /)"` 를 통째로 인용으로 읽으면 진짜 실행이 통과한다.
+  //   `mask` 는 바깥에서 계산해 넘긴다: 안쪽이 스스로 자격을 만들어 내면 안 된다(위 (3)).
   function doubleQuote(open, to, mask, depth) {
     let j = open + 1, lit = j;
     while (j < to) {
@@ -249,7 +274,7 @@ function maskQuotedText(s) {
         if (c === "`") close = s.indexOf("`", j + 1);
         else close = matchParen(j + 1, to);
         if (close === -1 || close >= to) return -1;
-        scan(c === "`" ? j + 1 : j + 2, close, depth + 1);
+        scan(c === "`" ? j + 1 : j + 2, close, depth + 1, mask);
         j = close + 1; lit = j; continue;
       }
       j++;
@@ -257,11 +282,13 @@ function maskQuotedText(s) {
     return -1;
   }
 
-  // 코드 구간 [from, to) 를 훑는다. 실행기 판정(plain)은 이 구간 안에서만 센다.
-  function scan(from, to, depth) {
+  // 코드 구간 [from, to) 를 훑는다. 명령 판정(plain)은 이 구간 안에서만 센다.
+  // `allow` = **바깥이 글자를 먹는 자리였나**. 거짓이면 이 구간에서는 아무것도 안 덮는다:
+  //   `eval $(echo "rm -rf / ")` 에서 안쪽 `echo` 만 보고 덮으면 진짜 실행이 샌다.
+  function scan(from, to, depth, allow) {
     if (depth > MAX_SUBST_DEPTH) { ok = false; return; }   // 너무 깊다 = 못 읽음(원문으로 떨어진다)
     let plain = "";
-    const execHere = () => EXECUTOR_WORD.test(plain);
+    const maskHere = () => allow && TEXT_CONSUMER_RE.test(plain);
     let i = from;
     while (i < to && ok) {
       const ch = s[i];
@@ -269,13 +296,13 @@ function maskQuotedText(s) {
       if (ch === "$" && s[i + 1] === "(") {              // 명령치환: 실행되는 자리 → 안쪽을 다시 훑는다
         const close = matchParen(i + 1, to);
         if (close === -1) { ok = false; return; }
-        scan(i + 2, close, depth + 1);
+        scan(i + 2, close, depth + 1, maskHere());
         i = close + 1; plain = ""; continue;
       }
       if (ch === "`") {
         const close = s.indexOf("`", i + 1);
         if (close === -1 || close >= to) { ok = false; return; }
-        scan(i + 1, close, depth + 1);
+        scan(i + 1, close, depth + 1, maskHere());
         i = close + 1; plain = ""; continue;
       }
       if (SEG_BREAK.indexOf(ch) !== -1) { plain = ""; i++; continue; }
@@ -290,18 +317,19 @@ function maskQuotedText(s) {
         const rel = endRe.exec(s.slice(bodyStart + 1, to));
         if (!rel) { ok = false; return; }                                  // 끝을 못 찾았다
         const bodyEnd = bodyStart + 1 + rel.index;
-        // ⚠ 실행기가 먹는 히어독(`bash <<EOF` · `python3 - <<PY`)은 본문이 곧 코드라 안 덜어낸다.
-        if (!execHere()) blank(bodyStart + 1, bodyEnd);
+        // ⚠ `cat > f <<EOF` 처럼 **글자를 먹는** 히어독만 덜어낸다. `bash <<EOF` · `python3 - <<PY` 는
+        //   본문이 곧 코드라 그대로 둔다(목록에 없으니 자동으로 그렇게 떨어진다).
+        if (maskHere()) blank(bodyStart + 1, bodyEnd);
         i = bodyEnd + rel[0].length; plain += " "; continue;
       }
       if (ch === "'") {
         const close = s.indexOf("'", i + 1);
         if (close === -1 || close >= to) { ok = false; return; }
-        if (!execHere()) blank(i + 1, close);
+        if (maskHere()) blank(i + 1, close);
         i = close + 1; plain += " "; continue;
       }
       if (ch === '"') {
-        const close = doubleQuote(i, to, !execHere(), depth);
+        const close = doubleQuote(i, to, maskHere(), depth);
         if (close === -1) { ok = false; return; }
         i = close + 1; plain += " "; continue;
       }
@@ -309,7 +337,7 @@ function maskQuotedText(s) {
     }
   }
 
-  scan(0, s.length, 0);
+  scan(0, s.length, 0, true);   // 맨 바깥은 덮을 자격이 있다(명령마다 TEXT_CONSUMER_RE 로 다시 본다)
   return ok ? out.join("") : s;
 }
 
@@ -398,13 +426,15 @@ function block(toolName, toolInput) {
   const name = toolName || "";
   if (name === "Bash") {
     const cmd = String((toolInput && toolInput.command) || "");
-    if (FORCE_PUSH.test(cmd)) return "force-push";
-    // 🛑 **마스킹(`executableText`)을 쓰는 판정은 이 한 줄과 `isPush` 둘뿐이다.** 아래 배포·env-encoder·
-    //   SQL 은 옛 판 그대로 `cmd` 를 본다. 왜 안 넓혔나: 마스킹은 가드를 **여는** 쪽이라, 한 규칙마다
-    //   "무엇이 열리는가"를 실기록으로 따로 재야 한다. 이번 판이 실측으로 연 것은 rm·push 둘이다
-    //   (env-encoder 98건 · 배포 17건 · SQL 27건은 안 봤다: 후속 후보). 여기서 `cmd` 를 통째로
-    //   `execText` 로 바꾸면 재지 않은 세 규칙이 조용히 함께 열린다.
+    // 🛑 **마스킹(`executableText`)을 쓰는 판정은 여기 세 줄과 `isPush` 뿐이다**: 강제 push · 재귀 삭제 · push.
+    //   아래 **배포 · env-encoder · SQL 은 옛 판 그대로 `cmd` 를 본다** - 그 셋은 지금도 커밋 메시지에
+    //   글자로 적기만 해도 막힐 수 있다(같은 오차단이 남아 있다). 왜 안 넓혔나: 마스킹은 가드를
+    //   **여는** 쪽이라 한 규칙마다 "무엇이 열리는가"를 실기록으로 따로 재야 하는데, 이번 판이 실측으로
+    //   잰 것은 삭제·push 둘뿐이다(env-encoder 98건 · 배포 17건 · SQL 27건은 안 봤다: 후속 후보).
+    //   `cmd` 를 통째로 `execText` 로 바꾸면 재지 않은 세 규칙이 조용히 함께 열린다.
     const execText = executableText(cmd);
+    // 강제 push 도 같은 짝이다: `git commit -m "… --force 는 금지"` 가 하드 차단이었다(1회차 지적).
+    if (FORCE_PUSH.test(execText)) return "force-push";
     if (rmHitsDangerTarget(execText)) return "rm-recursive";
     if (isDeploy(cmd)) return "deploy";
     // .env를 인코딩/조각내 마스킹을 우회하려는 시도 차단(G7). 평문 cat/grep은 허용: PostToolUse 마스킹이 처리.
