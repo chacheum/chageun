@@ -7,9 +7,19 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { collectSecrets, redact } = require("./secret-scan-core.js");
-const { boardIgnoreVerdict } = require("./board-ignore-core.js");
-const boardRoot = require("./board-root-core.js");
-const auto = require("./statusboard-auto-core.js");
+// 🛑 **상황판 계열 require 는 감싼다.** 최상위 require 는 모듈 로드 시점에 던져서 아래 어떤
+//   try/catch 도 못 잡고 훅이 통째로 죽는다. 이 훅의 본업은 `.env` 값 가리기(G7)라, 편의
+//   기능의 파일 하나가 없어지는 것으로 **비밀값이 그대로 모델에 흘러가면 안 된다.**
+//   못 부르면 상황판 갈래만 잠들고(아래 autoBoard 첫 줄) 가리기는 그대로 돈다.
+let boardIgnoreVerdict = () => "unknown";   // 계약: ok 가 아니면 PostToolUse 는 안 쓴다
+let boardRoot = null, auto = null;
+try {
+  ({ boardIgnoreVerdict } = require("./board-ignore-core.js"));
+  boardRoot = require("./board-root-core.js");
+  auto = require("./statusboard-auto-core.js");
+} catch (e) {
+  process.stderr.write("chageun: 상황판 모듈을 못 불렀다(.env 가리기는 그대로 산다): " + e.message + "\n");
+}
 
 function redactDeep(node, secrets, stats) {
   if (typeof node === "string") { const r = redact(node, secrets); stats.count += r.count; return r.text; }
@@ -62,7 +72,7 @@ function decide(input) {
 //    다른 훅에서 되살리지 않는다: 늘어난 만큼만 바이트 자리로 읽는다.
 // ⚠ **도구 이름으로 안 거른다.** 읽는 것은 `tool_response` 가 아니라 `transcript_path` 라,
 //    이 절은 "PostToolUse 가 Agent 호출에서도 도는가"에 안 걸린다(안 돌면 다음 호출이 따라잡는다).
-const BOARD_FILE = boardRoot.FILE;
+const BOARD_FILE = boardRoot ? boardRoot.FILE : "status.md";
 const TAIL_BYTES = 512 * 1024;          // 자리를 못 믿을 때 다시 보는 꼬리
 const MAX_DELTA = 4 * 1024 * 1024;      // 한 회차에 보는 최대량
 const FP_WINDOW = 64 * 1024;            // 지문 대조용 창
@@ -126,6 +136,7 @@ function boardIgnorePasses(st, dir, now) {
 }
 
 function autoBoard(input) {
+  if (!boardRoot || !auto) return;      // 상황판 모듈이 없으면 이 갈래만 잠든다(위 머리 주석)
   const cwd = input.cwd || process.cwd();
   const key = boardSessionKey(input);
   const tpath = input.transcript_path;
@@ -141,13 +152,17 @@ function autoBoard(input) {
   const save = () => { try { fs.writeFileSync(file, JSON.stringify(st)); } catch (_) { /* 침묵 */ } };
 
   // 상황판이 없으면 여기서 끝이다. 🛑 만들지 않는다.
-  // 🛑 켠 폴더 한 곳이 아니라 경계까지 위로 걷는다(board-root-core.js). 판정이 세션 시작 부록·
-  //    안내와 **같은 답**이어야 한다: 작업방에서 켠 세션이 저장소 뿌리의 상황판을 못 보면
-  //    사용자가 웹으로 보는 그 파일의 §2 가 그 세션 내내 안 갱신되고, 마지막 확인 시각만 얼어붙는다.
-  //    없는 프로젝트의 상시 비용은 `existsSync` 한 번에서 **최대 12번**으로 는다(MAX_UP).
-  //    이 자리는 이미 mkdir 한 번과 상태 파일 읽기를 지난 뒤라 이 델타는 그 안에 묻힌다.
+  // 판정은 훅 셋이 같은 부품으로 짓는다(board-root-core.js): 켠 폴더 한 곳이 아니라 경계까지
+  //   위로 걷는다. 없는 프로젝트의 상시 비용은 `existsSync` 한 번에서 **최대 12번**으로 는다
+  //   (MAX_UP). 이 자리는 이미 mkdir 한 번과 상태 파일 읽기를 지난 뒤라 델타가 그 안에 묻힌다.
   const boardDir = boardRoot.findBoardDir(cwd);
   if (boardDir === null) return;
+  // 🛑 **쓰는 것은 켠 폴더가 그 폴더일 때만 한다.** 찾기를 위로 넓히면 뿌리 세션과 그 아래
+  //    작업방 세션들이 **같은 파일 하나**를 대상으로 삼는데, 세션마다 장부가 따로라 각자
+  //    자기 목록으로 §2 전체를 갈아 끼운다: 서로의 줄을 조용히 지운다. 하위 세션은 상황판을
+  //    읽기만 한다(있다는 사실은 안내·부록이 이미 알려 준다).
+  //    ⚠ 이 한 줄이 **읽기와 쓰기의 경계**다. 지우면 겹쳐 쓰기가 그날로 돌아온다.
+  if (path.resolve(cwd) !== boardDir) return;
   const board = path.join(boardDir, BOARD_FILE);
 
   const size = fs.statSync(tpath).size;
@@ -214,10 +229,10 @@ function autoBoard(input) {
   const targetIsBoard = !!(ti && ti.file_path && path.resolve(cwd, String(ti.file_path)) === board);
   const wantWrite = changed || st.pendingWrite === true;
   if (!wantWrite) { save(); return; }
-  // 🛑 무시 판정은 **켠 폴더가 아니라 상황판이 있는 폴더**에서 짓는다. `boardIgnoreVerdict` 는
-  //    `git ls-files/check-ignore status.md` 를 그 폴더에서 돌려 **상대 경로 하나**를 묻는다:
-  //    작업방에서 켠 세션이 켠 폴더로 물으면 지금 쓰려는 파일이 아니라 없는 다른 파일에 대한
-  //    답을 받아, 이 안전장치가 다른 파일을 지키게 된다.
+  // 무시 판정은 **상황판이 있는 폴더**에서 짓는다. `boardIgnoreVerdict` 는 그 폴더에서
+  //   `git ls-files/check-ignore status.md` 를 돌려 **상대 경로 하나**를 묻기 때문이다.
+  //   위 경계 한 줄 덕분에 여기서는 boardDir === cwd 가 이미 참이지만, 묻는 대상을 이름으로
+  //   적어 둔다: 나중에 그 줄이 풀리면 이 자리가 조용히 엉뚱한 파일을 묻게 된다.
   if (targetIsBoard || text == null || !boardIgnorePasses(st, boardDir, now)) { st.pendingWrite = true; save(); return; }
 
   let out = text;

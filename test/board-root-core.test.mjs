@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, copyFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, copyFileSync, cpSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,8 @@ const boardRoot = require(join(HOOKS, "board-root-core.js"));
 const { resolveRoot } = await import(join(SRC, "skills", "statusboard", "board-core.mjs"));
 const TEMPLATE = readFileSync(join(SRC, "skills", "statusboard", "board.template.md"), "utf8");
 
-const { findBoardDir, findBoardPath, isBoundaryDir, homeDirOf, FILE, MAX_UP } = boardRoot;
+const { findBoardDir, findBoardPath, isBoundaryDir, homeDirOf, FILE, MAX_UP, BOUNDARY_NAMES } = boardRoot;
+const MARK = "<!-- chageun:auto -->";   // 하드 차단의 내용 신호(경로만으로는 안 무장된다)
 
 // 홈 아래에 프로젝트 하나. 반환한 `env` 를 그대로 넘겨야 밀폐가 선다.
 function scene(prefix, opts = {}) {
@@ -88,12 +89,15 @@ test("상대 경로 HOME 은 경계로 안 쓴다(켠 폴더가 홈 행세를 �
   assert.equal(homeDirOf({ HOME: "proj" }), "", "path.resolve 가 상대값을 켠 폴더 기준으로 폈다");
 });
 
-test("`/home` 도 경계다(홈이 딴 데여도 남의 홈 트리로 안 오른다)", () => {
+test("`/home` · `/Users` 도 경계다(홈이 딴 데여도 남의 홈 트리로 안 오른다)", () => {
   // 없는 이름을 쓴다: 이 기계의 진짜 홈을 건드리지 않는다.
+  // `/Users` 는 macOS 의 홈 부모다 - 차근은 공개 플러그인이라 리눅스 이름만 알면 그 기계에서
+  // 한 단 더 오른다. 이 저장소는 리눅스에서 도니 **경로 문자열로만** 잰다.
   assert.equal(findBoardDir("/home/nobody-xyz/proj", { HOME: "/nowhere" }), null);
-  assert.equal(isBoundaryDir("/home", { HOME: "/nowhere" }), true);
-  assert.equal(isBoundaryDir("/", { HOME: "/nowhere" }), true);
+  assert.equal(findBoardDir("/Users/nobody-xyz/proj", { HOME: "/nowhere" }), null);
+  for (const b of ["/", "/home", "/Users"]) assert.equal(isBoundaryDir(b, { HOME: "/nowhere" }), true, b);
   assert.equal(isBoundaryDir("/home/nobody-xyz", { HOME: "/nowhere" }), false);
+  assert.deepEqual(BOUNDARY_NAMES, ["/", "/home", "/Users"]);
 });
 
 test(`상한 ${MAX_UP}단: 그 안이면 찾고 넘으면 포기한다`, () => {
@@ -101,6 +105,8 @@ test(`상한 ${MAX_UP}단: 그 안이면 찾고 넘으면 포기한다`, () => {
   //    기대값이 같이 따라 움직여 **일부러 부숴도 초록**이다(자기 자신을 기준 삼은 검사).
   //    실측: 상수를 40으로 바꾸고 돌렸더니 21칸 전부 통과했다.
   assert.equal(MAX_UP, 12, "상한이 바뀌었다 - 값을 바꾸려면 이 줄과 훅 주석의 '최대 12번'을 함께 고친다");
+  // 같은 자기참조가 `FILE` 에도 있다: 시나리오와 기대값 양쪽에 쓰이니 값 자체를 박아 둔다.
+  assert.equal(FILE, "status.md", "파일 이름이 바뀌면 상황판이 한 프로젝트에 두 장 생긴다");
   const home = tmpDir("br-g-");
   const mk = (depth) => {
     const boardAt = join(home, "repo-" + depth);
@@ -122,6 +128,7 @@ test("경계 셋이 board-core.mjs 의 resolveRoot 와 같다", () => {
   for (const [cwd, env] of [
     ["/home/u/proj", { HOME: "/home/u" }],
     ["/home/u", { HOME: "/nowhere" }],
+    ["/Users/u", { HOME: "/nowhere" }],     // macOS 홈 부모도 양쪽이 같이 안다
     ["/proj", { HOME: "/nowhere" }],
   ]) {
     assert.equal(resolveRoot(cwd, env).single, true, `${cwd}: resolveRoot 가 안 멈춘다`);
@@ -263,25 +270,123 @@ function autoScene(prefix, ignoreLine) {
   writeFileSync(tpath, spawnRec("call_1", "aac7930e76fa2c5e9", "상황판 자동 갱신", Date.now()));
   return { home, repo, nested, tpath, board: join(repo, FILE), env: { HOME: home } };
 }
-const fireAuto = (s, sid, cache) => runHook("posttooluse.js", {
-  session_id: sid, transcript_path: s.tpath, cwd: s.nested,
+const fireAuto = (s, sid, cache, cwd) => runHook("posttooluse.js", {
+  session_id: sid, transcript_path: s.tpath, cwd,
   tool_name: "Bash", tool_input: { command: "ls" }, tool_response: "ok",
 }, { ...s.env, XDG_CACHE_HOME: cache });
 
-test("행동층: 작업방에서 켜도 §2 가 저장소 뿌리의 상황판에 쓰인다", () => {
+test("행동층: 뿌리 세션은 §2 를 쓴다(경계 한 줄이 정상 갈래까지 막지 않았다)", () => {
   const s = autoScene("br-k-", FILE);
-  assert.equal(fireAuto(s, "br-k1", tmpDir("br-cache4-")).code, 0);
-  assert.match(readFileSync(s.board, "utf8"), /상황판 자동 갱신/,
-    "켠 폴더만 봐서 뿌리 상황판의 §2 가 그 세션 내내 안 갱신된다");
+  assert.equal(fireAuto(s, "br-k1", tmpDir("br-cache4-"), s.repo).code, 0);
+  assert.match(readFileSync(s.board, "utf8"), /상황판 자동 갱신/, "뿌리 세션이 §2 를 못 썼다");
+});
+
+test("행동층: 작업방 세션은 뿌리 상황판 §2 를 안 건드린다(세션끼리 서로 지우는 것을 막는다)", () => {
+  // 🛑 찾기를 위로 넓히면 뿌리 세션과 그 아래 작업방 세션들이 **같은 파일 하나**를 대상으로
+  //    삼는다. 세션마다 장부가 따로라 각자 자기 목록으로 §2 전체를 갈아 끼운다: 서로의 줄을
+  //    조용히 지운다. 하위 세션은 읽기만 한다.
+  const s = autoScene("br-l-", FILE);
+  const before = readFileSync(s.board, "utf8");
+  assert.equal(fireAuto(s, "br-l1", tmpDir("br-cache5-"), s.nested).code, 0);
+  assert.equal(readFileSync(s.board, "utf8"), before,
+    "작업방 세션이 뿌리 상황판을 갈아 끼웠다 - 뿌리 세션의 §2 줄이 조용히 지워진다");
   assert.ok(!existsSync(join(s.nested, FILE)), "작업방 안에 상황판을 새로 만들었다");
 });
 
-test("행동층: 무시 판정도 상황판이 있는 폴더에서 짓는다(뿌리만 막은 규칙)", () => {
-  // `/status.md` 는 뿌리의 그 파일 하나만 막는다. 켠 폴더(작업방)로 물으면 "안 막혔다"는
-  // 답이 와서, 지금 쓰려는 파일이 아닌 다른 파일에 대한 답으로 안전장치가 선다.
-  const s = autoScene("br-l-", "/" + FILE);
-  assert.equal(fireAuto(s, "br-l1", tmpDir("br-cache5-")).code, 0);
-  assert.match(readFileSync(s.board, "utf8"), /상황판 자동 갱신/, "무시 판정을 엉뚱한 폴더에서 지었다");
+// ── 모듈이 없어져도 차단은 산다 ──────────────────────────────────────────────
+//
+// 🛑 최상위 require 는 **모듈 로드 시점**에 던져서 훅 안 어떤 try/catch 도 못 잡는다. 훅이
+//    종료코드 1 로 죽으면 하네스는 "막지 않는 오류"로 보고 도구를 그대로 실행한다: 상황판과
+//    아무 상관 없는 비밀값·push·무인 park 차단이 그 세션 내내 통째로 꺼지고 화면에는 아무
+//    표시도 안 난다. 이 칸이 없으면 그 사고가 검사에 안 걸린다.
+
+// src 한 벌을 임시로 복사하고 파일 하나를 뺀다(훅이 형제 모듈과 ../skills 를 부른다).
+function srcWithout(prefix, rel) {
+  const dir = tmpDir(prefix);
+  cpSync(SRC, dir, { recursive: true });
+  rmSync(join(dir, rel), { force: true });
+  return join(dir, "hooks");
+}
+
+const DESTRUCTIVE = { tool_name: "Bash", tool_input: { command: "psql -c 'DROP TABLE users;'" }, cwd: "/srv/app" };
+
+for (const missing of ["hooks/board-root-core.js", "hooks/board-ignore-core.js"]) {
+  test(`${missing.split("/")[1]} 가 없어도 PreToolUse 차단은 종료코드 2 를 낸다`, () => {
+    const hooks = srcWithout("br-miss-", missing);
+    const r = spawnSync(process.execPath, [join(hooks, "pretooluse.js")],
+      { input: JSON.stringify(DESTRUCTIVE), env: BASE, encoding: "utf8" });
+    assert.equal(r.status, 2,
+      `종료코드 ${r.status} - 2가 아니면 하네스가 도구를 그대로 실행한다(차단이 통째로 꺼진 것): ` +
+      JSON.stringify((r.stderr || "").slice(0, 200)));
+  });
+}
+
+for (const missing of ["hooks/board-root-core.js", "hooks/statusboard-auto-core.js"]) {
+  test(`${missing.split("/")[1]} 가 없어도 PostToolUse 의 .env 가리기는 산다`, () => {
+    const hooks = srcWithout("br-miss2-", missing);
+    const proj = tmpDir("br-env-");
+    const value = "sk-" + "9f2b7c41aa";                 // 가짜 열쇠(값은 보고에 안 적는다)
+    writeFileSync(join(proj, ".env"), "API_KEY=" + value + "\n");
+    const r = spawnSync(process.execPath, [join(hooks, "posttooluse.js")], {
+      input: JSON.stringify({ cwd: proj, tool_name: "Bash", tool_input: { command: "cat .env" },
+        tool_response: "API_KEY=" + value }),
+      env: BASE, encoding: "utf8",
+    });
+    assert.equal(r.status, 0, "훅이 죽었다: " + JSON.stringify((r.stderr || "").slice(0, 200)));
+    assert.ok(r.stdout.includes("updatedToolOutput"), "가리기가 통째로 꺼졌다");
+    assert.ok(!r.stdout.includes(value), "가린다면서 값이 그대로 나갔다");
+  });
+}
+
+// ── 하드 차단이 제품이 가리키는 상황판을 본다 ────────────────────────────────
+
+test("작업방에서 뿌리 상황판에 비밀값을 넣는 편집이 차단된다", () => {
+  // 🛑 상황판은 평문 업무 보고서이고 웹으로도 보인다. 접속 정보가 적히는 것을 막는 겹이
+  //    이 차단뿐인데, 켠 폴더만 보던 판에서는 작업방 세션의 그 편집이 통째로 밖에 있었다.
+  // ⚠ `.env` 를 **켠 폴더**에 둔다: `collectSecrets` 는 cwd 에서 아래로만 훑고 위로는 안 간다
+  //    (이 판이 안 건드린 별개 한계). 여기서 재는 것은 "그 편집이 차단 대상인가" 한 축이다.
+  const s = scene("br-leak-", { board: MARK + "\n| 무엇 | 언제 |\n" });
+  const value = "sk-" + "live-3c81d0aa27";              // 가짜 열쇠(값은 보고에 안 적는다)
+  writeFileSync(join(s.nested, ".env"), "DB_URL=" + value + "\n");
+  const r = runHook("pretooluse.js", {
+    tool_name: "Edit", cwd: s.nested, session_id: "br-leak1",
+    tool_input: { file_path: join(s.proj, FILE), old_string: "| 무엇 | 언제 |", new_string: "| 접속 | " + value + " |" },
+  }, { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache7-") });
+  assert.equal(r.code, 2, "작업방에서 뿌리 상황판에 비밀값을 넣는 편집이 안 막혔다");
+  assert.match(r.err, /값은 여기 다시 적지 않습니다/, "비밀값 전용 사유가 아니라 다른 차단에 걸렸다");
+  assert.ok(!r.err.includes("되돌리기 어려운 고위험 명령"), "일반 문구로 떨어졌다");
+  assert.ok(!r.err.includes(value), "차단하면서 값을 다시 적었다");
+});
+
+test("작업방에서 git 이 안 막은 뿌리 상황판을 고치면 차단된다", () => {
+  // 이쪽 겹은 `.env` 와 무관해서 작업방 세션을 온전히 덮는다: 무시 판정은 **찾은 상황판의
+  // 폴더**에서 짓는다(`path.dirname(boardTarget.abs)`).
+  const home = tmpDir("br-unign-");
+  const repo = join(home, "repo");
+  mkdirSync(repo, { recursive: true });
+  git(repo, ["init", "-q"]);                            // 무시 줄을 일부러 안 넣는다
+  writeFileSync(join(repo, FILE), MARK + "\n| 무엇 | 언제 |\n");
+  const nested = join(repo, ".claude", "worktrees", "agent-abc123");
+  mkdirSync(nested, { recursive: true });
+  const r = runHook("pretooluse.js", {
+    tool_name: "Edit", cwd: nested, session_id: "br-unign1",
+    tool_input: { file_path: join(repo, FILE), old_string: "| 무엇 | 언제 |", new_string: "| 한 일 | 오늘 |" },
+  }, { HOME: home, XDG_CACHE_HOME: tmpDir("br-cache9-") });
+  assert.equal(r.code, 2, "안 막힌 뿌리 상황판을 작업방에서 고치는 편집이 통과했다");
+  assert.match(r.err, /check-ignore|무시/, "무시 전용 사유가 아니라 다른 차단에 걸렸다");
+  assert.ok(!r.err.includes("되돌리기 어려운 고위험 명령"), "일반 문구로 떨어졌다");
+});
+
+test("남의 팀 status.md 오차단은 그대로 0(내용 신호가 없으면 안 막는다)", () => {
+  // 저장소 뿌리에 원래부터 status.md 를 두고 git 으로 추적하는 프로젝트가 정확히 그 경로다.
+  const s = scene("br-other-", { board: "# 우리 팀 상태\n\n아무 표시 없음\n" });
+  const value = "sk-" + "live-3c81d0aa27";
+  writeFileSync(join(s.proj, ".env"), "DB_URL=" + value + "\n");
+  const r = runHook("pretooluse.js", {
+    tool_name: "Edit", cwd: s.nested, session_id: "br-other1",
+    tool_input: { file_path: join(s.proj, FILE), old_string: "아무 표시 없음", new_string: "고침" },
+  }, { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache8-") });
+  assert.equal(r.code, 0, "표시 없는 남의 status.md 를 막았다 - 오차단이 이 저장소의 최대 실패 양식이다");
 });
 
 test("행동층: 어디에도 없으면 §2 는 아무 파일도 안 만든다", () => {

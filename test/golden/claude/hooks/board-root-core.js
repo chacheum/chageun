@@ -39,14 +39,24 @@ function homeDirOf(env) {
   return h && path.isAbsolute(h) ? path.resolve(h) : "";
 }
 
+// 경계 이름. `board-core.mjs` 의 `resolveRoot` 와 **같은 목록**이어야 한다(검사가 대조한다).
+// `/Users` 는 macOS 의 홈 부모다: 차근은 공개 플러그인이라 리눅스 이름만 알면 그 기계에서
+// 남의 홈 트리로 한 단 더 오른다.
+const BOUNDARY_NAMES = ["/", "/home", "/Users"];
+
+// 🛑 경계 판정은 **이 함수 하나**다. 부르는 자리마다 다시 적으면(지역 클로저 포함) 한쪽만
+//    고쳐진다 - 이 파일이 고치려던 사고와 같은 모양이다. home 을 미리 구해 넘길 수 있게
+//    두 번째 인자를 열어 둔다(걸음마다 env 를 다시 읽지 않으려고).
+function isBoundaryPath(dir, home) {
+  return BOUNDARY_NAMES.indexOf(dir) !== -1 || (!!home && dir === home);
+}
+
 /**
- * 경계 폴더인가. 홈 · `/home` · `/` 셋으로, `board-core.mjs` 의 `resolveRoot` 와 **같은 셋**이다.
- * (`resolveRoot`:40 · `pretooluse.js` 의 안내 갈래도 이미 이 셋을 본다.)
+ * 경계 폴더인가. 홈 · `/home` · `/Users` · `/` 로, `board-core.mjs` 의 `resolveRoot` 와 같다.
+ * (`pretooluse.js` 의 안내 갈래도 이 판정을 그대로 쓴다.)
  */
 function isBoundaryDir(dir, env) {
-  const home = homeDirOf(env);
-  const d = path.resolve(String(dir || "."));
-  return d === "/" || d === "/home" || (!!home && d === home);
+  return isBoundaryPath(path.resolve(String(dir || ".")), homeDirOf(env));
 }
 
 /**
@@ -63,11 +73,10 @@ function findBoardDir(startDir, env) {
   const home = homeDirOf(env);
   let dir;
   try { dir = path.resolve(String(startDir || ".")); } catch (_) { return null; }
-  const boundary = (d) => d === "/" || d === "/home" || (!!home && d === home);
   for (let i = 0; i < MAX_UP; i++) {
     try { if (fs.existsSync(path.join(dir, FILE))) return dir; } catch (_) { return null; }
     const parent = path.dirname(dir);
-    if (parent === dir || boundary(dir) || boundary(parent)) return null;
+    if (parent === dir || isBoundaryPath(dir, home) || isBoundaryPath(parent, home)) return null;
     dir = parent;
   }
   return null;
@@ -79,4 +88,4 @@ function findBoardPath(startDir, env) {
   return dir === null ? null : path.join(dir, FILE);
 }
 
-module.exports = { findBoardDir, findBoardPath, isBoundaryDir, homeDirOf, FILE, MAX_UP };
+module.exports = { findBoardDir, findBoardPath, isBoundaryDir, homeDirOf, FILE, MAX_UP, BOUNDARY_NAMES };

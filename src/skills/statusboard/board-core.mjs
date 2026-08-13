@@ -29,7 +29,9 @@ const isMarker = (l) => MARKERS.has(String(l).trim());
  * 어느 폴더를 훑을지 정한다.
  * 🛑 **언제나 `{root, single}` 객체 하나로** 돌려준다. 문자열과 객체를 섞어 돌려주면
  *    받는 쪽이 어느 쪽인지 몰라 안전장치가 조용히 무시된다.
- * 홈 폴더·`/`·`/home` 이 부모면 형제 폴더를 아예 안 훑고 지금 프로젝트 하나만 본다.
+ * 홈 폴더·`/`·`/home`·`/Users` 가 부모면 형제 폴더를 아예 안 훑고 지금 프로젝트 하나만 본다.
+ * (`/Users` 는 macOS 의 홈 부모다. 목록은 `hooks/board-root-core.js` 의 `BOUNDARY_NAMES` 와
+ *  **한 벌**이고 검사가 양쪽을 대조한다 - 한쪽만 고치면 두 답이 갈린다.)
  * (`env.HOME` 을 먼저 보는 이유: POSIX 의 homedir() 이 그 값을 읽는다 - 같은 사실을
  *  주입 가능하게 두어 검사가 진짜 홈을 어지럽히지 않고 이 갈래를 잰다.)
  */
@@ -37,7 +39,7 @@ export function resolveRoot(cwd, env = {}) {
   if (env.CHAGEUN_BOARD_ROOT) return { root: env.CHAGEUN_BOARD_ROOT, single: false };
   const home = env.HOME || homedir();
   const parent = dirname(cwd);
-  if (parent === "/" || parent === "/home" || parent === home) return { root: cwd, single: true };
+  if (parent === "/" || parent === "/home" || parent === "/Users" || parent === home) return { root: cwd, single: true };
   return { root: parent, single: false };
 }
 

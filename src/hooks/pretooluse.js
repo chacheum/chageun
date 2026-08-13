@@ -16,12 +16,32 @@ const componentBoundary = require("../skills/design-system/component-boundary-co
 //   아래 stdin 핸들러 밖이라 어떤 try/catch 도 못 잡는다). 배포판에 실리는지는 매니페스트
 //   `components.hooks` 가 정하고, test/build.test.mjs 의 existsSync 한 줄이 그 그물이다.
 const { unknownToolNotice, unknownToolMessage } = require("./tool-ledger-core.js");
-// v0.65.0 F-27(상황판). 무시 판정은 **별도 모듈**이다: 코어는 "순수 판정 로직 · fs 없음"이
-//   계약이라 git 호출이 들어가면 그 계약이 깨지고, posttooluse 가 판정 하나 때문에 코어
-//   전체를 끌어오게 된다. 소유는 여기(PreToolUse)이고 PostToolUse 는 쓰기만 한다.
-const { boardIgnoreVerdict } = require("./board-ignore-core.js");
-// "상황판이 있나 · 어디인가"는 훅 셋이 **같은 답**을 내야 한다(board-root-core.js 머리 주석).
-const boardRoot = require("./board-root-core.js");
+// v0.65.0 F-27(상황판).
+// 🛑 **상황판 계열 require 는 감싼다.** 최상위 require 는 모듈 로드 시점에 던져서 아래 어떤
+//   try/catch 도 못 잡고, 이 훅이 종료코드 1 로 죽는다. 하네스는 2가 아니면 "막지 않는 오류"로
+//   보고 도구를 그대로 실행하므로, 파일 하나가 없어지는 순간 **비밀값·push·무인 park·디자인 색·
+//   컴포넌트 경계 차단이 그 세션 내내 통째로 꺼진다** - 화면에는 아무 표시도 안 난다(실측:
+//   모듈 있을 때 exit 2 차단 · 없을 때 exit 1 통과). 상황판은 안전 장치가 아니라 편의라,
+//   못 부르면 **상황판 기능만 잠들고 차단은 산다**는 것이 기준이다.
+//   대체값은 전부 "아무것도 아니다" 쪽이다: 안내를 안 내고(경계로 봄), 상황판 대상이 없다고 보고,
+//   무시 판정은 계약대로 "unknown"(PreToolUse 에서 통과)이다.
+//   🛑 이 그물을 `pretooluse-core.js` 같은 **판정 본체**로 넓히지 말 것: 그것이 없으면 차단이
+//   없는 것이라 조용히 통과시키면 안 되고, 죽는 편이 옳다.
+let boardIgnoreVerdict = () => "unknown";
+let boardRoot = {
+  FILE: "status.md", isBoundaryDir: () => true,
+  findBoardDir: () => null, findBoardPath: () => null,
+};
+try {
+  // 무시 판정은 **별도 모듈**이다: 코어는 "순수 판정 로직 · fs 없음"이 계약이라 git 호출이
+  //   들어가면 그 계약이 깨지고, posttooluse 가 판정 하나 때문에 코어 전체를 끌어오게 된다.
+  //   소유는 여기(PreToolUse)이고 PostToolUse 는 쓰기만 한다.
+  ({ boardIgnoreVerdict } = require("./board-ignore-core.js"));
+  // "상황판이 있나 · 어디인가"는 훅 셋이 **같은 답**을 내야 한다(board-root-core.js 머리 주석).
+  boardRoot = require("./board-root-core.js");
+} catch (e) {
+  process.stderr.write("chageun: 상황판 모듈을 못 불렀다(차단은 그대로 산다): " + e.message + "\n");
+}
 const { collectSecrets, findLeaks } = require("./secret-scan-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
@@ -210,7 +230,18 @@ function boardHasMark(abs) {
 function boardTargetOf(name, ti, cwd) {
   if (!COMPONENT_EDIT_RE.test(String(name || ""))) return null;
   const abs = ti && ti.file_path ? path.resolve(cwd, ti.file_path) : null;
-  if (!abs || abs !== path.resolve(cwd, BOARD_FILE)) return null;
+  // 🛑 **제품이 가리키는 그 상황판**을 대상으로 삼는다. 켠 폴더만 보면 작업방·하위 폴더
+  //    세션이 뿌리 상황판을 고치는 편집이 통째로 차단 밖으로 나간다: 상황판은 평문 업무
+  //    보고서이고 웹으로도 보이는데, 거기 접속 정보가 적히는 것을 막는 겹이 이 차단뿐이다.
+  //    (옛 판에서는 그 세션에 "여기엔 없으니 만들어라" 안내가 떠 작업방 안에 새로 만들었고,
+  //     그 파일이 곧 `cwd/status.md` 라 차단이 덮었다. 이제 뿌리 파일이 유일한 정답이다.)
+  // 🛑 켠 폴더 자리(`here`)도 **함께** 본다. 찾은 것으로 갈아 끼우기만 하면 상황판이 아직
+  //    없을 때 `findBoardPath` 가 null 이라, **지금 만드는 편집**이 대상에서 빠져 4.5c 안내가
+  //    영영 안 나간다. 둘의 합집합이라 옛 판정의 상위집합이다 - 새 오차단은 안 생긴다.
+  // 비용: 이름이 `status.md` 일 때만 위로 걷는다. 보통 편집은 basename 비교에서 끝난다.
+  if (!abs || path.basename(abs) !== BOARD_FILE) return null;
+  const here = path.resolve(cwd, BOARD_FILE);
+  if (abs !== here && abs !== boardRoot.findBoardPath(cwd)) return null;
   const exists = fs.existsSync(abs);
   const armed = (exists && boardHasMark(abs)) || boardNewText(name, ti).indexOf(BOARD_MARK) !== -1;
   return { abs, exists, armed };
