@@ -5,11 +5,6 @@
   "license": "MIT",
   "keywords": ["workflow", "non-developer", "vibe-coding", "review", "safety", "korean", "english"],
   "author": { "name": "chacheum", "url": "https://github.com/chacheum/chageun" },
-  "dependencies": {
-    "claude": [
-      { "name": "superpowers", "marketplace": "claude-plugins-official", "version": "^6.0.0" }
-    ]
-  },
   "components": {
     "rules": ["operating-rules.md"],
     "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan", "unattended-loop", "finish-check", "spec-gate", "run-verify", "routing", "formats", "retrospect", "statusboard", "planning", "debugging", "test-design"],
