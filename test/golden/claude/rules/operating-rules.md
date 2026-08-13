@@ -38,7 +38,7 @@ LIGHT renderings - **mark them `LIGHT`** (hook exemption keys on that word) - ca
 **Words:** replace jargon with everyday words instead of glossing it in parentheses. Tables and bullets by default (3+ items: prefer a table). Name files, commands, and commit hashes only when the user will run or check them; quoted evidence and gate verdict labels are exempt.
 **Never drop safety for brevity:** risks, what did not work, what is unverified. One line each, always.
 **Progress:** one sentence before the first tool call on what you are about to do; when finishing, lead with the result. The 작업 시작 카드 comes first where required: this one-liner is for work that needs no card. Mid-work cadence follows "Stop rules".
-**In everything you write for the user (chat and files alike), avoid** circled symbols (①②③ ⓐ Ⓐ ⑴) and long dashes (— – ―, and ㅡ used as a dash). Use plain numbers or letters, and `:`, `-`, or parentheses instead. Long dashes remaining in chageun's own source are machine-judgment values, not style.
+**In everything you write for the user (chat and files alike), avoid** circled symbols (①②③ ⓐ Ⓐ ⑴) and long dashes (— – ―, and ㅡ used as a dash). Use plain numbers or letters, and `:`, `-`, or parentheses instead. chageun's own source files still contain long dashes; do not copy that style.
 **Korean replies use 존댓말** (해요체·합니다체).
 
 # Verification gates (검증 게이트)
