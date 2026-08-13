@@ -8,6 +8,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { collectSecrets, redact } = require("./secret-scan-core.js");
 const { boardIgnoreVerdict } = require("./board-ignore-core.js");
+const boardRoot = require("./board-root-core.js");
 const auto = require("./statusboard-auto-core.js");
 
 function redactDeep(node, secrets, stats) {
@@ -61,7 +62,7 @@ function decide(input) {
 //    다른 훅에서 되살리지 않는다: 늘어난 만큼만 바이트 자리로 읽는다.
 // ⚠ **도구 이름으로 안 거른다.** 읽는 것은 `tool_response` 가 아니라 `transcript_path` 라,
 //    이 절은 "PostToolUse 가 Agent 호출에서도 도는가"에 안 걸린다(안 돌면 다음 호출이 따라잡는다).
-const BOARD_FILE = "status.md";
+const BOARD_FILE = boardRoot.FILE;
 const TAIL_BYTES = 512 * 1024;          // 자리를 못 믿을 때 다시 보는 꼬리
 const MAX_DELTA = 4 * 1024 * 1024;      // 한 회차에 보는 최대량
 const FP_WINDOW = 64 * 1024;            // 지문 대조용 창
@@ -139,9 +140,15 @@ function autoBoard(input) {
   const st = fresh ? {} : readJson(file);
   const save = () => { try { fs.writeFileSync(file, JSON.stringify(st)); } catch (_) { /* 침묵 */ } };
 
-  // 상황판이 없으면 여기서 끝이다(비용 0). 🛑 만들지 않는다.
-  const board = path.join(cwd, BOARD_FILE);
-  if (!fs.existsSync(board)) return;
+  // 상황판이 없으면 여기서 끝이다. 🛑 만들지 않는다.
+  // 🛑 켠 폴더 한 곳이 아니라 경계까지 위로 걷는다(board-root-core.js). 판정이 세션 시작 부록·
+  //    안내와 **같은 답**이어야 한다: 작업방에서 켠 세션이 저장소 뿌리의 상황판을 못 보면
+  //    사용자가 웹으로 보는 그 파일의 §2 가 그 세션 내내 안 갱신되고, 마지막 확인 시각만 얼어붙는다.
+  //    없는 프로젝트의 상시 비용은 `existsSync` 한 번에서 **최대 12번**으로 는다(MAX_UP).
+  //    이 자리는 이미 mkdir 한 번과 상태 파일 읽기를 지난 뒤라 이 델타는 그 안에 묻힌다.
+  const boardDir = boardRoot.findBoardDir(cwd);
+  if (boardDir === null) return;
+  const board = path.join(boardDir, BOARD_FILE);
 
   const size = fs.statSync(tpath).size;
   let from = Number(st.offset) || 0;
@@ -207,7 +214,11 @@ function autoBoard(input) {
   const targetIsBoard = !!(ti && ti.file_path && path.resolve(cwd, String(ti.file_path)) === board);
   const wantWrite = changed || st.pendingWrite === true;
   if (!wantWrite) { save(); return; }
-  if (targetIsBoard || text == null || !boardIgnorePasses(st, cwd, now)) { st.pendingWrite = true; save(); return; }
+  // 🛑 무시 판정은 **켠 폴더가 아니라 상황판이 있는 폴더**에서 짓는다. `boardIgnoreVerdict` 는
+  //    `git ls-files/check-ignore status.md` 를 그 폴더에서 돌려 **상대 경로 하나**를 묻는다:
+  //    작업방에서 켠 세션이 켠 폴더로 물으면 지금 쓰려는 파일이 아니라 없는 다른 파일에 대한
+  //    답을 받아, 이 안전장치가 다른 파일을 지키게 된다.
+  if (targetIsBoard || text == null || !boardIgnorePasses(st, boardDir, now)) { st.pendingWrite = true; save(); return; }
 
   let out = text;
   const s2 = auto.spliceBlock(out, auto.renderBlock(st.tasks, now), "chageun:auto");

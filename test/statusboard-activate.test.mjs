@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -44,8 +44,20 @@ function boardDir(text) {
   return d;
 }
 
+// 🛑 "상황판 없음" 칸은 **HOME 을 주입해 밀폐한다.** 판정은 켠 폴더 한 곳이 아니라 경계
+//    (홈·`/home`·`/`)까지 위로 걸으므로, 주입이 없으면 `/tmp/status.md` 나 `/status.md` 가
+//    없다는 **기계 상태**에 기대는 검사가 된다 — 다른 기계에서 조용히 뒤집힌다.
+//    홈 바로 아래에 프로젝트를 두면 걸음이 한 단에서 끝난다.
+function emptyDir(prefix) {
+  const home = tmpDir(prefix);
+  const dir = join(home, "proj");
+  mkdirSync(dir, { recursive: true });
+  return { dir, env: { HOME: home } };
+}
+
 test("상황판이 없는 폴더: 부록 조각이 아무것도 안 낸다(상시 비용 0)", () => {
-  const r = run(tmpDir("empty-"));
+  const e = emptyDir("empty-");
+  const r = run(e.dir, e.env);
   assert.equal(r.status, 0);
   assert.equal(r.stdout, "", "상황판도 무인도 아닌데 부록 조각이 뭔가를 냈다");
 });
@@ -53,10 +65,18 @@ test("상황판이 없는 폴더: 부록 조각이 아무것도 안 낸다(상�
 test("상황판이 있어도 본문 조각 1~5 는 글자 하나 안 달라진다", () => {
   // 🛑 "상시 비용 0" 의 진짜 뜻. 부록을 엉뚱한 조각에 붙이면 그 조각만 길어지는데,
   //    그건 상황판 프로젝트에서**만** 잘리는 가장 늦게 발견되는 방향의 사고다.
-  const empty = tmpDir("empty2-"), board = boardDir(INTACT);
+  const empty = emptyDir("empty2-"), board = boardDir(INTACT);
   for (const n of core.PIECES.map((p) => String(p.n)))
-    assert.equal(run(board, {}, n).stdout, run(empty, {}, n).stdout,
+    assert.equal(run(board, {}, n).stdout, run(empty.dir, empty.env, n).stdout,
       `조각 ${n} 이 상황판 유무에 따라 달라진다 — 부록이 본문 조각에 새어 들어갔다`);
+});
+
+test("홈에서 멈춘다: 홈의 상황판을 제 것으로 안 집는다", () => {
+  // 홈에 한 장 있으면 그 아래 **모든** 프로젝트가 그것을 제 것으로 여기게 된다.
+  const e = emptyDir("home-board-");
+  writeFileSync(join(dirname(e.dir), "status.md"), INTACT);
+  const r = run(e.dir, e.env);
+  assert.equal(r.stdout, "", "홈까지 올라가 남의 상황판을 집었다");
 });
 
 test("상황판이 있는 폴더: 부록 본문 + board-server.mjs 절대 경로", () => {
@@ -150,12 +170,13 @@ test("크기 핀: 템플릿 800B 이하 · 주입 후 1,000B 이하", () => {
 //    조각 6 은 부록이 전부라, 상황판 프로젝트에서 부록 파일만 없어지면 그 조각이 통째로
 //    빈 값이 되고 나머지 5조각이 정상 도착해 세션이 완전히 정상으로 보인다.
 test("설치가 깨져도(statusboard-appendix.md 없음) 상황판 조각 6이 침묵하지 않는다", () => {
-  const { mkdirSync, copyFileSync } = require("node:fs");
   const root = tmpDir("sb-broken-");
   mkdirSync(join(root, "hooks"), { recursive: true });
   mkdirSync(join(root, "rules"), { recursive: true });
+  // 🛑 **부록 파일 하나만** 없는 설치를 흉내 낸다. 훅이 실제로 부르는 파일을 같이 빼면
+  //    다른 이유(모듈 없음)로 죽어, 이 검사가 재려던 갈래를 아예 안 지난다.
   for (const [dir, f] of [["hooks", "activate.js"], ["hooks", "activate-core.js"],
-                          ["rules", "operating-rules.md"]])
+                          ["hooks", "board-root-core.js"], ["rules", "operating-rules.md"]])
     copyFileSync(join(ROOT, "src", dir, f), join(root, dir, f));
   const hook = join(root, "hooks", "activate.js");
   const r = spawnSync(process.execPath, [hook, PIECE],

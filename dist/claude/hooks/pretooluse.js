@@ -20,6 +20,8 @@ const { unknownToolNotice, unknownToolMessage } = require("./tool-ledger-core.js
 //   계약이라 git 호출이 들어가면 그 계약이 깨지고, posttooluse 가 판정 하나 때문에 코어
 //   전체를 끌어오게 된다. 소유는 여기(PreToolUse)이고 PostToolUse 는 쓰기만 한다.
 const { boardIgnoreVerdict } = require("./board-ignore-core.js");
+// "상황판이 있나 · 어디인가"는 훅 셋이 **같은 답**을 내야 한다(board-root-core.js 머리 주석).
+const boardRoot = require("./board-root-core.js");
 const { collectSecrets, findLeaks } = require("./secret-scan-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
@@ -176,7 +178,7 @@ function prReviewerRan(transcriptPath) {
 // 내용 신호로 `chageun:auto` 를 쓰는 이유: 본보기 골격의 **기계가 읽는 부분**이고 정확한
 //   리터럴 하나라 판정을 새로 짤 일이 없다. 머리 표시(`chageun:auto:head`)에도 들어 있는
 //   조각이라 반쯤 마이그레이션된 상황판도 그대로 무장된다.
-const BOARD_FILE = "status.md";
+const BOARD_FILE = boardRoot.FILE;
 const BOARD_MARK = "chageun:auto";
 const BOARD_HEAD_BYTES = 512 * 1024;   // 표시는 파일 앞쪽에 있다
 
@@ -784,14 +786,18 @@ process.stdin.on("end", () => {
     //    시도한다(양보는 미룸이지 취소가 아니다).
     //    ⚠ 위임 갈래에는 `file_path` 가 없다. 삼항이 빠지면 path.resolve 가 TypeError 를
     //    내고 이 절의 try/catch 가 조용히 삼켜, **위임만 하는 세션에서 안내가 영영 안 나간다.**
+    //    🛑 "없다" 판정은 **켠 폴더 한 곳이 아니라** board-root-core.js 가 짓는다. 켠 폴더만
+    //    보면 작업방(`<repo>/.claude/worktrees/<이름>`)이나 하위 폴더에서 켠 세션이 저장소
+    //    뿌리의 상황판을 못 보고 "없으니 만들어라"를 낸다 - 세션 시작 부록은 같은 세션에서
+    //    "있으니 갱신하라"를 이미 낸 뒤다. 그 말을 따르면 작업방 안에 상황판이 한 장 더 생기고
+    //    기계가 채우는 칸이 새 파일로 가, 사용자가 웹으로 보던 원래 상황판이 조용히 멈춘다.
     if (!reminderEmitted && !IS_SUBAGENT) {
       try {
         const cwd = input.cwd || process.cwd();
-        const home = os.homedir();
         const abs = ti.file_path ? path.resolve(cwd, ti.file_path) : null;   // 상대경로 오판 방지
         if (statusboardTrigger(name, abs, ti)
-            && cwd !== home && cwd !== "/" && cwd !== "/home"
-            && !fs.existsSync(path.join(cwd, BOARD_FILE))) {
+            && !boardRoot.isBoundaryDir(cwd)
+            && boardRoot.findBoardDir(cwd) === null) {
           const key = boardNoticeKey(input);
           if (key && claimBoardNotice(key)) {
             process.stdout.write(JSON.stringify({

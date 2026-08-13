@@ -9,7 +9,7 @@
     "rules": ["operating-rules.md"],
     "skills": ["referencing", "product-map", "design-system", "monitoring", "security-scan", "unattended-loop", "finish-check", "spec-gate", "run-verify", "routing", "formats", "retrospect", "statusboard", "planning", "debugging", "test-design"],
     "agents": ["plan-validator", "pr-reviewer", "code-implementer", "deep-implementer", "supervisor"],
-    "hooks": ["activate.js", "activate-core.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js", "tool-ledger-core.js", "posttooluse.js", "secret-scan-core.js", "design-scan-core.js", "reap-dev-servers.js", "reap-dev-servers-core.js", "board-ignore-core.js", "statusboard-auto-core.js"],
+    "hooks": ["activate.js", "activate-core.js", "finish-work.js", "pretooluse.js", "pretooluse-core.js", "tool-ledger-core.js", "posttooluse.js", "secret-scan-core.js", "design-scan-core.js", "reap-dev-servers.js", "reap-dev-servers-core.js", "board-ignore-core.js", "board-root-core.js", "statusboard-auto-core.js"],
     "assets": ["chageun-flow.png"]
   }
 }
