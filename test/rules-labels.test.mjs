@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,6 +71,114 @@ test("스킬 로드 강제 포인터 6문장 유지(Skill tool + 스킬 ID)", ()
 test("코어 '작업 유형별 진행'이 `chageun:debugging` 을 가리킨다(포인터 문투 없는 축)", () => {
   assert.ok(RULES.includes("chageun:debugging"),
     "누락: chageun:debugging — 버그 경로가 가리킬 스킬 이름이 코어에서 사라졌다");
+});
+
+// v0.67.0: 테스트 설계도 같은 비대칭이다(강제 포인터를 안 붙였다 — 매번 본문을 대화에 실으면
+//   컨텍스트를 줄이려는 이 판의 목적과 반대다). 그래서 위 검사가 이 이름을 안 덮고,
+//   79행에서 통째로 빠져도 잡는 칸이 없었다. 크기 밴드는 재핀하면 초록이라 방어가 아니다.
+test("코어 '작업 유형별 진행'이 `chageun:test-design` 을 가리킨다(포인터 문투 없는 축)", () => {
+  assert.ok(RULES.includes("chageun:test-design"),
+    "누락: chageun:test-design — 새 검사를 짜는 경로가 가리킬 스킬 이름이 코어에서 사라졌다");
+  assert.ok(!RULES.includes("test-driven-development"),
+    "옛 이름 test-driven-development 가 코어에 남았다 — 그 스킬이 없는 사용자에게 막다른 길이 배포된다");
+});
+
+// pr-reviewer 재리뷰 2회차 medium: 이 판에서 걷어낸 남의 스킬 이름은 넷인데(test-driven-development ·
+//   executing-plans · using-git-worktrees · writing-skills), 되살아남을 막는 검사는 위 하나뿐이었다.
+//   나머지 셋은 코어(RULES)에 그물이 없어, 되살아나면 `:82`(=위 두 검사 옆)가 "차근을 재설치하라"고
+//   안내하는데 그 이름은 차근에 없으니 몇 번 재설치해도 안 고쳐지는 막다른 길이 조용히 배포된다.
+const RETIRED_SUPERPOWERS_NAMES_REST = ["executing-plans", "using-git-worktrees", "writing-skills"];
+
+test("코어에 걷어낸 옛 이름 셋(executing-plans·using-git-worktrees·writing-skills)이 안 남았다", () => {
+  for (const name of RETIRED_SUPERPOWERS_NAMES_REST)
+    assert.ok(!RULES.includes(name),
+      `옛 이름 ${name} 이 코어에 남았다 — 그 스킬이 없는 사용자에게 막다른 길이 배포된다`);
+});
+
+// 위 두 검사는 RULES(코어 한 파일)만 훑는다. 그런데 `using-git-worktrees` 는 코어가 아니라
+//   src/skills/routing/SKILL.md:61 에 있던 이름이라 코어만 훑으면 안 걸린다 — 스킬 본문까지
+//   훑어야 한다. 훑는 범위 = src/rules/*.md + src/skills/*/SKILL.md + src/agents/*.md.
+//   NOTICE 파일은 **일부러 안 읽는다**: src/skills/test-design/NOTICE:12 가
+//   `test-driven-development` 를 MIT 저작권 표시로 정당하게 들고 있다(라이선스 고지) — 그것까지
+//   잡으면 저작권 표기를 지우라는 잘못된 압력이 생긴다. 이 함수는 SKILL.md 파일명만 지목해서
+//   읽으므로 같은 폴더의 NOTICE 는 애초에 대상이 아니다.
+function readCoreAndSkillFiles() {
+  const files = [];
+  const rulesDir = join(ROOT, "src", "rules");
+  for (const f of readdirSync(rulesDir)) if (f.endsWith(".md")) files.push(join(rulesDir, f));
+  const skillsDir = join(ROOT, "src", "skills");
+  for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillMd = join(skillsDir, entry.name, "SKILL.md");
+    if (existsSync(skillMd)) files.push(skillMd); // NOTICE 는 여기서 지목 안 됨 — 위 사유
+  }
+  const agentsDir = join(ROOT, "src", "agents");
+  for (const f of readdirSync(agentsDir)) if (f.endsWith(".md")) files.push(join(agentsDir, f));
+  return files;
+}
+
+const RETIRED_SUPERPOWERS_NAMES_ALL = ["test-driven-development", ...RETIRED_SUPERPOWERS_NAMES_REST];
+
+test("src/rules · src/skills/*/SKILL.md · src/agents (NOTICE 제외) 전체에 걷어낸 옛 이름 넷이 안 남았다", () => {
+  for (const filePath of readCoreAndSkillFiles()) {
+    const content = readFileSync(filePath, "utf8");
+    for (const name of RETIRED_SUPERPOWERS_NAMES_ALL)
+      assert.ok(!content.includes(name),
+        `${filePath} 에 걷어낸 옛 이름 ${name} 이 남았다 — 그 스킬이 없는 사용자에게 막다른 길이 배포된다`);
+  }
+});
+
+// 🛑 v0.67.0: "우리 스킬이 있으면 남의 스킬을 부르지 않는다"는 **기계 강제가 없는 규칙**이다
+//    (새 하드 차단은 실기록 오차단 0 증거를 요구하고 그 재료가 없다 · 사용자가 일부러 남의 스킬을
+//    쓰고 싶을 수도 있다). 강제가 없는데 문장이 조용히 사라지는 것을 잡는 칸까지 없으면 그 규칙은
+//    있었다는 기록만 남는다. 이미 깔린 사용자의 `superpowers:brainstorming` 은 자기 설명에
+//    "You MUST use this before any creative work" 를 갖고 있고 197세션 중 53세션에서 실제로 떴다 —
+//    그것이 먼저 뜨면 우리 스펙 확인 게이트(🙋)가 조용히 안 돈다. 그 자리를 지키는 한 줄이다.
+test("코어에 '우리 스킬 먼저' 한 줄이 살아 있다(기계 강제 없는 규칙의 유일한 그물)", () => {
+  assert.ok(RULES.includes("don't call another source's skill"),
+    "누락: '우리 스킬 먼저' 규칙 — 같은 취지의 남의 스킬이 우리 절차 자리를 대신 차지하는 것을 막는 문장이 사라졌다");
+});
+
+// 🛑 v0.67.0: 이 승인 문장을 잡는 앵커가 하나도 없었다(전수 확인 — 그 줄을 지워도 744개가 전부 초록).
+//    앞으로의 행동을 바꾸는 것(스킬·규칙·훅·메모리)을 사용자 승인 없이 저장하는 길이 조용히 열리는
+//    자리라, 이 판에서 앵커를 만든다. `(writing-skills)` 예시를 걷어내면서 대상 부류를 넷으로
+//    적었으므로, 넷이 다 남아 있는지 함께 잰다(하나가 빠지면 그 부류가 승인 규칙 밖이 된다).
+test("보안·승인 위생: 행동을 바꾸는 저장은 승인이 필요하다(부류 4개 포함)", () => {
+  assert.ok(RULES.includes("need user approval before saving"),
+    "누락: 승인 문장 — 앞으로의 행동을 바꾸는 저장에 사용자 승인을 요구하는 규칙이 사라졌다");
+  for (const kind of ["skills", "rules", "hooks", "memory"])
+    assert.ok(new RegExp(`Approval hygiene:[^\\n]*\\b${kind}\\b`).test(RULES),
+      `승인 대상 부류 누락: ${kind} — 그 부류를 몰래 고치는 길이 승인 규칙 밖으로 빠진다`);
+});
+
+// 🛑 v0.67.0(T7): 출력 표기 금지 목록은 **금지할 글자 자체를 값으로** 들고 있다.
+//    T7 은 소스의 긴 줄표를 걷어내는 걸음이라, 이 목록까지 같이 치환되면 규칙이
+//    "무엇을 쓰지 말라는 것인지"를 잃는다(목록이 `(- - -, and ...)` 모양이 되어 뜻이 사라진다).
+//    그런데 그 사고를 잡는 칸이 **하나도 없었다** — 전수 확인 결과 이 목록을 지워도 751개가 전부 초록이다.
+//    ⚠ 앵커를 "파일에 — 가 있다"로 잡으면 안 된다: T7 이 이 파일의 다른 긴 줄표를 다 없애므로,
+//    그 단언은 이 한 자리만 남았을 때에도 통과한다(우연히 맞는 검사다). 그래서 **금지 목록의 괄호
+//    안쪽만 떼어** 글자마다 확인한다. 그 자리가 여전히 "금지 목록"이어야 통과한다.
+const FORBIDDEN_GLYPH_LISTS = [
+  { label: "circled symbols", glyphs: ["①", "②", "③", "ⓐ", "Ⓐ", "⑴"] },
+  // 긴 줄표 3종(U+2014 · U+2013 · U+2015) + 줄표로 쓰인 한글 모음 ㅡ(U+3161).
+  { label: "long dashes", glyphs: ["—", "–", "―", "ㅡ"] },
+];
+
+test("출력 표기 금지 목록이 금지할 글자를 값으로 들고 있다(일괄 치환 방어)", () => {
+  for (const { label, glyphs } of FORBIDDEN_GLYPH_LISTS) {
+    const m = new RegExp(`${label} \\(([^)\\n]*)\\)`).exec(RULES);
+    assert.ok(m,
+      `누락: '${label} (...)' 금지 목록 자체가 사라졌다 — 규칙이 무엇을 쓰지 말라는 것인지 잃는다`);
+    for (const glyph of glyphs)
+      assert.ok(m[1].includes(glyph),
+        `'${label}' 금지 목록에서 ${glyph}(U+${glyph.codePointAt(0).toString(16).toUpperCase()}) 가 빠졌다 ` +
+        `— 그 글자는 목록의 **값**이라 일괄 치환 대상이 아니다. 지금 목록: (${m[1]})`);
+  }
+  // 목록이 "쓰지 말라"는 지시에 붙어 있어야 뜻이 산다. 목록만 남고 지시가 떨어져 나가면
+  // 그 괄호는 예시로 읽힌다(이 판이 없애려는 바로 그 모양이다).
+  const listLine = RULES.split("\n").find((l) => l.includes("circled symbols"));
+  assert.ok(listLine && listLine.includes("avoid"),
+    "금지 목록이 'avoid' 지시와 같은 줄에 없다 — 목록만 남으면 금지문이 아니라 예시로 읽힌다");
 });
 
 // v0.54.0 pr-reviewer 2차 medium: 요약 라벨을 줄였다가 finish-work 훅의 요약 감지를 꺼뜨린 사고가

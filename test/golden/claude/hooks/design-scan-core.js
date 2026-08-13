@@ -1,4 +1,4 @@
-// chageun P4 design color backstop — pure detection for the Claude PreToolUse hard-block.
+// chageun P4 design color backstop: pure detection for the Claude PreToolUse hard-block.
 // Reimplements check-design-violations.sh's TWO color rules in node. Why not shell-out the .sh:
 // in a hook there's no git staged yet (staged mode passes empty = silent worst case) and --all is
 // an unbounded tree scan (10s timeout). So detection here reads ONLY tool_input content/new_string
@@ -16,7 +16,7 @@ const PROPS = ["bg","text","border","ring-offset","ring","from","via","to","fill
 const SCAN_TARGET_RE = /\.(tsx|ts|jsx|js|vue|svelte|astro)$/i;
 function isDesignScanTarget(p) { return SCAN_TARGET_RE.test(String(p || "")); }
 
-// design-system.md front-matter의 `lint-allow-colors:` — 팔레트명을 시맨틱 토큰으로 재사용할 때만 예외.
+// design-system.md front-matter의 `lint-allow-colors:` - 팔레트명을 시맨틱 토큰으로 재사용할 때만 예외.
 // 첫 `---`~다음 `---` 사이(front-matter)만 본다. 템플릿 플레이스홀더(`<예: ...>`)는 무시.
 function parseAllowColors(docText) {
   const text = String(docText || "");
@@ -32,7 +32,7 @@ function parseAllowColors(docText) {
 // 주어진 텍스트에서 raw 색 매치를 모두 뽑는다. 반환: [{token, rule}].
 // `design-lint-ignore` 주석이 있는 라인은 그 줄만 건너뜀(전체 우회 CHAGEUN_SKIP_DESIGN_LINT와 구분).
 // 룰1: (prop)-(palette)-<digits>  · 룰2: -[#hex(3자+)] 또는 -[(rgb|rgba|hsl|hsla)(  (.sh와 동일 범위).
-const MAX_SCAN = 512 * 1024; // 거대한 입력은 스캔 skip(fail-open) — readDesignDoc MAX_DOC과 대칭.
+const MAX_SCAN = 512 * 1024; // 거대한 입력은 스캔 skip(fail-open): readDesignDoc MAX_DOC과 대칭.
 function scanColors(text, allow) {
   const s = String(text || "");
   if (s.length > MAX_SCAN) return [];
@@ -41,7 +41,7 @@ function scanColors(text, allow) {
   const rule1 = palette.length
     ? new RegExp(`(?:${PROPS.join("|")})-(?:${palette.join("|")})-\\d+`, "g") : null;
   // 앞의 속성 접두까지 포함해 메시지를 친절하게(text-[#ff0000). 접두는 {0,40}로 바운드(긴 단어런
-  // 백트래킹 O(n^2) 방지 — 실제 접두 ring-offset 등은 40자 훨씬 이하). hex는 3자+ 무한(.sh와 동일).
+  // 백트래킹 O(n^2) 방지: 실제 접두 ring-offset 등은 40자 훨씬 이하). hex는 3자+ 무한(.sh와 동일).
   const rule2 = /[\w-]{0,40}-\[(?:#[0-9a-fA-F]{3,}|(?:rgb|rgba|hsl|hsla)\()/g;
   const out = [];
   for (const line of s.split(/\r?\n/)) {

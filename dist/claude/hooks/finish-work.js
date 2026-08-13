@@ -1,14 +1,14 @@
-// chageun finish-work — Stop 훅.
+// chageun finish-work: Stop 훅.
 // 에이전트가 "이제 ~하겠습니다"처럼 작업을 하겠다고 말만 하고 실제 도구 실행 없이 턴을 끝내면
 // 되돌려 지금 하게 한다(보수적: 통과 넓게 / 차단 좁게). 결정론적, 외부 호출 없음, 실패 시 안전 통과.
 // 개인/회사 정보 없음.
 
 // 사용자 대기/질문 신호가 있으면 통과(chageun가 정상적으로 묻고 멈추는 경우).
-// bare "알려"·"검토"는 제외 — 약속 문장("검토하겠습니다")까지 통과시켜 브레이크를 무력화했음.
+// bare "알려"·"검토"는 제외: 약속 문장("검토하겠습니다")까지 통과시켜 브레이크를 무력화했음.
 // 의문형("검토할까요?"·"알려주세요")은 [?]·할까요·주세요가 여전히 잡는다.
 const WAIT_RE = /[?]|할까요|갈까요|드릴까요|주세요|골라|선택|진행해도|어느|확인해|괜찮(을까|나요)|승인|합의|기다리|다음\s*단계|진행\s*보고|멈춤|shall i|would you|do you want|let me know|which option|approve|confirm|waiting for/i;
 // 명백한 미래형 작업 약속만 차단. 작업 동사는 현재형(합니다)도 약속으로 보지만,
-// 보고성 동사(검토·보고·알려·공유·설명·정리)는 미래형(하겠/할게)에서만 잡는다 —
+// 보고성 동사(검토·보고·알려·공유·설명·정리)는 미래형(하겠/할게)에서만 잡는다:
 // "다음과 같이 정리합니다"처럼 지금 실제로 요약하는 현재형 마무리를 오차단하지 않도록.
 const PROMISE_RE = /(이제|곧|다음(엔|은)?|바로)\s*[^.!?\n]{0,40}(?:(구현|만들|작성|수정|실행|추가|저장|시작|진행)(하겠|할게|할께|하겠습니다|할게요|합니다)|(검토|보고|알려|공유|설명|정리)(하겠|할게|할께|하겠습니다|할게요))|(완료|끝나|이후|나중)[^.!?\n]{0,20}(알려|보고|공유|검토)[^.!?\n]{0,10}(드리|하)(겠|ㄹ게)|\b(I'?ll|I will|let me|now I|next,? I)\b[^.!?\n]{0,60}\b(implement|create|write|add|run|fix|save|build|start|proceed|review|report|share|explain|summarize)\b/i;
 
@@ -23,30 +23,30 @@ function shouldBlock(text) {
 const REASON = "직전 응답이 작업을 하겠다고 말만 하고 실제로 하지 않은 채 끝났습니다. 지금 그 작업을 도구로 수행하세요. 작업이 끝났거나 사용자만 줄 수 있는 입력이 필요할 때만 턴을 끝내세요.";
 const REASON_NOEVIDENCE = "\"돌려봤다/테스트 통과\"처럼 실제로 실행한 것처럼 말했지만, 이번 요청 동안 도구를 한 번도 쓰지 않았습니다. 코드를 읽어 짐작하지 말고 실제로 돌려(테스트·실행·스크린샷) 확인한 뒤 그 증거로 보고하세요.";
 
-// 실행 주장(돌려봤다/테스트 통과 등). 보고어휘(✅·성공 기준·완료)는 제외 — 정상 끝 점검 오차단 방지.
+// 실행 주장(돌려봤다/테스트 통과 등). 보고어휘(✅·성공 기준·완료)는 제외: 정상 끝 점검 오차단 방지.
 const EXEC_CLAIM_RE = /돌려\s*(보|봤|본)|실행해\s*(보|봤|본)|테스트[^.!?\n]{0,20}통과|스크린샷[^.!?\n]{0,10}(찍|캡처)|직접\s*눌러|구동\s*검증[^.!?\n]{0,10}(완료|했|끝)|실제로\s*(확인|실행)|눌러\s*(보|봤)/;
 
-// P1 스킬갭 가드: 절차 스킬(지연로드)의 저발동 기계 백스톱 — 결정 시점(턴 종료) 검사.
+// P1 스킬갭 가드: 절차 스킬(지연로드)의 저발동 기계 백스톱 - 결정 시점(턴 종료) 검사.
 // 차단 좁게: FULL 끝 점검 채점 텍스트(끝 점검/자가점검 + 채점 표시 2개 이상, LIGHT 제외)와
 // 실구동 완료 주장만 반응. 채점 표시 1개는 설명일 수 있어 침묵(오탐 축소).
-// 세션 내 스킬 로드 1회면 통과(스펙 🙋 합의 — 훅은 바닥, "매번 로드" 규칙 자체는 각 절이 정의).
+// 세션 내 스킬 로드 1회면 통과(스펙 🙋 합의: 훅은 바닥, "매번 로드" 규칙 자체는 각 절이 정의).
 // v0.42: 회고 탐지기(retrospect-scan.mjs GATES[].ctx)가 이 훅보다 넓어 실측 10건 중 7건이 **어휘**로 샜다
 // ("완료했습니다 + 채점표"는 잡히지 않았다). 완료 어휘를 여기 더해 두 탐지기를 맞춘다.
-// **marks >= 2 는 필수 조건으로 유지한다** — `성공 기준`은 이 워크플로우의 정본 라벨이라 거의 모든 FULL
+// **marks >= 2 는 필수 조건으로 유지한다**: `성공 기준`은 이 워크플로우의 정본 라벨이라 거의 모든 FULL
 // 턴에 나오고, 그걸 단독 신호로 쓰면 중간 진행 보고가 걸린다(plan-validator F-9).
 const FINISH_TEXT_RE = /(끝\s*점검|자가점검|마무리(했|합니다)|다\s*됐|완료(했|됐|됨|입니다)|모두\s*충족)/;
 const LIGHT_RE = /LIGHT/;
 // v0.42.1: 완료어 뒤에 **조건·가정·요청 어미**가 붙으면 주장이 아니라 서술이다.
-// 실사용 첫 세션에서 이 훅이 스스로를 오차단했다 — "끝 점검·실구동 검증·요약을 절차 없이 대충 **끝**내면
+// 실사용 첫 세션에서 이 훅이 스스로를 오차단했다: "끝 점검·실구동 검증·요약을 절차 없이 대충 **끝**내면
 // 이제 실제로 되돌려집니다"는 기능을 설명한 문장이지 검증했다는 주장이 아니다. 창을 2턴으로 넓히기
 // 전에는 이 모양이 도달 자체를 못 해 보이지 않았을 뿐, RUN_CLAIM_RE 자체의 오탐이었다.
 // 실측(3개 프로젝트·실사용 조건 재생): 발동 25 → 22. 걸러진 3건 전부 서술·요청문이었고
 // ("…스킬 미로드로 끝", "…대충 끝내면", "실구동까지 통과하면 승인해 주세요") 진짜 주장은 하나도 안 잃었다.
 // 🛑 축약형을 **명시 목록**으로만 넣는다. `[가-힣]*까` 로 일반화하면 "끝났으니**까** push합니다"(진짜 주장)가
-// 같이 죽는다. `ㄹ까` 같은 호환 자모(U+3139)는 **절대 매치되지 않는다** — 실제 한국어의 ㄹ은 완성형 음절
+// 같이 죽는다. `ㄹ까` 같은 호환 자모(U+3139)는 **절대 매치되지 않는다**: 실제 한국어의 ㄹ은 완성형 음절
 // 안에 들어 있다("낼"=U+B0BC). 처음 판에 그걸 넣었다가 죽은 분기임을 pr-reviewer가 잡았다.
 const RUN_CLAIM_RE = /(실구동|구동\s*검증|띄워\s*(보|봤|서))[^.!?\n]{0,20}(✅|완료|했|됐|끝|통과)(?![가-힣]*(면|려면|을까|할까|될까|낼까|나요|는지|여야|어야|해야|돼야|내야))/;
-// formats 갭(batch6): FULL "비전문가 요약" 보고 형태만 반응 — 완료 맥락 한정으로 좁힌다.
+// formats 갭(batch6): FULL "비전문가 요약" 보고 형태만 반응 - 완료 맥락 한정으로 좁힌다.
 // 작업 시작 카드 턴·LIGHT 한 줄 요약은 라벨/필드가 달라 절대 안 걸린다(plan-validator HIGH 반영:
 // 카드는 매 FULL 작업 첫 턴이라 여기 걸리면 과차단). 필드 어휘 2개 이상 = FULL 요약 형태 신호.
 const SUMMARY_TEXT_RE = /비전문가\s*요약/;
@@ -71,12 +71,12 @@ function hasSkillLoad(objs, name) {
   return false;
 }
 
-// 이번 턴 + 직전 턴(SKILLGAP_TURNS) assistant 텍스트로 스킬갭 판정. **세그먼트(턴)별 독립 판정** —
+// 이번 턴 + 직전 턴(SKILLGAP_TURNS) assistant 텍스트로 스킬갭 판정. **세그먼트(턴)별 독립 판정**:
 // 하나라도 성립하면 그 게이트를 돌려준다(합성 오차단 방지, plan-validator F-3).
 // 직전 턴까지 보는 이유는 위 assistantTurnSegments 주석 참조(마지막 메시지 미반영 실측).
-// WAIT_RE 면제 없음 — 질문으로 끝나도 이미 수행된 무절차 끝 점검/검증 선언은 위반(1회 차단이라 안전).
+// WAIT_RE 면제 없음: 질문으로 끝나도 이미 수행된 무절차 끝 점검/검증 선언은 위반(1회 차단이라 안전).
 // 게이트당 세션 1회 백스톱: 이미 되돌린 게이트는 침묵한다(alreadyBounced). 완전 커버리지가 아니라
-// 백스톱이다 — 한 번 되돌린 뒤 같은 세션에서 재발하면 못 잡는다(의식적 선택: 영구 루프가 더 나쁘다).
+// 백스톱이다 - 한 번 되돌린 뒤 같은 세션에서 재발하면 못 잡는다(의식적 선택: 영구 루프가 더 나쁘다).
 const SKILLGAP_TURNS = 2;
 function shouldBlockSkillGap(objs) {
   if (!Array.isArray(objs) || !objs.length) return null;
@@ -95,9 +95,9 @@ function shouldBlockSkillGap(objs) {
   return hit;
 }
 
-// 문구 끝의 "직전 턴 또는 이번 턴 앞부분" 은 정확한 서술이다 — 창이 2턴이라 지적 대상이 방금 쓴 글이
+// 문구 끝의 "직전 턴 또는 이번 턴 앞부분" 은 정확한 서술이다: 창이 2턴이라 지적 대상이 방금 쓴 글이
 // 아닐 수 있다(L-7). 어디를 말하는지 안 밝히면 받는 쪽이 엉뚱한 자리를 고친다.
-const WINDOW_NOTE = " (지적 대상은 **직전 턴 또는 이번 턴 앞부분**입니다 — 안전장치가 매 턴의 마지막 글은 못 보기 때문에 한 턴 늦게 잡습니다.)";
+const WINDOW_NOTE = " (지적 대상은 **직전 턴 또는 이번 턴 앞부분**입니다: 안전장치가 매 턴의 마지막 글은 못 보기 때문에 한 턴 늦게 잡습니다.)";
 const REASON_SKILLGAP = {
   "finish-check": "FULL 끝 점검을 chageun:finish-check 스킬 로드 없이 마쳤습니다. 지금 Skill 도구로 chageun:finish-check를 로드하고 그 절차(채점·제품지도 갱신·체크리스트)대로 끝 점검을 다시 마치세요. (LIGHT 끝 점검이었다면 'LIGHT'를 명시하세요.)" + WINDOW_NOTE,
   "run-verify": "실구동 검증을 chageun:run-verify 스킬 로드 없이 완료로 선언했습니다. 지금 Skill 도구로 chageun:run-verify를 로드하고 그 절차(띄우기·엣지 눌러보기·보고)대로 검증한 뒤 보고하세요." + WINDOW_NOTE,
@@ -110,9 +110,9 @@ function isToolResultOnly(m) {
   return Array.isArray(c) && c.length > 0 && c.every((b) => b && b.type === "tool_result");
 }
 
-// 세션 transcript 어디든 실행형 도구를 썼나 — Bash(테스트·명령)·Task/Agent(위임 실행)·
+// 세션 transcript 어디든 실행형 도구를 썼나: Bash(테스트·명령)·Task/Agent(위임 실행)·
 // playwright/puppeteer(브라우저)·executeCode·MCP 실행(execute/sql/migration/deploy/invoke/
-// query — Supabase 등 DB 검증). 과거참조 fail-open은 이 증거가 있을 때만 정당. 넓게 잡아
+// query: Supabase 등 DB 검증). 과거참조 fail-open은 이 증거가 있을 때만 정당. 넓게 잡아
 // 정당 재보고 오차단을 피한다("차단 좁게"; 오차단이 이 훅의 최대 실패 양식). 순수함수(fs 없음).
 function hasExecEvidence(objs) {
   if (!Array.isArray(objs)) return false;
@@ -129,7 +129,7 @@ function hasExecEvidence(objs) {
 
 // 직전 '진짜 user 메시지' 이후 assistant 구간에서 도구를 한 번도 안 쓰고(0회) 실행 주장만 하며
 // 끝났으면 차단(증거 없는 성공 선언). F-1: tool_result(role=user)를 진짜 user로 착각하지 않도록
-// 건너뛴다 — 이전 턴에 도구를 썼으면(정상 끝 점검) 통과.
+// 건너뛴다: 이전 턴에 도구를 썼으면(정상 끝 점검) 통과.
 function shouldBlockNoEvidence(objs) {
   if (!Array.isArray(objs) || !objs.length) return false;
   let u = -1;
@@ -174,8 +174,8 @@ function endedWithTool(m) {
   return false;
 }
 
-// F7: 단일 검증된 창 함수 — 마지막 '진짜 user'(도구결과-only user는 건너뜀, N2) 이후 assistant 텍스트.
-// latestOnly=true(재작성)면 마지막 assistant 메시지 하나만 스캔한다(F1 무한루프 차단 — 불변 기록의
+// F7: 단일 검증된 창 함수 - 마지막 '진짜 user'(도구결과-only user는 건너뜀, N2) 이후 assistant 텍스트.
+// latestOnly=true(재작성)면 마지막 assistant 메시지 하나만 스캔한다(F1 무한루프 차단: 불변 기록의
 // 옛 누출 메시지가 매 Stop 재탐지돼 영구 block되는 걸 막음; 최신 메시지의 재범은 여전히 잡힘 H3).
 function assistantTextSinceLastUser(objs, latestOnly) {
   if (!Array.isArray(objs) || !objs.length) return "";
@@ -202,9 +202,9 @@ function assistantTextSinceLastUser(objs, latestOnly) {
 // 잘라 이 코드에 재생하면 50세션 312지점에서 51회 차단해야 한다. "약속만 하고 끝냄"만 살아 있는 이유는
 // 약속 문장이 도구 호출 **앞** 중간 메시지에 나와 이미 반영돼 있기 때문이다.
 // → 창을 **직전 턴까지** 넓힌다. 직전 턴의 마지막 메시지는 이미 반영돼 있으므로 한 턴 늦게 잡힌다.
-// **판정은 세그먼트(턴)별로 독립 수행한다** — 두 턴을 이어붙여 한 번에 매칭하면 "직전 턴의 끝 점검 언급 +
+// **판정은 세그먼트(턴)별로 독립 수행한다**: 두 턴을 이어붙여 한 번에 매칭하면 "직전 턴의 끝 점검 언급 +
 // 이번 턴의 무관한 ✅✅"가 합성돼 오차단이 된다(plan-validator F-3). 세그먼트는 **턴 단위**이지 메시지
-// 단위가 아니다 — 같은 턴 안에서 어휘와 채점표가 두 메시지에 나뉜 경우는 계속 잡아야 한다(F-3/L-2).
+// 단위가 아니다: 같은 턴 안에서 어휘와 채점표가 두 메시지에 나뉜 경우는 계속 잡아야 한다(F-3/L-2).
 function assistantTurnSegments(objs, turns) {
   if (!Array.isArray(objs) || !objs.length) return [];
   const segs = [];
@@ -220,11 +220,11 @@ function assistantTurnSegments(objs, turns) {
 
 // 같은 게이트로 **이 세션에서 이미 되돌린 적이 있나**. 있으면 다시 막지 않는다(게이트당 세션 1회).
 // 지난 턴의 글은 고칠 수 없으므로, 창을 넓힌 채 반복 차단하면 영구 루프가 된다.
-// **판정은 문자열이 아니라 구조로 앵커한다** — 이 저장소는 차단 사유 문구를 소스·테스트에 담고 있어서
+// **판정은 문자열이 아니라 구조로 앵커한다**: 이 저장소는 차단 사유 문구를 소스·테스트에 담고 있어서
 // (REASON_SKILLGAP 여기 · "Stop hook feedback:" 리터럴이 retrospect-scan.mjs·test/finish-work.test.mjs)
 // 원시 부분문자열 검색으로 만들면 그 파일을 Read한 세션에서 **가드가 영구 침묵**한다.
 // detectNearMisses(retrospect-scan.mjs)가 이미 같은 함정을 밟고 구조 앵커로 해결한 전례가 있다. 4조건:
-//   1) role=user 레코드   2) content의 **text 블록만**(tool_result 블록 제외 — 파일 읽은 결과가 거기 실린다)
+//   1) role=user 레코드   2) content의 **text 블록만**(tool_result 블록 제외: 파일 읽은 결과가 거기 실린다)
 //   3) 그 text가 `Stop hook feedback:` 로 **시작**(인용·언급은 접두가 안 맞아 탈락)
 //   4) 사유 대조는 REASON_SKILLGAP 상수에서 딴 부분문자열(문구를 고치면 자동으로 같이 움직인다)
 function alreadyBounced(objs, gate) {
@@ -245,7 +245,7 @@ function alreadyBounced(objs, gate) {
 }
 
 // G7 Stop 백스톱: .env 시크릿 '값'이 최종답에 인용됐으면 사유(키 이름만, 값 없음)를, 아니면 null.
-// stopHookActive(재작성)면 최신 메시지만 스캔(F1). 어떤 오류든 fail-open(null) — chageun를 막지 않는다.
+// stopHookActive(재작성)면 최신 메시지만 스캔(F1). 어떤 오류든 fail-open(null): chageun를 막지 않는다.
 // 값은 어디에도 로깅/전송하지 않는다(secret-scan-core가 메모리 내에서만 처리).
 function leakBlockReason(objs, cwd, stopHookActive) {
   try {
@@ -283,7 +283,7 @@ function run() {
       const leak = leakBlockReason(objs, input.cwd || process.cwd(), input.stop_hook_active === true);
       if (leak) { process.stdout.write(JSON.stringify({ decision: "block", reason: leak })); return process.exit(0); }
 
-      // 재작성(재프롬프트)이면 아래 약속/무증거/스킬갭 검사는 건너뛴다(기존 동작 유지) — 누출검사만 항상 돈다.
+      // 재작성(재프롬프트)이면 아래 약속/무증거/스킬갭 검사는 건너뛴다(기존 동작 유지): 누출검사만 항상 돈다.
       if (input.stop_hook_active === true) return process.exit(0);
 
       let lastIdx = -1;
@@ -296,7 +296,7 @@ function run() {
       // 마지막 메시지가 아직 반영되지 않은 탓에 파일의 마지막 assistant 레코드가 tool_use로 끝나는
       // 경우가 실측 25%(311 Stop 지점 중 78건)인데, 그때마다 스킬갭 검사에 **도달조차 못 했다.**
       // Stop 시점은 이미 턴이 끝난 자리라 이 조기 종료는 스킬갭 판정에 의미가 없다.
-      // 약속·무증거 검사는 지금 경로 그대로 둔다(정상 동작 중 — 회귀 위험).
+      // 약속·무증거 검사는 지금 경로 그대로 둔다(정상 동작 중: 회귀 위험).
       // 남는 사각(정직 고지): 미반영이 두 메시지 이상 걸치면 이 창으로도 못 잡는다. 백스톱이지 보장이 아니다.
       const gap = shouldBlockSkillGap(objs);
       let promise = false, noEvidence = false;

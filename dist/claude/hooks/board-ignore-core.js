@@ -16,7 +16,7 @@
 //   | 추적 중   + info/exclude 에 줄 있음 | 1 (그대로)   | 0                        |
 //   | 추적 끊은 뒤 + 무시 줄 있음        | 0            | 1                        |
 //   | git 저장소가 아님                  | 128          | 128                      |
-// 즉 **추적 중이면 무시 줄을 넣어도 안 풀린다** — 회복이 두 걸음이라는 사실이 여기서 나온다.
+// 즉 **추적 중이면 무시 줄을 넣어도 안 풀린다**: 회복이 두 걸음이라는 사실이 여기서 나온다.
 // 🛑 `--no-index` 를 쓰지 않는다. 붙이면 추적 중이어도 0이 나와, 무시 줄이 먼저 들어간
 //    추적 파일이 차단을 뚫고 평문 업무 보고가 커밋된다.
 "use strict";
@@ -35,7 +35,7 @@ const GIT_OPTS = { timeout: 2000, stdio: "ignore" };
  */
 function boardIgnoreVerdict(dir) {
   try {
-    // 1) 이미 추적 중인가 — 0이면 여기서 끝(두 번째 명령을 안 부른다).
+    // 1) 이미 추적 중인가: 0이면 여기서 끝(두 번째 명령을 안 부른다).
     try {
       execFileSync("git", ["ls-files", "--error-unmatch", FILE], { cwd: dir, ...GIT_OPTS });
       return "blocked";
@@ -43,7 +43,7 @@ function boardIgnoreVerdict(dir) {
       // 1 = 추적 안 함(정상 갈래). 그 밖(128·ENOENT·타임아웃)은 판정 불가.
       if (!e || e.status !== 1) return "unknown";
     }
-    // 2) 무시되나 — 0이면 통과, 1이면 차단.
+    // 2) 무시되나: 0이면 통과, 1이면 차단.
     try {
       execFileSync("git", ["check-ignore", "-q", FILE], { cwd: dir, ...GIT_OPTS });
       return "ok";

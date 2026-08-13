@@ -1,4 +1,4 @@
-// chageun G7 secret-scan core — shared pure logic (PostToolUse redaction + Stop backstop).
+// chageun G7 secret-scan core: shared pure logic (PostToolUse redaction + Stop backstop).
 // Single source of truth for detection so both channels stay identical. Values held in memory only; never logged/transmitted.
 "use strict";
 
@@ -103,7 +103,7 @@ function redact(text, secrets) {
   const sorted = [...secrets].sort((a, b) => b.value.length - a.value.length);
   for (const { key, value } of sorted) {
     if (!value || out.indexOf(value) === -1) continue;
-    const marker = `«chageun G7: secret redacted (${key}) — report name/existence only; do not reconstruct; to place a secret into config use shell (cp/sed) without printing»`;
+    const marker = `«chageun G7: secret redacted (${key}) - report name/existence only; do not reconstruct; to place a secret into config use shell (cp/sed) without printing»`;
     out = out.split(value).join(marker);
     count++;
   }

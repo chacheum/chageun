@@ -10,7 +10,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const skill = readFileSync(join(ROOT, "src", "skills", "spec-gate", "SKILL.md"), "utf8");
 
 const ANCHORS = [
-  "취향 결정 — AI 추천 없음",   // 추천답 취향 예외
+  "취향 결정 - AI 추천 없음",   // 추천답 취향 예외 (v0.67.0 T7-나: 긴 줄표를 하이픈으로 · 소스와 한 벌)
   "각각 이렇게 됨",             // 안전 클래스 추천답 carve-out(고무도장 방지 — F1 안전-핵심)
   "WAIVED로 넘기지 않는다",     // WAIVED fail-safe 대칭(안전 클래스 애매하면 위임 금지)
   "WAIVED",                     // 위임 기록(정직회계)

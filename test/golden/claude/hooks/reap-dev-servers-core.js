@@ -1,26 +1,26 @@
-// chageun: stale dev-server reaper — shared pure logic (Claude SessionStart hygiene).
+// chageun: stale dev-server reaper - shared pure logic (Claude SessionStart hygiene).
 // A process is reaped only when it is a known dev server AND one of two things is true:
 //   (a) its working directory was deleted out from under it (readlink → "… (deleted)"), or
-//   (b) it is idle AND ownerless AND old — no established connection on the port it
+//   (b) it is idle AND ownerless AND old: no established connection on the port it
 //       listens on, no live `claude` session that owns it (by parent chain OR by working
 //       folder), and 2h+ alive (all three, AND).
 // No side effects here; the hook wraps the real /proc scan + kill around selectReapable.
 //
 // Why (b) exists (2026-08-10 measurement): a vite server had been up 6h39m with 0
-// connections, 144s CPU and 299MB RSS, and its owning session was long gone — but its
+// connections, 144s CPU and 299MB RSS, and its owning session was long gone: but its
 // folder still existed, so rule (a) never touched it. Why THESE three conditions:
-//   1. connections — vite/next hold an HMR socket open for every live browser tab, so
+//   1. connections: vite/next hold an HMR socket open for every live browser tab, so
 //      "someone is looking at it" shows up as an established connection and we back off.
 //      A curl-once-in-a-while user leaves no connection; condition 2 covers that case.
-//   2. owner session — a server that belongs to a live claude session is still someone's,
+//   2. owner session: a server that belongs to a live claude session is still someone's,
 //      however quiet it is. Belonging is read two ways (ppid chain, working folder)
-//      because the first one alone measured as "never owned" — see ownerAlive.
-//   3. 2 hours — a just-started server is between requests, not abandoned.
+//      because the first one alone measured as "never owned": see ownerAlive.
+//   3. 2 hours: a just-started server is between requests, not abandoned.
 // Every unknown falls to "do NOT kill": no socket data (ss missing/failed) counts as
 // connected, an unreadable parent chain counts as owner-alive, an unknown age counts as
 // young. Reading a failure as "idle" would reap every dev server on the machine.
 //
-// Matcher discipline (Fable5 audit): identification is TOKEN-based, not substring —
+// Matcher discipline (Fable5 audit): identification is TOKEN-based, not substring -
 // a token's basename must BE the launcher (…/next, …/vite.js) and (where the tool
 // has one-off subcommands) the NEXT arg must be the dev subcommand. Plus `comm` must
 // be node-family. This rejects `python3 ~/dev/next-gen/train.py`, an open vim, a
@@ -37,10 +37,10 @@ function tokenIs(tok, name) {
 // AND a cmdline token is a known dev launcher with the right dev subcommand.
 function isDevServer(comm, cmdline) {
   const c = String(comm || "");
-  if (c === "next-server") return true;                 // Next.js worker renames its own comm — reliable
+  if (c === "next-server") return true;                 // Next.js worker renames its own comm: reliable
   const cl = String(cmdline || "");
   if (!cl) return false;
-  if (!/^node(js)?$/.test(c)) return false;             // dev servers run on node — kills python/tail/vim/bash FPs
+  if (!/^node(js)?$/.test(c)) return false;             // dev servers run on node: kills python/tail/vim/bash FPs
   const toks = cl.split(/\s+/);
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i], nx = toks[i + 1] || "";
@@ -56,7 +56,7 @@ function isDevServer(comm, cmdline) {
   return false;
 }
 
-// A dev-server LAUNCHER (for parent reaping) — npm/yarn/pnpm run dev, or nodemon.
+// A dev-server LAUNCHER (for parent reaping): npm/yarn/pnpm run dev, or nodemon.
 // Narrower than isDevServer so a generic node daemon parent is never reaped.
 function isDevLauncher(cmdline) {
   const toks = String(cmdline || "").split(/\s+/);
@@ -128,7 +128,7 @@ function ageMsFromStat(statText, uptimeSec) {
 }
 
 // `ss -H -tan -p` output → { listen: [{pid, port}], estab: [{pid, port}] }.
-// Returns null when there is nothing to trust (no/blank output) — the caller reads null
+// Returns null when there is nothing to trust (no/blank output): the caller reads null
 // as "assume connected". A socket can be held by several pids (fork), so all are kept;
 // a line with no users:(…) (no permission to attribute) yields pid null but keeps the
 // port, which is enough to block a kill.
@@ -156,15 +156,15 @@ function parseSsNet(text) {
 const MAX_KILL = 50;                    // backstop against a pathological mass-kill
 // 🛑 This measures how long the process has been ALIVE (from /proc starttime), NOT how
 // long it has been idle. There is no "last used" clock for a process. The old name said
-// IDLE and the notice said "2시간+", which read as "quiet for 2h" — it never meant that.
+// IDLE and the notice said "2시간+", which read as "quiet for 2h": it never meant that.
 // A server started this morning and used 30 seconds ago is "old enough" the moment its
 // connections happen to be absent. The connection check is the only idleness evidence,
-// and it is a snapshot — see the residual hole documented in `noClients` below.
+// and it is a snapshot: see the residual hole documented in `noClients` below.
 const MIN_PROCESS_AGE_MS = 2 * 60 * 60 * 1000;
 const MAX_PARENT_HOPS = 64;             // pid chains are shallow; also a cycle backstop
 
 // procs: [{ pid, ppid, uid, comm, cmdline, cwd, ageMs }] (uid/ppid/ageMs may be
-//   null/0/undefined if unknown — every unknown resolves to "do not kill").
+//   null/0/undefined if unknown: every unknown resolves to "do not kill").
 // ownUid: only own-user processes are eligible (null → skip the uid filter).
 // opts.selfPid: never reap this pid (the hook's own process).
 // opts.net: parseSsNet() output, or null/absent when sockets could not be listed.
@@ -173,7 +173,7 @@ const MAX_PARENT_HOPS = 64;             // pid chains are shallow; also a cycle 
 //   🛑 The CALLER must reject the empty string before calling: Number("") is 0, not NaN,
 //   so an env var exported with no value would slip through as "no age requirement".
 // opts.onlyUnder: a folder. When set, ONLY processes whose cwd is at or below it are
-//   eligible at all. This is the fence the integration test stands behind — without it
+//   eligible at all. This is the fence the integration test stands behind: without it
 //   a lowered minAgeMs turns a test run into a machine-wide sweep. Non-string/blank =
 //   no fence (normal operation).
 // Returns [{ pid, reason }] sorted by pid, de-duped, capped. reason: "deleted" | "idle".
@@ -220,13 +220,13 @@ function selectReapableDetailed(procs, ownUid, opts) {
 
   // "Nobody is connected." Any doubt → false (= someone is, so leave it alone).
   //
-  // 🛑 RESIDUAL HOLE — read before trusting this as the idleness test. This is a SNAPSHOT
+  // 🛑 RESIDUAL HOLE: read before trusting this as the idleness test. This is a SNAPSHOT
   // of open sockets, not a history. A tab the user still has open but whose socket died
   // (laptop sleep/resume drops every TCP connection; Chrome freezes background tabs and
   // closes the HMR websocket) reads exactly like an abandoned server. The user sees no
   // change on screen and their server is killed. The hook re-reads sockets after a real
   // pause before killing (reap-dev-servers.js), which catches a client that reconnects
-  // inside that window — it does NOT catch one that stays disconnected.
+  // inside that window: it does NOT catch one that stays disconnected.
   // The mitigations that actually cover this are the OFF switch (CHAGEUN_SKIP_REAP=1)
   // and SIGTERM being restartable, not this check. Documented in README, not hidden.
   function noClients(p) {
@@ -257,17 +257,17 @@ function selectReapableDetailed(procs, ownUid, opts) {
   //
   // Two ways to be owned, OR'd. The parent chain alone is NOT enough: measured
   // 2026-08-10, all three dev servers on the machine were orphans by ppid because Claude
-  // Code backgrounds them and the launching shell exits first — so the chain answers
+  // Code backgrounds them and the launching shell exits first: so the chain answers
   // "no owner" almost always, silently reducing the three safety conditions to two.
   // The second way is the folder: a live session sitting in the server's folder (or in a
-  // folder above it — a session at <project> owns the server in <project>/web) owns it.
+  // folder above it: a session at <project> owns the server in <project>/web) owns it.
   // Three known gaps, left as is (connections + age still guard all three):
-  //  1. Folder match is ONE-WAY — the session must sit AT or ABOVE the server. A monorepo
+  //  1. Folder match is ONE-WAY: the session must sit AT or ABOVE the server. A monorepo
   //     session in <repo>/apps/web does NOT own the server started at <repo>.
   //  2. Worktrees are SIBLING folders, so a session in the main checkout does not own a
   //     server started in a worktree (a session INSIDE that worktree does own it).
   //  3. A server the user launched by hand in a terminal has NO claude ancestor, so it is
-  //     ownerless by definition. On another person's machine that is the common case —
+  //     ownerless by definition. On another person's machine that is the common case:
   //     which is why CHAGEUN_SKIP_REAP=1 exists and why the README says so out loud.
   function ownerAlive(p) {
     if (claudeCwdUnknown) return true;                 // cannot know which folders are open
@@ -303,7 +303,7 @@ function selectReapableDetailed(procs, ownUid, opts) {
       // Intentionally NOT extended to the idle branch: an idle server's parent is left
       // alone (npm/sh exit on their own once the child dies).
       // 🛑 `insideFence(parent)` is not optional. Targets are added in TWO places and the
-      // fence must guard both — the main loop's check does not cover this one, and a
+      // fence must guard both: the main loop's check does not cover this one, and a
       // fence with one unguarded door is not a fence.
       const parent = byPid.get(p.ppid);
       if (parent && eligible(parent) && insideFence(parent) && isDeleted(parent.cwd) &&
