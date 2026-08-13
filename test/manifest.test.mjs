@@ -11,7 +11,7 @@ test("loadManifest는 정본 필드를 읽는다", () => {
   const m = loadManifest(SRC);
   assert.equal(m.name, "chageun");
   assert.equal(m.version, "0.67.0");
-  assert.equal(m.components.skills.length, 16);
+  assert.equal(m.components.skills.length, 15);
 });
 
 // 🛑 v0.67.0: `dependencies` 칸이 **아예 없어야** 한다(빈 배열이 아니다). `deepEqual` 은 여분 키를

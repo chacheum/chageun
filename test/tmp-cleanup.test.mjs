@@ -1,6 +1,7 @@
 // 임시 폴더가 실제로 지워지는지 확인한다.
 // 실측(2026-08-09): 테스트가 os 임시 폴더에 직접 폴더를 뿌리고 대부분 안 지워 `/tmp` 에
 //   2,398개·840MB 가 쌓여 있었다. `retrospect-scan.test.mjs` 한 파일이 실행마다 43개를 흘렸다.
+//   그 검사는 이후 제거됐지만 임시 폴더를 만드는 검사는 그대로 남아 있다: 이 헬퍼는 계속 필요하다.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
