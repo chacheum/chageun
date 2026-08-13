@@ -79,6 +79,13 @@ test("components.skills ↔ src/skills/* 가 양방향으로 같고 전부 dist 
   assert.deepEqual(listed, actual,
     "매니페스트 등재와 실제 스킬 폴더가 어긋난다 — 등재 없이도 복사는 되므로 이 어긋남은 배포물이 아니라 문서에서 드러난다");
   for (const s of listed) assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), "dist 에 안 실림: " + s);
-  assert.ok(existsSync(join(out, "skills", "debugging", "NOTICE")),
-    "귀속 표시(NOTICE)가 배포물에 안 실렸다 — MIT 동봉 의무가 조용히 깨진다(골든·dist 대조로는 못 잡는 축)");
+  // 🛑 NOTICE 도착 단언은 `debugging` 한 곳에 하드코딩돼 있었다(v0.66.0). 그러면 **새 NOTICE 가
+  //    배포물에서 빠져도 잡는 칸이 없다** - 위 `existsSync` 손목록과 똑같은 함정이다(이 파일 :50 주석).
+  //    그래서 목록을 손으로 적지 않고 `src/skills/*/NOTICE` 존재로 뽑아 루프로 돈다.
+  const noticed = listed.filter((s) => existsSync(join(SRC, "skills", s, "NOTICE")));
+  assert.ok(noticed.length > 0,
+    "NOTICE 를 가진 스킬이 하나도 없다 — 귀속 표시가 통째로 사라졌거나 이 검사가 엉뚱한 곳을 본다");
+  for (const s of noticed)
+    assert.ok(existsSync(join(out, "skills", s, "NOTICE")),
+      `귀속 표시(NOTICE)가 배포물에 안 실렸다: ${s} — MIT 동봉 의무가 조용히 깨진다(골든·dist 대조로는 못 잡는 축)`);
 });
