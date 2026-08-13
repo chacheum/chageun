@@ -58,7 +58,7 @@ plan-validator GO(또는 사용자 "진행해도 좋다") 다음, 선택지를 �
 ## 병렬 위임
 
 요청 없어도 독립적(서로 다른 파일) 기계적 작업이 2개 이상이면 기본으로 `code-implementer`(Sonnet) 여러 개를 한 응답에 동시에 띄운다. 단:
-- 같은 파일 동시 수정 금지(순차, 또는 `using-git-worktrees`로 worktree 격리 — 즉흥 생성 말고 스킬 절차로).
+- 같은 파일 동시 수정 금지(순차, 또는 `Agent(isolation: "worktree")` 로 작업방 격리 — 손으로 `git worktree add` 하지 않는다).
 - **공유·등록류 파일**(라우터 등록·index/barrel export·공통 타입·DB 마이그레이션)은 병렬의 숨은 충돌점 → 병렬에서 빼고 메인이 병렬 완료 후 순차 통합.
 - 의존성 있거나(B가 A 결과 필요) 보안·권한·동시성처럼 판단 중요한 코드는 **병렬 금지**(순차). 그 일은 `code-implementer` 여러 개로 쪼개지 말고 `deep-implementer` 하나에 순차로 맡긴다 : 막는 것은 **병렬**이지 위임이 아니다.
 - 독립성·명확성이 애매하면 `code-implementer` 로 쪼개지 말고 `deep-implementer`(최상위) 하나에 통째로 맡긴다("애매하면 최상위", 한 줄 알림). fail-safe 방향은 그대로다 : 안전하게 비싼 쪽.
