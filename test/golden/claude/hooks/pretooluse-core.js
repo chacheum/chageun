@@ -28,11 +28,26 @@ const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/
 //   `rm -rf \`(개행)`  /` 같은 진짜 위험이 인자 없는 rm 으로 보여 빠져나간다.
 const RM_RECURSIVE_G = new RegExp(RM_RECURSIVE.source, "g");
 const RM_ARGS_END = /[|;&<>]|(?<!\\)\n/;
-// 🛑 **대상이 이 자리에 안 보이는 형태**: 인자 구간이 비었거나 자리표(`{}`)·`--`·플래그·이스케이프뿐.
-//   `find / -name '*.log' | xargs rm -rf` · `find … -exec rm -rf {} \;` 가 그렇다. 대상은 앞 세그먼트가
-//   파이프로 넘긴다. 1회차가 이 갈래를 놓쳐 **옛 판이 막던 진짜 위험을 통과시켰다**(게이트 적발).
-//   정적으로 못 푸니 그 경우엔 **옛 판대로 온 명령을 본다**(안전측 되돌림 · 과차단 방향).
-const RM_ARGS_OPAQUE = /^(?:\s|\{\}|--|-[a-zA-Z]+|\\.?)*$/;
+// 🛑 **대상이 이 자리에 안 보이는 형태**: `find / … | xargs rm -rf` · `find … -exec rm -rf {} \;` 처럼
+//   지울 것을 앞 세그먼트가 넘긴다. 그때는 **옛 판대로 온 명령을 본다**(안전측 되돌림 · 과차단 방향).
+//
+// 🛑🛑 **2회차에 이 판정도 방향이 거꾸로였다**(게이트가 실행으로 적발). 그 판은 아는 토큰
+//   (`{}`·`--`·플래그·이스케이프)**만** 있을 때 불투명으로 봤다. 그러면 **모르는 글자가 하나만 섞여도**
+//   "대상이 보인다"로 떨어져 짧은 구간만 보고 끝난다 = 모르면 열린다. 실제로 뚫린 것:
+//   `find / -name '*.log' -exec rm -rf {} +` (`+` 를 모름 - 요즘 권장 표기다) ·
+//   `find / -exec rm -rf "{}" \;` (따옴표 씌운 자리표).
+// 그래서 조건을 뒤집었다: **경로로 보이는 토큰이 하나도 없으면 불투명**이다. 자리표·플래그·구분자·
+//   처음 보는 표기가 전부 안전측으로 떨어지고, 새 표기가 생겨도 자동으로 막힌다.
+const RM_ARG_PLACEHOLDER = /^(?:["']?\{\}["']?|\+|%|;|\\;?|--)$/;
+function rmArgsOpaque(args) {
+  for (const t of String(args).trim().split(/\s+/)) {
+    if (!t) continue;
+    if (t.startsWith("-")) continue;              // 플래그 · `--`
+    if (RM_ARG_PLACEHOLDER.test(t)) continue;     // find 자리표 · 종결자
+    return false;                                 // 경로로 보이는 토큰이 하나라도 있으면 대상이 보인다
+  }
+  return true;
+}
 function rmHitsDangerTarget(cmd) {
   const s = String(cmd || "");
   RM_RECURSIVE_G.lastIndex = 0;   // 전역 정규식은 상태를 들고 다닌다: 누가 test 를 부르면 시작점이 밀린다
@@ -41,7 +56,7 @@ function rmHitsDangerTarget(cmd) {
     const end = rest.search(RM_ARGS_END);
     const args = end === -1 ? rest : rest.slice(0, end);
     if (RM_DANGER_TARGET.test(args)) return true;
-    if (RM_ARGS_OPAQUE.test(args) && RM_DANGER_TARGET.test(s)) return true;
+    if (rmArgsOpaque(args) && RM_DANGER_TARGET.test(s)) return true;
   }
   return false;
 }
@@ -192,7 +207,15 @@ function isDeploy(cmd) {
 //
 // 남는 구멍(정직):
 //   - 글자를 파일에 적어 두고 나중에 그 파일을 돌리는 형태(`echo "git push" > f; bash f`)는 못 잡는다.
-//     이 판 전에도 여러 갈래로 열려 있던 클래스다(Write 도구 경로 · `printf 'git ''push'`).
+//     ⚠ 여기서 **두 갈래를 갈라 적는다**(2026-08-14 게이트 지적, 실행으로 확인):
+//       · **두 번에 나눠 부르는 형태**(한 번 쓰고, 다음 호출에서 `bash f`)는 이 판 전에도 열려 있었다.
+//         Write 도구로 쓰면 애초에 Bash 판정을 안 거치고, `printf 'git ''push'` 같은 쪼개 쓰기도 있었다.
+//       · **한 줄짜리 형태**(`cat > /tmp/x <<'EOF' … EOF … bash /tmp/x` 를 한 명령으로)는
+//         **옛 판이 우연히 막고 있었고 이 판에서 그 우연이 사라진다.** 옛 판은 히어독 본문까지
+//         통째로 훑어서 막은 것이지 "나중에 돌린다"를 읽어서 막은 게 아니다. 같은 우연이
+//         `echo "rm -rf /*" > f; bash f` 도 막고 있었다. 둘 다 이 판에서 통과로 바뀐다.
+//         **이 손실은 수용된 것이다**: 그 우연을 남기려면 히어독 본문을 다시 다 훑어야 하고,
+//         그러면 이 판이 고치려던 헛막음(문서·커밋 메시지 본문)이 통째로 돌아온다.
 //   - **파이프로 대상을 받는 삭제**(`… | xargs rm -rf`)는 인자가 그 자리에 안 보인다.
 //     `rmHitsDangerTarget` 이 그 경우 **옛 판대로 온 명령을 본다**(아래 RM_ARGS_OPAQUE). 정적으로
 //     푼 것이 아니라 안전측으로 되돌린 것이라, 앞 세그먼트에 위험 글자가 있으면 과차단이 난다.
@@ -200,26 +223,45 @@ function isDeploy(cmd) {
 //   근거는 전부 실측 코퍼스다 - `git commit -m/-F`(커밋 메시지 본문) · `git grep`·`grep`(검색어) ·
 //   `echo`·`printf`(시험용 JSON) · `cat`(히어독으로 문서·각본 쓰기). 그 밖은 안 넣었다.
 const TEXT_CONSUMER_RE = /(?:^|[\s(){}!&|;])(?:echo|printf|cat|grep|egrep|fgrep|zgrep)(?=\s|$)|(?:^|[\s(){}!&|;])git\b[^\n]*?\s(?:commit|grep)(?=\s|$)/;
-// 통째로 셸·인터프리터에 **코드로** 먹이는 형태. 이게 보이면 마스킹을 접는다(옛 판 그대로 검사).
-//   `echo "rm -rf / " | bash` 는 따옴표 안 글자가 그대로 실행된다 - 여기서 마스킹하면 진짜 실행이 샌다.
-//   `echo` 는 위 목록에 있으므로 이 백스톱이 없으면 그 한 줄이 통째로 열린다.
-// ⚠ 갈리는 지점은 **인터프리터가 표준입력을 코드로 읽느냐**다. 뒤에 각본 파일이 붙으면
-//   (`| node hook.js` · `| python3 probe.py`) 표준입력은 그냥 **데이터**라 마스킹을 접을 이유가 없다.
-//   이 구분이 없으면 이 저장소가 늘 하는 훅 자기 시험(`printf '{"command":"git push"}' | node hook.js`)이
-//   전부 오차단으로 남는다(실측 2건). 반대로 각본이 없거나 `-`·플래그뿐이면(`| bash` · `| bash -x` ·
-//   `| python3 -` · `| VAR=1 bash`) 표준입력이 코드다.
+// 파이프 뒤로 넘어간 글자가 **코드가 되는지** 본다. 될 수 있으면 마스킹을 접는다(옛 판 그대로 검사).
+//   `echo "rm -rf /*" | bash` 는 따옴표 안 글자가 그대로 실행된다 - 여기서 마스킹하면 진짜 실행이 샌다.
+//   `echo` 는 위 `TEXT_CONSUMER_RE` 에 있으므로 이 백스톱이 없으면 그 한 줄이 통째로 열린다.
+//
+// 🛑🛑 **2회차에 여기서 또 방향을 거꾸로 잡았다**(2026-08-14 게이트가 실행으로 적발). 그 판은
+//   "아는 인터프리터 이름이면 접는다"였다. 그러면 **목록 밖은 안 접힌다** = 모르면 열린다.
+//   `echo "rm -rf /*" | /bin/sh` 가 통과했다: `|` 뒤 첫 낱말이 `/bin/sh` 라 맨 이름 목록에 안 걸렸다.
+//   바로 위 (2) 가 "모르면 안 덮는다"라고 적어 놓고 **이 두 번째 목록에는 그 원칙을 안 적용했다.**
+//   같은 실수를 두 판 연속으로 했다: 목록을 늘려 고치려 들지 말 것. **방향이 문제다.**
+//
+// 지금 판정(기본값 = 접는다):
+//   (a) `|` 뒤 낱말의 **basename** 이 **글자를 먹는 것이 확실한 것**(`head`·`tee`·`wc`·`jq`·`grep` …)이면
+//       접지 않는다. `/usr/bin/head` 처럼 경로로 불러도 같게 본다.
+//   (b) 셸이 아닌 인터프리터에 **각본 파일**이 붙으면(`| node hook.js` · `| python3 probe.py`)
+//       표준입력은 데이터라 접지 않는다. 이 저장소가 늘 하는 훅 자기 시험이 여기 산다(실측 2건).
+//       🛑 셸(`sh`·`bash`·`zsh`·`ksh`·`dash`)은 이 예외를 **안 준다**: `bash -s -- x` 처럼 각본이
+//       붙은 것처럼 보여도 표준입력이 코드다. 셸은 언제나 접는다.
+//   (c) 그 밖의 **모든** 파이프 대상은 접는다 - 모르는 도구·사용자 각본·`/bin/sh`·`awk` 전부.
 // 앞머리 환경변수·sudo·env 는 건너뛴다: 그게 없으면 `| VAR=1 bash` 한 줄로 이 백스톱이 풀린다.
-// 🛑 인터프리터 이름은 **이 상수 하나**다. 두 벌로 두면 한쪽만 늘 때 조용히 어긋난다(1회차 지적).
-const INTERPRETERS = "sh|bash|zsh|ksh|dash|eval|xargs|python3?|node|perl|ruby|php|awk|gawk";
-const PIPE_TARGET = new RegExp("\\|\\s*(?:(?:\\w+=\\S*|sudo|env|command|nohup|exec)\\s+)*(" + INTERPRETERS + ")\\b([^|;&\\n]*)", "g");
+//
+// 🛑 **이 판정은 마스킹을 끝낸 글에 건다**(`maskQuotedText` 맨 끝). 원문에 걸면 **따옴표 안의 `|`**
+//   까지 파이프로 읽는다: 기본값이 "접는다"라 그 순간 정상 작업이 통째로 안 풀린다.
+//   실측(만들다가 스스로 냄): `git grep -n "u-push\|git push"` 의 정규식 `\|` 와 마크다운 표의
+//   `| 항목 |` 이 파이프로 읽혀 오차단 해제 3건이 도로 막혔다. 마스킹 뒤 글에서는 따옴표 안이
+//   공백이라 **진짜 파이프만** 남는다. 순서를 뒤집지 말 것.
+const PIPE_TEXT_SINKS = /^(?:head|tail|tee|wc|jq|grep|egrep|fgrep|zgrep|sort|uniq|cut|tr|rev|nl|column|less|more|cat|diff|base64|xxd|od|hexdump|md5sum|sha1sum|sha256sum|pbcopy|clip)$/;
+const NON_SHELL_INTERPRETERS = /^(?:python3?|node|deno|bun|perl|ruby|php)$/;
+const PIPE_TARGET = /\|\s*((?:(?:\w+=\S*|sudo|env|command|nohup|exec)\s+)*)([^\s|;&<>\n]+)([^|;&\n]*)/g;
 function pipesIntoInterpreter(s) {
   PIPE_TARGET.lastIndex = 0;   // 위 RM_RECURSIVE_G 와 같은 이유
   for (const m of String(s).matchAll(PIPE_TARGET)) {
-    if (m[1] === "xargs" || m[1] === "eval") return true;          // 표준입력이 곧 명령 재료다
-    const rest = m[2].trim();
-    if (!rest) return true;                                        // `| bash`
-    // 각본 파일(플래그가 아닌 낱말)이 하나라도 있으면 표준입력은 데이터다.
-    if (!rest.split(/\s+/).some((t) => t && t !== "-" && !t.startsWith("-"))) return true;
+    const base = m[2].replace(/^['"]|['"]$/g, "").split("/").pop();   // 경로로 불러도 같게 본다
+    if (PIPE_TEXT_SINKS.test(base)) continue;                        // (a) 글자를 먹는 것이 확실
+    if (NON_SHELL_INTERPRETERS.test(base)) {
+      // (b) 각본 파일(플래그가 아니고 `-` 도 아닌 낱말)이 있으면 표준입력은 데이터다.
+      const args = m[3].trim();
+      if (args && args.split(/\s+/).some((t) => t && t !== "-" && !t.startsWith("-"))) continue;
+    }
+    return true;                                                     // (c) 나머지는 전부 접는다
   }
   return false;
 }
@@ -241,7 +283,7 @@ function executableText(cmd) {
 }
 
 function maskQuotedText(s) {
-  if (!s || pipesIntoInterpreter(s)) return s;
+  if (!s) return s;
   const out = s.split("");
   let ok = true;                                      // false = 못 읽었다 → 원문 그대로 쓴다
   const blank = (a, b) => { for (let k = a; k < b; k++) if (out[k] !== "\n") out[k] = " "; };
@@ -338,7 +380,10 @@ function maskQuotedText(s) {
   }
 
   scan(0, s.length, 0, true);   // 맨 바깥은 덮을 자격이 있다(명령마다 TEXT_CONSUMER_RE 로 다시 본다)
-  return ok ? out.join("") : s;
+  if (!ok) return s;
+  // 파이프 백스톱은 **여기서** 건다. 덮고 난 글에는 따옴표 안이 공백이라 **진짜 파이프만** 남는다.
+  const masked = out.join("");
+  return pipesIntoInterpreter(masked) ? s : masked;
 }
 
 // 파괴적 SQL 판정: 주석 제거 후 세미콜론으로 문장 분리해 각 문장을 개별 검사
@@ -432,6 +477,10 @@ function block(toolName, toolInput) {
     //   **여는** 쪽이라 한 규칙마다 "무엇이 열리는가"를 실기록으로 따로 재야 하는데, 이번 판이 실측으로
     //   잰 것은 삭제·push 둘뿐이다(env-encoder 98건 · 배포 17건 · SQL 27건은 안 봤다: 후속 후보).
     //   `cmd` 를 통째로 `execText` 로 바꾸면 재지 않은 세 규칙이 조용히 함께 열린다.
+    //   - **무인 모드의 `ANY_PUSH`(`reasonForUnattended` 안)도 안 넓혔다.** 거기는 지금도 원문
+    //     `seg` 를 봐서 `git commit -m "다음 단계: git push 는 사람이 한다"` 가 park 된다(실행으로 확인).
+    //     안 넓힌 이유는 위와 같다: **무인은 실측 코퍼스가 없다.** 헛막음이 실제로 몇 건인지 못 재서
+    //     여는 쪽으로 손대지 않았다. 무인은 사람이 자리에 없어 과차단 값이 싸고 과통과 값이 비싸다.
     const execText = executableText(cmd);
     // 강제 push 도 같은 짝이다: `git commit -m "… --force 는 금지"` 가 하드 차단이었다(1회차 지적).
     if (FORCE_PUSH.test(execText)) return "force-push";
@@ -1743,6 +1792,9 @@ function unattendedBlock(toolName, toolInput, opts) {
     const envRemote = envTargetsRemoteDb(cmd);
     for (const seg of cmd.split(/&&|\|\||[;|\n]/)) {
       if (NESTED_AGENT.test(seg)) return "u-nested";
+      // ⚠ 여기 `seg` 는 **원문**이다(v0.67.x 마스킹을 일부러 안 걸었다). 그래서 커밋 메시지 안에
+      //   글자로 적힌 `git push` 도 park 된다. 이유는 `block()` 의 '안 넓힌 규칙' 주석 참고:
+      //   무인은 실측 코퍼스가 없어 헛막음 건수를 못 재서, 여는 쪽으로 손대지 않았다.
       if (ANY_PUSH.test(seg)) return "u-push";
       if (DEPLOY_VERB.test(seg) || DEPLOY_TOOL.test(seg)) return "u-deploy";
       if (isEgress(seg)) return "u-egress";

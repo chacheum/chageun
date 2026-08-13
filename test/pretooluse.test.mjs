@@ -132,6 +132,51 @@ test("(라) 강제 push 도 같은 짝을 지킨다: 글자는 통과 · 실행�
   assert.equal(bash("git push --force-with-lease origin main"), null, "안전 강제는 그대로 허용");
 });
 
+// 🛑🛑 **2회차가 또 4줄을 열었고, 그때 검사 759개가 전부 초록이었다.** 같은 방향의 실수를 두 번 했다:
+//   목록을 "아는 것이면 접는다"로 써서 **목록 밖이 안 접히게**(= 열리게) 만들었다. 두 자리 모두
+//   **판정을 뒤집어** 고쳤다. 이 칸은 그 두 자리를 각각 되돌리면 빨개지도록 짝을 갈라 놨다.
+test("(마) 파이프 뒤를 경로로 부르면 접는다: `| /bin/sh` 는 맨 이름과 같게 본다", () => {
+  // 2회차가 연 자리 ①②: `|` 뒤 첫 낱말이 `/bin/sh` 라 맨 이름 목록에 안 걸려 마스킹이 유지됐다.
+  assert.equal(bash('echo "rm -rf /*" | /bin/sh'), "rm-recursive");
+  assert.equal(bash('echo "rm -rf /*" | /bin/bash'), "rm-recursive");
+  assert.equal(bash('echo "rm -rf /*" | bash'), "rm-recursive", "맨 이름 대조군");
+  assert.equal(bash('echo "rm -rf /*" | /usr/bin/env sh'), "rm-recursive");
+  assert.equal(bash('echo "rm -rf /*" | ./myshell.sh'), "rm-recursive", "모르는 각본도 접는다");
+  assert.equal(bash('echo "rm -rf /*" | busybox sh'), "rm-recursive");
+  assert.equal(bash('echo "rm -rf /*" | VAR=1 /bin/bash'), "rm-recursive", "앞머리 환경변수로 못 푼다");
+  assert.equal(bash('echo "rm -rf /*" | sudo /bin/sh'), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | awk '{system($0)}'`), "rm-recursive");
+  assert.equal(bash('echo "rm -rf /*" | python3 -'), "rm-recursive", "각본 파일 없이 받으면 셸과 같다");
+  assert.equal(isPush("Bash", { command: 'echo "git push" | /bin/sh' }), true);
+  assert.equal(isPush("Bash", { command: 'echo "git push" | ./myshell.sh' }), true);
+  // 반대 방향: 글자를 먹는 것이 확실한 파이프 대상에서는 마스킹이 그대로 살아야 한다(오차단 해제).
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- test/ | head' }), false,
+    "실측 헛막음 원본: 검색어를 `| head` 로 받는 형태");
+  assert.equal(isPush("Bash", { command: 'git grep -n "u-push\\|git push" -- x.mjs | wc -l' }), false);
+  // 경로 벗기기는 **양쪽**에 걸린다: 접는 쪽만 재면 이 줄이 없어 되돌려도 초록이다(실제로 그랬다).
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x | /usr/bin/head -5' }), false,
+    "경로로 부른 `head` 도 글자를 먹는 것으로 본다");
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x | /usr/bin/wc -l' }), false);
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | node hook.js` }), false,
+    "각본 파일을 인자로 든 비셸 인터프리터는 글자를 코드로 안 먹는다");
+  // 🛑 파이프 판정을 **원문**에 걸면 이 줄이 깨진다: 따옴표 안의 `\\|` 를 진짜 파이프로 읽는다.
+  assert.equal(isPush("Bash", { command: 'git commit -m "표: | 항목 | git push |"' }), false,
+    "따옴표 안의 `|` 는 파이프가 아니다");
+});
+
+test("(마) find 자리표는 인자로 안 친다: `{} +` · `\"{}\"` 도 대상이 안 보이는 것이다", () => {
+  // 2회차가 연 자리 ③④: `+` 나 `"{}"` 를 못 알아봐 '인자가 보인다'로 판단하고 짧은 구간만 봤다.
+  assert.equal(bash("find / -name '*.log' -exec rm -rf {} +"), "rm-recursive", "`{} +` 는 요즘 권장 표기다");
+  assert.equal(bash('find / -exec rm -rf "{}" \\;'), "rm-recursive");
+  assert.equal(bash("find / -exec rm -rf '{}' \\;"), "rm-recursive");
+  assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive", "맨 자리표 대조군");
+  assert.equal(bash("find / -name x -exec rm -rf {} +"), "rm-recursive");
+  // 반대 방향: 구체적인 경로가 하나라도 보이면 그 rm 의 인자 구간만 본다(과차단 방지).
+  assert.equal(bash("cd / && rm -rf ./build"), null, "앞 세그먼트의 `/` 를 이 rm 의 대상으로 읽지 않는다");
+  assert.equal(bash("find / -name '*.log' -exec rm -rf ./tmp//x {} +"), null,
+    "경로로 보이는 토큰이 있으면 그 구간만 본다");
+});
+
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
   const same = (cmd) => assert.equal(executableText(cmd).length, cmd.length, "길이가 바뀌면 호출자의 인덱스 계산이 어긋난다");
   same('git commit -m "rm -rf /"');
