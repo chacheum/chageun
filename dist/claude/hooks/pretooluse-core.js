@@ -9,6 +9,35 @@ const FORCE_PUSH = /\bgit\b(?:\s+-c\s+\S+|\s+-C\s+\S+|\s+--git-dir=\S+|\s+--work
 // rm 재귀+강제(-rf·-fr·-r -f·--recursive --force)가 루트/홈/현재트리 등 위험 타깃을 지울 때.
 const RM_RECURSIVE = /\brm\s+(?:-[a-zA-Z]*\b\s*){0,3}(?:-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|--recursive|--force)\b/;
 const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/\*|\.\.(?:\s|$|\/(?:\s|$|\*|\.))|\.\s*$|\*\s*$)/;
+// 위험 타깃은 **그 `rm` 자신의 인자 구간**에서만 본다(v0.67.x).
+//
+// 🛑 **실측 9건 전부 오차단이었다**(2026-08-13, 실기록 2,137파일 471,445줄 전수 재생).
+//   옛 판은 `RM_RECURSIVE.test(cmd) && RM_DANGER_TARGET.test(cmd)` 로 **둘을 따로** 온 명령에 걸었다.
+//   그래서 지우는 대상이 구체적이어도(`rm -rf node_modules/.deno`) 명령 **어딘가**에 위험해
+//   보이는 글자가 있으면 막혔다. 실제로 물었던 것들:
+//     `cd ..` · 파이썬 코드의 ` / ` (`open(out / f"…")`) · 마크다운 표의 `3,191,040 / 6,711,694` ·
+//     커밋 메시지의 `# tests 749 / # pass 749`.
+//   가장 나쁜 모양은 **하는 것은 통과하고 설명하는 것이 막히는 것**이었다: 실제
+//   `npm run build && rm -rf test/golden/claude && cp -r dist/claude test/golden/` 는 통과했는데,
+//   같은 문장을 커밋 메시지에 **글자로 적자** 그 커밋이 막혔다(뒤에서 돌던 에이전트 · 실측 1건).
+//
+// 좁힘의 방향(정직): 이것은 **순수 좁힘이 아니다** — 구간을 자르면 `$` 앵커가 "명령 끝"이 아니라
+//   "이 rm 의 인자 끝"이 되어 오히려 **더 잡는다**(예: `rm -rf . && ls` 는 옛 판이 놓쳤는데 이제 막는다).
+//   두 방향 다 안전측이다: 못 잡던 것을 잡고, 남의 자리 글자로 막던 것을 안 막는다.
+// 구간의 끝: 첫 셸 연산자·리다이렉션·개행. 단 **줄 이음(`\` + 개행)은 끝이 아니다** — 거기서 끊으면
+//   `rm -rf \`(개행)`  /` 같은 진짜 위험이 인자 없는 rm 으로 보여 빠져나간다.
+const RM_RECURSIVE_G = new RegExp(RM_RECURSIVE.source, "g");
+const RM_ARGS_END = /[|;&<>]|(?<!\\)\n/;
+function rmHitsDangerTarget(cmd) {
+  const s = String(cmd || "");
+  RM_RECURSIVE_G.lastIndex = 0;   // 전역 정규식은 상태를 들고 다닌다: 누가 test 를 부르면 시작점이 밀린다
+  for (const m of s.matchAll(RM_RECURSIVE_G)) {
+    const rest = s.slice(m.index + m[0].length);
+    const end = rest.search(RM_ARGS_END);
+    if (RM_DANGER_TARGET.test(end === -1 ? rest : rest.slice(0, end))) return true;
+  }
+  return false;
+}
 
 // 파괴적 SQL(스키마·대량삭제). DELETE는 WHERE 없을 때만.
 const SQL_DESTRUCTIVE = /\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE\s+(TABLE\s+)?\w)/i;
@@ -125,6 +154,165 @@ function isDeploy(cmd) {
   return false;
 }
 
+// ── 실행 구간 마스킹(v0.67.x) ────────────────────────────────────────────────
+// **하는 것과 설명하는 것을 가른다.** 훅은 셸 문자열을 통으로 훑어 왔고, 그래서 커밋 메시지 본문·
+//   검색어(grep 인자)·훅 자기 시험용 JSON 안에 **글자로 인용된** 명령을 진짜 실행으로 읽었다.
+//   실측(2026-08-13 · 실기록 2,137파일 전수 재생): 서브에이전트 push 차단 9건 중 7건이 이 모양이었다
+//   (`git -C … grep -n "u-push\|git push" -- …` 로 훅을 **검토하던 에이전트 자신이** 막혔다).
+//
+// 🛑 **이 함수는 가드를 여는 쪽이라 방향이 전부 안전측이어야 한다.** 그래서 세 가지를 지킨다.
+//   (1) **덜어내는 것은 따옴표 안과 인용 히어독 본문뿐**이다. 그 밖의 셸 문법(키워드·서브셸·
+//       리다이렉션·연산자)은 손대지 않는다. 명령 자리 화이트리스트를 쓰지 않는 이유가 이것이다:
+//       화이트리스트는 목록에 없는 문법(`then git push` · `do git push`)을 **통과**시키는 쪽으로
+//       틀리는데, 안전 가드에서 그 방향은 구멍이다. 여기서는 모르는 문법이면 그대로 검사한다.
+//   (2) **실행되는 인용은 안 덜어낸다.** 같은 세그먼트에서 따옴표 **앞**에 실행기 낱말이 있으면
+//       (`bash -c "git push"` · `ssh host "rm -rf /"` · `eval '…'`) 그 세그먼트는 통째로 원문을 쓴다.
+//       판정은 따옴표 **밖의 낱말**만 본다: 따옴표 안 글자로 이 판정을 흔들 수 없어야 한다.
+//   (3) **모르겠으면 원문**(fail-closed). 따옴표 짝이 안 맞거나 히어독 끝을 못 찾거나 통째로 셸에
+//       먹이는 형태(`echo "…" | bash`)면 마스킹을 아예 안 한다.
+// 길이는 반드시 보존한다(덜어낸 자리는 같은 수의 공백). 호출자가 인덱스로 원문 구간을 되짚는다
+//   (`rmHitsDangerTarget` 의 인자 구간 계산).
+//
+// 남는 구멍(정직): 글자를 파일에 적어 두고 나중에 그 파일을 돌리는 형태(`echo "git push" > f; bash f`)는
+//   못 잡는다. 그 클래스는 이 판 전에도 여러 갈래로 열려 있었고(Write 도구 경로 · `printf 'git ''push'`),
+//   여기서 닫으려면 정적 해석이 못 버티는 크기가 된다.
+const EXECUTORS = "sh|bash|zsh|ksh|dash|eval|sudo|su|env|command|nohup|time|timeout|xargs|exec|watch|flock|script|ssh|docker|kubectl|find|python|python3|node|perl|ruby|php";
+// 따옴표 **밖**에서 실행기가 낱말로 등장하는가. `-c`·경로·`VAR=` 는 낱말이 아니라 걸리지 않는다.
+const EXECUTOR_WORD = new RegExp("(?:^|[\\s(){}!&|;])(?:" + EXECUTORS + ")(?=\\s|$)");
+// 통째로 셸·인터프리터에 **코드로** 먹이는 형태. 이게 보이면 마스킹을 접는다(옛 판 그대로 검사).
+//   `echo "git push" | bash` 는 따옴표 안 글자가 그대로 실행된다 - 여기서 마스킹하면 진짜 실행이 샌다.
+// ⚠ 갈리는 지점은 **인터프리터가 표준입력을 코드로 읽느냐**다. 뒤에 각본 파일이 붙으면
+//   (`| node hook.js` · `| python3 probe.py`) 표준입력은 그냥 **데이터**라 마스킹을 접을 이유가 없다.
+//   이 구분이 없으면 이 저장소가 늘 하는 훅 자기 시험(`printf '{"command":"git push"}' | node hook.js`)이
+//   전부 오차단으로 남는다(실측 2건). 반대로 각본이 없거나 `-`·플래그뿐이면(`| bash` · `| bash -x` ·
+//   `| python3 -` · `| VAR=1 bash`) 표준입력이 코드다.
+// 앞머리 환경변수·sudo·env 는 건너뛴다: 그게 없으면 `| VAR=1 bash` 한 줄로 이 백스톱이 풀린다.
+const PIPE_TARGET = /\|\s*(?:(?:\w+=\S*|sudo|env|command|nohup|exec)\s+)*(sh|bash|zsh|ksh|dash|eval|xargs|python3?|node|perl|ruby|php)\b([^|;&\n]*)/g;
+function pipesIntoInterpreter(s) {
+  PIPE_TARGET.lastIndex = 0;   // 위 RM_RECURSIVE_G 와 같은 이유
+  for (const m of String(s).matchAll(PIPE_TARGET)) {
+    if (m[1] === "xargs" || m[1] === "eval") return true;          // 표준입력이 곧 명령 재료다
+    const rest = m[2].trim();
+    if (!rest) return true;                                        // `| bash`
+    // 각본 파일(플래그가 아닌 낱말)이 하나라도 있으면 표준입력은 데이터다.
+    if (!rest.split(/\s+/).some((t) => t && t !== "-" && !t.startsWith("-"))) return true;
+  }
+  return false;
+}
+// 세그먼트 경계(따옴표 밖). shellSegments 와 같은 뜻이지만 여기서는 **위치**가 필요해 따로 센다.
+const SEG_BREAK = "\n;|&(){}";
+const RE_ESCAPE = /[.*+?^${}()|[\]\\]/g;
+// 히어독 머리: `<<EOF` · `<<-EOF` · `<<'EOF'` · `<<"EOF"`. 허스트링(`<<<`)은 부르는 쪽에서 먼저 뺀다.
+const HEREDOC_HEAD = /^<<-?\s*(?:'([^'\n]+)'|"([^"\n]+)"|([A-Za-z_][\w-]*))/;
+// 명령치환 중첩 깊이 상한. 🛑 **이 뚜껑이 없으면 훅이 죽는다**: `$(` 를 5,000겹 쌓은 입력에서
+//   재귀가 `RangeError: Maximum call stack size exceeded` 를 던졌고, 그 예외는 `block` 밖으로
+//   그대로 나가 훅을 0도 2도 아닌 종료로 끝냈다(실측). 상한을 넘으면 예외가 아니라 **원문**으로
+//   떨어뜨린다(fail-closed): 못 읽은 입력은 덜어내지 않고 옛 판 그대로 검사한다.
+//   64 는 실제 셸 명령에서 나올 일이 없는 깊이다(관측된 최대 중첩은 2).
+const MAX_SUBST_DEPTH = 64;
+
+function executableText(cmd) {
+  const s = String(cmd || "");
+  try { return maskQuotedText(s); } catch (_) { return s; }   // 판정 중 오류 = 못 읽음 = 원문
+}
+
+function maskQuotedText(s) {
+  if (!s || pipesIntoInterpreter(s)) return s;
+  const out = s.split("");
+  let ok = true;                                      // false = 못 읽었다 → 원문 그대로 쓴다
+  const blank = (a, b) => { for (let k = a; k < b; k++) if (out[k] !== "\n") out[k] = " "; };
+
+  // `(`…`)` 짝 찾기(명령치환용). 홑따옴표 안과 역슬래시 뒤는 건너뛴다.
+  function matchParen(open, to) {
+    let depth = 0;
+    for (let k = open; k < to; k++) {
+      const c = s[k];
+      if (c === "\\") { k++; continue; }
+      if (c === "'") { const e = s.indexOf("'", k + 1); if (e === -1 || e >= to) return -1; k = e; continue; }
+      if (c === "(") depth++;
+      else if (c === ")") { depth--; if (depth === 0) return k; }
+    }
+    return -1;
+  }
+
+  // 겹따옴표 구간. 글자 부분만 덮고, 명령치환(`$( … )`·백틱)은 **실행되는 자리라 다시 훑는다**.
+  //   `git commit -m "$(rm -rf /)"` 를 통째로 인용으로 읽으면 진짜 실행이 통과한다.
+  function doubleQuote(open, to, mask, depth) {
+    let j = open + 1, lit = j;
+    while (j < to) {
+      const c = s[j];
+      if (c === "\\") { j += 2; continue; }
+      if (c === '"') { if (mask) blank(lit, j); return j; }
+      if ((c === "$" && s[j + 1] === "(") || c === "`") {
+        if (mask) blank(lit, j);
+        let close;
+        if (c === "`") close = s.indexOf("`", j + 1);
+        else close = matchParen(j + 1, to);
+        if (close === -1 || close >= to) return -1;
+        scan(c === "`" ? j + 1 : j + 2, close, depth + 1);
+        j = close + 1; lit = j; continue;
+      }
+      j++;
+    }
+    return -1;
+  }
+
+  // 코드 구간 [from, to) 를 훑는다. 실행기 판정(plain)은 이 구간 안에서만 센다.
+  function scan(from, to, depth) {
+    if (depth > MAX_SUBST_DEPTH) { ok = false; return; }   // 너무 깊다 = 못 읽음(원문으로 떨어진다)
+    let plain = "";
+    const execHere = () => EXECUTOR_WORD.test(plain);
+    let i = from;
+    while (i < to && ok) {
+      const ch = s[i];
+      if (ch === "\\") { plain += "  "; i += 2; continue; }
+      if (ch === "$" && s[i + 1] === "(") {              // 명령치환: 실행되는 자리 → 안쪽을 다시 훑는다
+        const close = matchParen(i + 1, to);
+        if (close === -1) { ok = false; return; }
+        scan(i + 2, close, depth + 1);
+        i = close + 1; plain = ""; continue;
+      }
+      if (ch === "`") {
+        const close = s.indexOf("`", i + 1);
+        if (close === -1 || close >= to) { ok = false; return; }
+        scan(i + 1, close, depth + 1);
+        i = close + 1; plain = ""; continue;
+      }
+      if (SEG_BREAK.indexOf(ch) !== -1) { plain = ""; i++; continue; }
+      if (ch === "<" && s[i + 1] === "<") {
+        if (s[i + 2] === "<") { plain += " "; i += 3; continue; }   // 허스트링은 히어독이 아니다
+        const m = HEREDOC_HEAD.exec(s.slice(i, to));
+        if (!m) { plain += ch; i++; continue; }
+        const delim = m[1] != null ? m[1] : m[2] != null ? m[2] : m[3];
+        const bodyStart = s.indexOf("\n", i + m[0].length);
+        if (bodyStart === -1 || bodyStart >= to) { ok = false; return; }   // 본문이 없다
+        const endRe = new RegExp("^[ \\t]*" + delim.replace(RE_ESCAPE, "\\$&") + "[ \\t]*$", "m");
+        const rel = endRe.exec(s.slice(bodyStart + 1, to));
+        if (!rel) { ok = false; return; }                                  // 끝을 못 찾았다
+        const bodyEnd = bodyStart + 1 + rel.index;
+        // ⚠ 실행기가 먹는 히어독(`bash <<EOF` · `python3 - <<PY`)은 본문이 곧 코드라 안 덜어낸다.
+        if (!execHere()) blank(bodyStart + 1, bodyEnd);
+        i = bodyEnd + rel[0].length; plain += " "; continue;
+      }
+      if (ch === "'") {
+        const close = s.indexOf("'", i + 1);
+        if (close === -1 || close >= to) { ok = false; return; }
+        if (!execHere()) blank(i + 1, close);
+        i = close + 1; plain += " "; continue;
+      }
+      if (ch === '"') {
+        const close = doubleQuote(i, to, !execHere(), depth);
+        if (close === -1) { ok = false; return; }
+        i = close + 1; plain += " "; continue;
+      }
+      plain += ch; i++;
+    }
+  }
+
+  scan(0, s.length, 0);
+  return ok ? out.join("") : s;
+}
+
 // 파괴적 SQL 판정: 주석 제거 후 세미콜론으로 문장 분리해 각 문장을 개별 검사
 // (뒤 문장의 무관한 WHERE로 앞의 전체삭제가 통과하던 우회·주석 오탐 방지).
 function destructiveSql(text) {
@@ -211,7 +399,13 @@ function block(toolName, toolInput) {
   if (name === "Bash") {
     const cmd = String((toolInput && toolInput.command) || "");
     if (FORCE_PUSH.test(cmd)) return "force-push";
-    if (RM_RECURSIVE.test(cmd) && RM_DANGER_TARGET.test(cmd)) return "rm-recursive";
+    // 🛑 **마스킹(`executableText`)을 쓰는 판정은 이 한 줄과 `isPush` 둘뿐이다.** 아래 배포·env-encoder·
+    //   SQL 은 옛 판 그대로 `cmd` 를 본다. 왜 안 넓혔나: 마스킹은 가드를 **여는** 쪽이라, 한 규칙마다
+    //   "무엇이 열리는가"를 실기록으로 따로 재야 한다. 이번 판이 실측으로 연 것은 rm·push 둘이다
+    //   (env-encoder 98건 · 배포 17건 · SQL 27건은 안 봤다: 후속 후보). 여기서 `cmd` 를 통째로
+    //   `execText` 로 바꾸면 재지 않은 세 규칙이 조용히 함께 열린다.
+    const execText = executableText(cmd);
+    if (rmHitsDangerTarget(execText)) return "rm-recursive";
     if (isDeploy(cmd)) return "deploy";
     // .env를 인코딩/조각내 마스킹을 우회하려는 시도 차단(G7). 평문 cat/grep은 허용: PostToolUse 마스킹이 처리.
     if (ENV_REF_RE.test(cmd) && (hasEncoder(cmd) || cutSlicesValue(cmd) || trAltersValue(cmd))) return "env-encoder";
@@ -621,8 +815,12 @@ function finishedImplementerHere(o, agentTypeById) {
 }
 
 // P3: git push 감지(게이트 생략 검사용) - git 다음이 플래그류뿐일 때만 push 서브커맨드로 인정
-// (bare "push" 문자열 오탐 방지: 무인 ANY_PUSH(과차단 허용)보다 좁게). 알려진 한계:
-// 따옴표를 해석하지 않아 명령 안의 "git push" 부분문자열은 오탐 가능(SKIP env로 해소, 테스트에 고정).
+// (bare "push" 문자열 오탐 방지: 무인 ANY_PUSH(과차단 허용)보다 좁게).
+// v0.67.x: **인용된 글자는 이제 안 잡는다** - 판정 전에 `executableText` 로 따옴표 안과 인용 히어독
+//   본문을 덜어낸다. 옛 주석이 "알려진 한계(SKIP env로 해소)"라 적어 둔 그 한계가 실제로 물었다:
+//   실측 서브에이전트 push 차단 9건 중 7건이 실행이 아니라 **글자**였고, 그중 하나는 이 훅을
+//   검토하던 에이전트의 `git … grep -n "u-push\|git push" -- …` 였다(자기 검색어에 자기가 막힘).
+//   `SKIP env로 해소`는 회복 경로가 아니었다: 서브에이전트는 훅 프로세스의 환경변수를 못 켠다.
 const PUSH_RE = /\bgit(?:\s+(?:-[cC]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+push\b/;
 // v0.43.1: 순수 삭제 push(`git push --delete <ref>`)는 리뷰할 diff가 없어 게이트 대상에서 뺀다
 // (회고 실측 2026-08-01: 머지된 브랜치를 지우려는데 게이트가 리뷰를 요구해 막혔다).
@@ -648,7 +846,7 @@ function isDeleteOnlyPush(seg) {
 }
 function isPush(toolName, toolInput) {
   if (toolName !== "Bash") return false;
-  const cmd = String((toolInput && toolInput.command) || "");
+  const cmd = executableText(String((toolInput && toolInput.command) || ""));
   // 삭제 아닌 push 세그먼트가 하나라도 있으면 게이트 발동.
   for (const seg of shellSegments(cmd)) {
     if (PUSH_RE.test(seg) && !isDeleteOnlyPush(seg)) return true;
@@ -1553,4 +1751,4 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-module.exports = { statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };
+module.exports = { executableText, rmHitsDangerTarget, statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };

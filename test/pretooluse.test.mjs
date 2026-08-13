@@ -8,7 +8,7 @@ import { writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpDir } from "./support-tmpdir.mjs";
 
 const require = createRequire(import.meta.url);
-const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush, approvedDesignVariant } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush, approvedDesignVariant, executableText, rmHitsDangerTarget } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 
 const bash = (command) => block("Bash", { command });
 const sql = (query) => block("mcp__plugin_supabase_supabase__execute_sql", { query });
@@ -29,6 +29,91 @@ test("rm 재귀삭제: 루트/홈/현재트리 차단 · 하위 경로 허용", 
   assert.equal(bash("rm -rf ./build"), null, "구체 하위 경로는 허용");
   assert.equal(bash("rm -rf node_modules"), null);
   assert.equal(bash("rm file.txt"), null);
+});
+
+// ── 하는 것과 설명하는 것을 가른다(v0.67.x · 실기록 재생으로 잡은 오차단 2건) ─────────────
+//
+// 🛑 **이 두 검사는 반드시 짝으로 읽는다.** 아래 "(가) 글자는 통과"만 있으면 완화가 구멍인지
+//   알 수 없고, "(나) 실행은 차단"만 있으면 완화가 실제로 됐는지 알 수 없다. 이 저장소는
+//   한쪽만 재는 검사로 여러 번 조용히 틀렸다.
+//
+// 재현(2026-08-13 · 실기록 2,137파일 471,445줄 전수 재생 · is_error 인 tool_result 만 셈):
+//   rm-recursive 실차단 9건이 **전부 오차단**이었고, 서브에이전트 push 차단 9건 중 7건이 그랬다.
+//   가장 나쁜 모양: 실제 `rm -rf test/golden/claude` 는 통과했는데 **같은 문장을 커밋 메시지에
+//   적자 그 커밋이 막혔다**(하는 것은 통과, 설명하는 것은 차단).
+test("(가) 글자로 인용된 위험 명령은 통과한다: 커밋 메시지·검색어·글 쓰기", () => {
+  // 실측 그대로: 커밋 메시지 본문이 rm 을 인용했고, 위험 타깃은 **한참 떨어진 다른 줄**의 ` / ` 였다.
+  assert.equal(bash("git commit -F - <<'MSG'\n검증: # tests 749 / # pass 749 / # fail 0\n골든: `npm run build && rm -rf test/golden/claude && cp -r dist/claude test/golden/`\nMSG"), null);
+  assert.equal(bash('git commit -m "골든 절차: rm -rf test/golden/claude 로 지우고 다시 만든다"'), null);
+  // 🛑 아래 둘은 **마스킹이 없으면 통과할 수 없다**(위험 타깃이 인용된 rm 바로 옆에 붙어 있다).
+  //   위치 좁힘만으로는 안 되는 자리라, 이 줄이 빠지면 마스킹을 통째로 걷어내도 검사가 초록이다.
+  assert.equal(bash('git commit -m "위험 예시: rm -rf / 는 되돌릴 수 없다"'), null);
+  assert.equal(bash("cat > note.md <<'EOF'\n주석 예시: bash(\"rm -fr /*\") 를 주석 시작으로 읽으면 안 된다\nEOF"), null);
+  // 실측 그대로: 훅을 검토하던 에이전트가 **자기 검색어**에 막혔다.
+  assert.equal(isPush("Bash", { command: 'git -C /repo grep -n "u-push\\|git push" -- test/x.mjs | head' }), false);
+  assert.equal(isPush("Bash", { command: "git commit -F - <<'MSG'\n- git push --dry-run → 막힘을 확인했다\nMSG" }), false);
+  // 글로 적어 두는 것(계획서·보고서·시험용 JSON)도 실행이 아니다.
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"tool_input":{"command":"git push origin main"}}' | node dist/claude/hooks/pretooluse.js` }), false);
+  assert.equal(bash("cd /x && rm -rf build && cd .. && ls"), null, "`cd ..` 는 그 rm 의 인자가 아니다");
+  assert.equal(bash("rm -rf png && mkdir -p png"), null);
+});
+
+test("(나) 실제로 실행되는 위험 명령은 여전히 막힌다: 래퍼·치환·파이프", () => {
+  // 기본형은 그대로.
+  assert.equal(bash("rm -rf /"), "rm-recursive");
+  assert.equal(isPush("Bash", { command: "git push origin main" }), true);
+  // 🛑 **따옴표 안이라도 그 따옴표를 실행하는 명령이 앞에 있으면 실행이다.**
+  //   이 줄들이 빠지면 "인용은 통과"가 곧 우회로가 된다.
+  assert.equal(bash('bash -c "rm -rf / "'), "rm-recursive");
+  assert.equal(bash("sudo bash -c 'rm -rf / '"), "rm-recursive");
+  assert.equal(bash('ssh host "rm -rf / "'), "rm-recursive");
+  assert.equal(isPush("Bash", { command: 'bash -c "git push origin main"' }), true);
+  assert.equal(isPush("Bash", { command: "sh -c 'git push'" }), true);
+  assert.equal(isPush("Bash", { command: 'ssh host "git push"' }), true);
+  // 명령치환은 겹따옴표 안에서도 실행되는 자리다.
+  assert.equal(bash('git commit -m "$(rm -rf / )"'), "rm-recursive");
+  assert.equal(isPush("Bash", { command: 'echo "$(git push origin main)"' }), true);
+  assert.equal(isPush("Bash", { command: "echo `git push`" }), true);
+  // 통째로 셸에 먹이는 형태는 따옴표 안이 곧 코드다(마스킹을 접는다).
+  assert.equal(bash('echo "rm -rf / " | bash'), "rm-recursive");
+  assert.equal(bash('echo "rm -rf / " | VAR=1 bash'), "rm-recursive", "앞머리 환경변수로 백스톱이 풀리면 안 된다");
+  assert.equal(isPush("Bash", { command: 'echo "git push" | bash' }), true);
+  assert.equal(isPush("Bash", { command: 'echo "git push" | bash -x' }), true);
+  // 인터프리터가 먹는 히어독은 본문이 곧 코드다.
+  assert.equal(bash("python3 - <<'PY'\nimport os\nos.system('rm -rf / ')\nPY"), "rm-recursive");
+  assert.equal(bash("bash <<'EOF'\nrm -rf /\nEOF"), "rm-recursive");
+  // 셸 키워드 뒤도 그대로 본다(명령 자리 화이트리스트를 안 쓰는 이유).
+  assert.equal(bash("if true; then rm -rf /; fi"), "rm-recursive");
+  assert.equal(isPush("Bash", { command: "if true; then git push; fi" }), true);
+  assert.equal(isPush("Bash", { command: "for b in a; do git push -u origin $b; done" }), true);
+});
+
+test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
+  const same = (cmd) => assert.equal(executableText(cmd).length, cmd.length, "길이가 바뀌면 호출자의 인덱스 계산이 어긋난다");
+  same('git commit -m "rm -rf /"');
+  same("git commit -F - <<'MSG'\n본문\nMSG\nls");
+  same("echo `x`");
+  // 못 읽는 입력은 통째로 원문(마스킹 없음) - 짝 없는 따옴표 · 끝 없는 히어독.
+  assert.equal(executableText('git commit -m "안 닫힌 따옴표'), 'git commit -m "안 닫힌 따옴표');
+  assert.equal(executableText("git commit -F - <<'MSG'\n본문만 있고 끝이 없다"), "git commit -F - <<'MSG'\n본문만 있고 끝이 없다");
+  // 각본 파일이 붙은 인터프리터는 표준입력이 데이터다(마스킹 유지) — 훅 자기 시험이 여기 산다.
+  assert.notEqual(executableText(`echo '{"command":"git push"}' | node hook.js`).indexOf('        '), -1);
+  // 각본이 없으면 표준입력이 코드다(마스킹 접음).
+  assert.equal(executableText(`echo '{"command":"git push"}' | bash`), `echo '{"command":"git push"}' | bash`);
+  // 🛑 **깊은 중첩에서 훅이 죽으면 안 된다.** 뚜껑이 없던 판은 `$(` 5,000겹에서
+  //   RangeError 를 `block` 밖으로 던져 훅이 0도 2도 아닌 종료로 끝났다(실측).
+  const deep = "echo " + "$(".repeat(5000) + "x" + ")".repeat(5000);
+  assert.equal(executableText(deep), deep, "너무 깊으면 원문으로 떨어진다");
+  assert.doesNotThrow(() => block("Bash", { command: deep }));
+  assert.doesNotThrow(() => isPush("Bash", { command: deep }));
+});
+
+test("rm 위험 타깃은 그 rm 자신의 인자 구간에서만 본다", () => {
+  assert.equal(rmHitsDangerTarget("rm -rf build && cd .."), false, "다른 명령의 `..` 는 이 rm 의 인자가 아니다");
+  assert.equal(rmHitsDangerTarget("cd .. && rm -rf build"), false);
+  assert.equal(rmHitsDangerTarget("rm -rf build; rm -rf /"), true, "여러 rm 중 하나라도 위험하면 잡는다");
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  /"), true, "줄 이음은 인자 구간의 끝이 아니다");
+  assert.equal(rmHitsDangerTarget("rm -rf . && ls"), true, "구간을 자르면 `$` 가 인자 끝을 뜻해 오히려 더 잡는다");
 });
 
 test("파괴적 SQL: Bash(SQL클라이언트)·MCP 차단, 안전 쿼리 허용", () => {
@@ -989,7 +1074,9 @@ test("isPush: git push 변형 감지 · 비push는 침묵 · 부분문자열 한
   assert.equal(p("git --git-dir=/x push"), true);
   assert.equal(p("cd a && git push"), true);
   assert.equal(p("git commit -m 'will push later'"), false, "bare push는 오탐 아님");
-  assert.equal(p('git commit -m "docs: how to git push"'), true, "알려진 한계: 'git push' 부분문자열은 오탐(따옴표 미해석) — SKIP env로 해소");
+  // v0.67.x: 옛 판은 여기서 true 였다("알려진 한계: 따옴표 미해석 — SKIP env로 해소").
+  //   그 한계가 실제로 물었고 SKIP env 는 회복 경로가 아니었다(서브에이전트는 못 켠다).
+  assert.equal(p('git commit -m "docs: how to git push"'), false, "커밋 메시지 안 글자는 실행이 아니다");
   assert.equal(p("git log"), false);
   assert.equal(isPush("Read", { file_path: "x" }), false);
 });
