@@ -1,4 +1,4 @@
-// chageun: SessionStart hook — reap dev servers nobody is using, to reclaim memory.
+// chageun: SessionStart hook - reap dev servers nobody is using, to reclaim memory.
 // Each vibe-coding session tends to spawn a `next dev`/vite server; those keep running
 // long after the session (or the folder) is gone, each holding hundreds of MB. This
 // sweeps them at session START only (matcher "startup"). Linux/WSL only.
@@ -16,7 +16,7 @@ const fs = require("fs");
 const { execFileSync } = require("child_process");
 const { selectReapableDetailed, parseStat, ageMsFromStat, parseSsNet } = require("./reap-dev-servers-core.js");
 
-// Seconds since boot — the reference for every process age. null → no age is known.
+// Seconds since boot: the reference for every process age. null → no age is known.
 function readUptimeSec() {
   try {
     const v = Number(String(fs.readFileSync("/proc/uptime", "utf8")).trim().split(/\s+/)[0]);
@@ -45,7 +45,7 @@ function readNet() {
 }
 
 // Full /proc sweep. It is deliberately NOT pre-filtered any more: ownership needs every
-// process — the parent chain walk needs the ancestors, and the folder comparison needs
+// process: the parent chain walk needs the ancestors, and the folder comparison needs
 // every live claude session's cwd. Filtering early would make servers look ownerless.
 function scanProc(uptimeSec) {
   const procs = [];
@@ -56,7 +56,7 @@ function scanProc(uptimeSec) {
     if (!/^\d+$/.test(name)) continue;
     const base = "/proc/" + name;
     try {
-      // Owner uid — skip anything we can't stat (gone / unreadable).
+      // Owner uid: skip anything we can't stat (gone / unreadable).
       let uid = null;
       try { uid = fs.statSync(base).uid; } catch (_) { continue; }
 
@@ -78,7 +78,7 @@ function scanProc(uptimeSec) {
       // therefore never counts as deleted.
       let cwd = "";
       try { cwd = fs.readlinkSync(base + "/cwd"); } catch (_) {}
-      // (Fable5 finding 3b) A folder LITERALLY named "… (deleted)" is not deleted — if a
+      // (Fable5 finding 3b) A folder LITERALLY named "… (deleted)" is not deleted: if a
       // real folder exists at that exact path, the server is live; drop the suffix claim.
       if (cwd && / \(deleted\)$/.test(cwd)) {
         try { if (fs.existsSync(cwd)) cwd = cwd.replace(/ \(deleted\)$/, ""); } catch (_) {}
@@ -91,7 +91,7 @@ function scanProc(uptimeSec) {
 }
 
 // pid-reuse guard (Fable5 finding 6): a pid recycled between scan and kill must never be
-// hit. Start time is the strongest identity check available — it changes with the pid.
+// hit. Start time is the strongest identity check available: it changes with the pid.
 function stillSameProcess(p) {
   try {
     const now = parseStat(fs.readFileSync("/proc/" + p.pid + "/stat", "utf8"));
@@ -125,7 +125,7 @@ function maskCmd(s) {
   }).join(" ");
 }
 
-// Blocking pause with no child process and no async — this hook is synchronous by design.
+// Blocking pause with no child process and no async: this hook is synchronous by design.
 // Returns false if it could NOT pause; the caller must then skip the idle branch rather
 // than fall back to a 0ms "confirmation", which is the very thing this pause replaced.
 function sleepSync(ms) {
@@ -137,7 +137,7 @@ function main() {
   if (process.platform !== "linux") return; // /proc semantics assumed (WSL/Linux)
   // OFF switch, same shape as the repo's other dangerous actions (CHAGEUN_ALLOW_DEPLOY,
   // CHAGEUN_SKIP_GATE_CHECK, CHAGEUN_SKIP_DESIGN_LINT). This one kills other people's
-  // processes, so it needs an escape hatch more than any of them — a developer who
+  // processes, so it needs an escape hatch more than any of them: a developer who
   // starts dev servers by hand in a terminal is "ownerless" by our rules and would
   // otherwise have no way to opt out short of editing the plugin.
   if (String(process.env.CHAGEUN_SKIP_REAP || "") === "1") return;
@@ -150,7 +150,7 @@ function main() {
   // Age threshold override. Its reason for existing is the integration test: without it
   // the kill wiring can only be exercised by waiting two hours, so it stayed untested.
   // Raising it (e.g. 6h) is a safe user knob; lowering it makes the reaper more eager.
-  // 🛑 The blank check is not cosmetic. `Number("")` is 0 — so `export CHAGEUN_REAP_MIN_AGE_MS=`
+  // 🛑 The blank check is not cosmetic. `Number("")` is 0: so `export CHAGEUN_REAP_MIN_AGE_MS=`
   // (or a docker-compose `- CHAGEUN_REAP_MIN_AGE_MS` with no value) would have removed the
   // age condition entirely. Clearing a variable must never be the MOST aggressive setting.
   const rawMinAge = String(process.env.CHAGEUN_REAP_MIN_AGE_MS == null ? "" : process.env.CHAGEUN_REAP_MIN_AGE_MS).trim();
@@ -165,12 +165,12 @@ function main() {
 
   // Idle victims must survive a SECOND socket reading taken after a REAL pause.
   // 🛑 The pause is the whole point. Before, the two readings sat ~50ms apart (one list
-  // walk), so nothing could happen in between and the "confirmation" confirmed nothing —
+  // walk), so nothing could happen in between and the "confirmation" confirmed nothing:
   // a comment claimed it covered a 1-second race it could not reach. A dev client that
   // dropped its connection and is retrying (sleep/resume, a frozen background tab waking)
   // typically reconnects within a couple of seconds; this window gives it that chance.
   // It costs 2s of session start ONLY when something is about to be killed, which is rare.
-  // What it still does NOT cover: a client that stays disconnected — see `noClients`.
+  // What it still does NOT cover: a client that stays disconnected - see `noClients`.
   // (Folder-deleted victims need no such confirmation.)
   const RECHECK_PAUSE_MS = 2000;
   if (targets.some((t) => t.reason === "idle")) {
@@ -179,7 +179,7 @@ function main() {
       if (!targets.length) return;
     } else {
     const again = new Set(
-      // Same opts as the first pass except for a FRESH socket reading — if the threshold
+      // Same opts as the first pass except for a FRESH socket reading: if the threshold
       // differed between the two passes the confirmation would be meaningless.
       selectReapableDetailed(procs, ownUid, { selfPid: process.pid, net: readNet(), minAgeMs, onlyUnder })
         .map((t) => t.pid)
@@ -202,7 +202,7 @@ function main() {
     // kill is diagnosable after the fact (the /proc entry is gone once killed).
     // Synchronous write so the notice survives process exit.
     // "켜진 지" not "조용한 지": the age is process lifetime, not idle time (see core).
-    // The threshold is printed from the value ACTUALLY used — a hard-coded "2시간+" would
+    // The threshold is printed from the value ACTUALLY used: a hard-coded "2시간+" would
     // lie whenever the override is set, and a wrong kill's only clue is this line.
     const ageNote = rawMinAge && Number.isFinite(minAgeMs) && minAgeMs >= 0
       ? "켜진 지 " + minAgeMs + "ms+ (CHAGEUN_REAP_MIN_AGE_MS)"
@@ -211,12 +211,12 @@ function main() {
     const lines = killed.map((t) => {
       const p = byPid.get(t.pid);
       const cmd = p ? maskCmd(String(p.cmdline || p.comm || "")).slice(0, 120) : "";
-      return "  [PID " + t.pid + "] " + (why[t.reason] || t.reason) + " — " + cmd;
+      return "  [PID " + t.pid + "] " + (why[t.reason] || t.reason) + ": " + cmd;
     });
     try {
       fs.writeSync(
         1,
-        // "회수했습니다" claimed a completed exit we never confirm — SIGTERM is a request.
+        // "회수했습니다" claimed a completed exit we never confirm: SIGTERM is a request.
         "차근: 안 쓰는 개발 서버 " + killed.length +
         "개에 정리 신호를 보냈습니다. (끄지 않으려면 CHAGEUN_SKIP_REAP=1)\n" +
         lines.join("\n") + "\n"

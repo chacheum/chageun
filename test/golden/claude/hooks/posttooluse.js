@@ -1,4 +1,4 @@
-// chageun G7 — Claude PostToolUse guard: redact .env secret values from tool output before the model sees it.
+// chageun G7 - Claude PostToolUse guard: redact .env secret values from tool output before the model sees it.
 // Task-0 spike (CC 2.1.207) confirmed: updatedToolOutput takes the full (redacted) tool_response value directly,
 // it replaces the persisted transcript entry (no raw leak on --resume), and is honored above the 10K stdout cap.
 "use strict";
@@ -30,9 +30,9 @@ function touchesEnv(input) {
   return false;
 }
 const SUPPRESS = { hookSpecificOutput: { hookEventName: "PostToolUse",
-  updatedToolOutput: "[chageun: .env output suppressed — redaction failed]" } };
+  updatedToolOutput: "[chageun: .env output suppressed - redaction failed]" } };
 
-const MAX_SCAN = 5 * 1024 * 1024; // 5MB — beyond this, skip to avoid 10s timeout → fail-open
+const MAX_SCAN = 5 * 1024 * 1024; // 5MB: beyond this, skip to avoid 10s timeout → fail-open
 function decide(input) {
   if (!input || input.tool_response == null) return null;
   const cwd = input.cwd || process.cwd();
@@ -54,11 +54,11 @@ function decide(input) {
 
 // ── 상황판 §2 자동 갱신(v0.65.0 F-27 · T2c) ──────────────────────────────────
 // 🛑 **stdout 에 아무것도 안 쓴다.** 이 훅의 stdout 은 위 G7 가리기의 `updatedToolOutput`
-//    계약이 쓰는 자리다 — 여기 한 글자라도 얹으면 그 계약이 깨진다. 이 절의 출력은 **파일 하나**뿐이다.
+//    계약이 쓰는 자리다: 여기 한 글자라도 얹으면 그 계약이 깨진다. 이 절의 출력은 **파일 하나**뿐이다.
 // 🛑 **모든 실패는 침묵**이다(파일 못 씀 · git 없음 · 경계 깨짐 · 캐시 못 씀). 차단·park 사유가
 //    아니다. 대신 마지막으로 쓴 `마지막 확인` 절대 시각이 **얼어붙어** 낡은 것이 눈에 보인다.
 // 🛑 **트랜스크립트를 통째로 안 읽는다.** `pretooluse.js` §1.6 이 금지한 비용(실측 418ms)을
-//    다른 훅에서 되살리지 않는다 — 늘어난 만큼만 바이트 자리로 읽는다.
+//    다른 훅에서 되살리지 않는다: 늘어난 만큼만 바이트 자리로 읽는다.
 // ⚠ **도구 이름으로 안 거른다.** 읽는 것은 `tool_response` 가 아니라 `transcript_path` 라,
 //    이 절은 "PostToolUse 가 Agent 호출에서도 도는가"에 안 걸린다(안 돌면 다음 호출이 따라잡는다).
 const BOARD_FILE = "status.md";
@@ -99,7 +99,7 @@ function readRange(file, from, to) {
     return { buf: buf.slice(0, n), from };
   } finally { fs.closeSync(fd); }
 }
-// 마지막 줄바꿈까지만 소비한다 — 다음 회차가 **반쪽 줄에서 시작하지 않게**.
+// 마지막 줄바꿈까지만 소비한다: 다음 회차가 **반쪽 줄에서 시작하지 않게**.
 function consume(r) {
   if (!r || !r.buf || !r.buf.length) return { text: "", next: r ? r.from : 0 };
   const nl = r.buf.lastIndexOf(0x0a);
@@ -130,7 +130,7 @@ function autoBoard(input) {
   const tpath = input.transcript_path;
   if (!key || !tpath) return;
   const dir = boardStateDir();
-  // ⚠ 상위 폴더를 먼저 만든다 — 새 기계엔 없고, 없으면 ENOENT 로 조용히 실패해
+  // ⚠ 상위 폴더를 먼저 만든다: 새 기계엔 없고, 없으면 ENOENT 로 조용히 실패해
   //   **새 사용자에게 이 기능이 한 번도 안 돈다**(표식 폴더·board.json 과 똑같은 구멍).
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, key + ".json");
@@ -145,7 +145,7 @@ function autoBoard(input) {
 
   const size = fs.statSync(tpath).size;
   let from = Number(st.offset) || 0;
-  // 자리를 못 믿는 세 경우 — 처음 보는 세션 · 파일이 줄었다(압축·교체) · 지문이 안 맞는다.
+  // 자리를 못 믿는 세 경우: 처음 보는 세션 · 파일이 줄었다(압축·교체) · 지문이 안 맞는다.
   // 🛑 지문을 함께 보는 이유: 이 훅은 **자기가 트랜스크립트를 고쳐 쓴다**(G7 가리기가 기록된
   //    항목을 대체한다). 가려진 글이 원문보다 짧으면 **크기가 줄지 않고도** 뒤 바이트가 밀려
   //    조각이 반쪽 줄에서 시작하고, 이 판의 실패는 전부 침묵이라 한 건이 조용히 빠진다.
@@ -189,18 +189,18 @@ function autoBoard(input) {
   st.tasks = tasks;
 
   // 사람 칸 대조는 **파일 내용으로** 한다(모델 기억 아님). 🛑 바뀌었다고 그 자리에서 쓰지
-  //   않는다 — 편집 도구는 읽은 뒤 파일이 바뀌면 그 편집을 거부해서, 상황판을 연달아 고치는
+  //   않는다: 편집 도구는 읽은 뒤 파일이 바뀌면 그 편집을 거부해서, 상황판을 연달아 고치는
   //   흐름이 매번 한 번씩 실패한다. 달라진 값은 캐시에만 적고 **다음 장부 변화 때** 함께 나간다.
   let text = null;
   try { text = fs.readFileSync(board, "utf8"); } catch (_) { text = null; }
   if (text != null) {
     const h = sha16(auto.humanText(text));
-    // 🛑 첫 회차에 `지금` 을 안 채운다 — 방금 깐 기계가 몇 주 묵은 §1을 "방금 확인함"으로 만든다.
+    // 🛑 첫 회차에 `지금` 을 안 채운다: 방금 깐 기계가 몇 주 묵은 §1을 "방금 확인함"으로 만든다.
     if (!st.humanHash) st.humanHash = h;
     else if (st.humanHash !== h) { st.humanHash = h; st.humanSeenAt = now; }
   }
 
-  // 이번 도구 호출의 대상이 상황판이었으면 이 회차에는 안 쓴다(경로만 본다 — 안 쓰는 쪽으로
+  // 이번 도구 호출의 대상이 상황판이었으면 이 회차에는 안 쓴다(경로만 본다: 안 쓰는 쪽으로
   //   기우는 판정이라 넓어도 안전하다). [Read status.md → 기계가 씀 → 그 Edit 이 거부됨] 을 막는다.
   //   🛑 밀린 쓰기를 잃지 않게 `pendingWrite` 로 다음 회차에 넘긴다.
   const ti = input.tool_input || {};
@@ -214,7 +214,7 @@ function autoBoard(input) {
   if (s2 !== null) out = s2;
   const s1 = auto.spliceBlock(out, auto.renderHead(now, st.humanSeenAt), "chageun:auto:head");
   if (s1 !== null) out = s1;
-  // 표시가 깨졌거나 아예 없으면 out === text 다 — 한 글자도 안 쓴다. 그 사실을 사람에게
+  // 표시가 깨졌거나 아예 없으면 out === text 다: 한 글자도 안 쓴다. 그 사실을 사람에게
   // 알리는 일은 세션 시작 부록이 하고, 여기서는 자리를 짐작해 끼워 넣지 않는다.
   if (out !== text) { try { fs.writeFileSync(board, out); } catch (_) { /* 침묵 */ } }
   st.pendingWrite = false;
@@ -231,7 +231,7 @@ if (require.main === module) {
       const out = decide(input);
       if (out) process.stdout.write(JSON.stringify(out));
     } catch (_) { /* fail-open */ }
-    // 자체 try/catch 로 격리한다 — 예외가 위 G7 경로로 새면 안 된다.
+    // 자체 try/catch 로 격리한다: 예외가 위 G7 경로로 새면 안 된다.
     try { if (input) autoBoard(input); } catch (_) { /* 침묵 */ }
     process.exit(0);
   });

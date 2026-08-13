@@ -1,6 +1,6 @@
-// chageun pretooluse — PreToolUse 하드 차단 훅(Claude 전용).
+// chageun pretooluse: PreToolUse 하드 차단 훅(Claude 전용).
 // "말로 된 브레이크"를 기계 브레이크로: 되돌리기 불가능한 소수 고위험 패턴만 결정론적으로 막는다.
-// 얇은 그물이지 만능 아님 — 확실히 파괴적인 경우만 차단(오탐 회피). 매치 시 exit 2 + stderr 사유.
+// 얇은 그물이지 만능 아님: 확실히 파괴적인 경우만 차단(오탐 회피). 매치 시 exit 2 + stderr 사유.
 // 예외·불확실은 안전 통과(exit 0). 외부 호출 없음. 개인/회사 정보 없음.
 // 순수 패턴 판정은 core, 부수효과(env 탈출구·transcript 읽기)는 이 래퍼에 둔다.
 // NOTE: 순수 판정은 pretooluse-core.js가 갖고, 이 래퍼에만 있는 것들(agent_type 분기·transcript
@@ -16,7 +16,7 @@ const componentBoundary = require("../skills/design-system/component-boundary-co
 //   아래 stdin 핸들러 밖이라 어떤 try/catch 도 못 잡는다). 배포판에 실리는지는 매니페스트
 //   `components.hooks` 가 정하고, test/build.test.mjs 의 existsSync 한 줄이 그 그물이다.
 const { unknownToolNotice, unknownToolMessage } = require("./tool-ledger-core.js");
-// v0.65.0 F-27(상황판). 무시 판정은 **별도 모듈**이다 — 코어는 "순수 판정 로직 · fs 없음"이
+// v0.65.0 F-27(상황판). 무시 판정은 **별도 모듈**이다: 코어는 "순수 판정 로직 · fs 없음"이
 //   계약이라 git 호출이 들어가면 그 계약이 깨지고, posttooluse 가 판정 하나 때문에 코어
 //   전체를 끌어오게 된다. 소유는 여기(PreToolUse)이고 PostToolUse 는 쓰기만 한다.
 const { boardIgnoreVerdict } = require("./board-ignore-core.js");
@@ -24,8 +24,8 @@ const { collectSecrets, findLeaks } = require("./secret-scan-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
 const EDIT_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
-// P1 리마인더 전용 transcript 리더 — needle 조기 탈출(plan 없는 세션의 매 편집 파싱 비용 회피).
-// 주의: prReviewerRan(게이트 생략 감지)은 이 헬퍼를 쓰지 않는다 — "pr-reviewer"에 "plan"이 없어
+// P1 리마인더 전용 transcript 리더: needle 조기 탈출(plan 없는 세션의 매 편집 파싱 비용 회피).
+// 주의: prReviewerRan(게이트 생략 감지)은 이 헬퍼를 쓰지 않는다 - "pr-reviewer"에 "plan"이 없어
 // 조기 탈출을 공유하면 gate-skip이 회귀한다(게이트 CONDITIONAL 조건). 부재·예외는 null(리마인더 침묵).
 function readTranscriptIfMentions(transcriptPath, needle) {
   try {
@@ -45,22 +45,22 @@ function readTranscriptIfMentions(transcriptPath, needle) {
 // 훅이 받는 `transcript_path` 는 **부모(메인) 기록**이다(2026-08-12 실측). 상한이 세야 하는 것은
 // "감독이 몇을 띄웠나"인데 서브에이전트의 스폰은 부모 기록에 **아예 안 실린다**(훅 호출 13건 내내
 // 한 바이트도 안 자람). 그 값을 그대로 읽으면 (1) 부모 기록에 이미 든 스폰 때문에 감독이 첫 스폰에서
-// 죽고 (2) 더 근본적으로 **"메인이 몇을 띄웠나"를 센다** — 값이 큰 게 아니라 다른 것을 센다.
+// 죽고 (2) 더 근본적으로 **"메인이 몇을 띄웠나"를 센다**: 값이 큰 게 아니라 다른 것을 센다.
 // 그래서 자기 기록의 자리를 조립해 그것을 읽는다. 순수 문자열 조립이다.
 //
 // 🛑 이 세 칸은 하네스가 훅 입력에 박는 값이라 모델이 못 정한다(agent_type 과 같은 자리).
 //    하나라도 빈 값이면 조립하지 않고 null = 못 읽음 = 차단(fail-closed).
 //
 // 🛑 이 자리는 하네스가 기록을 두는 **폴더 구조**에 기댄다. 갑자기 전부 막히면 그 구조가 바뀌었는지부터 본다.
-//    (이 진단을 docs/ 에만 두면 사람에게 안 닿는다 — 이 저장소는 docs/ 를 커밋하지 않는다.
+//    (이 진단을 docs/ 에만 두면 사람에게 안 닿는다: 이 저장소는 docs/ 를 커밋하지 않는다.
 //     그래서 같은 한 줄이 supervisor-cap-unreadable 문구에도 들어 있다.)
 // 🛑 그 구조는 한 겹이 아니다. 평면 `subagents/agent-*.jsonl` 과 각본 층
 //    `subagents/workflows/<wf_id>/agent-*.jsonl` 둘이고(단일 원본:
 //    src/skills/retrospect/retrospect-scan.mjs 의 walkAgentDir 주석), 이 조립은 **평면을 가정한다.**
 //    감독은 `Agent` 로 띄우므로 평면에 떨어진다(2026-08-12 프로브 실측: layer=flat).
 //    각본(Workflow)으로 띄우면 이 가정이 깨지고 첫 스폰부터 supervisor-cap-unreadable 로 선다
-//    — 조용히 틀리는 대신 시끄럽게 서는 쪽이다.
-// 🛑 구조가 바뀌면 **고칠 곳은 여기 하나가 아니라 둘이다** — 여기와 회고 스캐너
+//: 조용히 틀리는 대신 시끄럽게 서는 쪽이다.
+// 🛑 구조가 바뀌면 **고칠 곳은 여기 하나가 아니라 둘이다**: 여기와 회고 스캐너
 //    (retrospect-scan.mjs 의 listAgentFiles·walkAgentDir). 훅은 시끄럽게 서지만 **회고는 조용히
 //    죽는다**(readdirSync 가 실패하면 그대로 종료). 그래서 훅이 서는 것을 **회고가 굶고 있다는
 //    경보로도 읽는다.**
@@ -74,7 +74,7 @@ function supervisorTranscriptPath(input) {
   return path.join(path.dirname(parent), sid, "subagents", `agent-${aid}.jsonl`);
 }
 
-// "못 읽음"과 "읽었는데 0건"을 **가르는** 리더. 🛑 위 readTranscriptIfMentions 를 쓰면 안 된다 —
+// "못 읽음"과 "읽었는데 0건"을 **가르는** 리더. 🛑 위 readTranscriptIfMentions 를 쓰면 안 된다:
 // 그 헬퍼는 리마인더용이라 둘 다 null 로 돌려주고, 감독의 **첫 스폰 때 정상적으로 null** 이다.
 // 계약 세 줄. (1) readFileSync 가 던지면 null = 못 읽음 → 차단.
 // (2) 읽혔으면 줄마다 파싱하되 **깨진 줄은 건너뛴다.** 0줄이어도 배열이다(= 읽음 → 0건이면 통과).
@@ -82,7 +82,7 @@ function supervisorTranscriptPath(input) {
 //     🛑 여기를 "한 줄이라도 깨지면 null" 로 바꾸면, 기록이 쓰이는 중인 순간마다 감독이 오차단으로
 //     죽는다(꼬리 한 줄이 덜 쓰인 채 읽히는 일이 실제로 있다). 켤 스위치가 없어 회복 경로도 없고,
 //     화면에는 버그가 아니라 정상 정책 정지처럼 보여 원인 찾기도 어렵다. 형제 함수와 같은 계약이다.
-// existsSync 로 미리 거르지 않는다 — 확인과 읽기 사이에 파일이 사라지는 틈을 안 만든다.
+// existsSync 로 미리 거르지 않는다: 확인과 읽기 사이에 파일이 사라지는 틈을 안 만든다.
 // 크기 상한을 안 두는 이유(다음 사람이 다시 재지 않게 적어 둔다): 이 읽기는 **감독이 스폰할 때만**
 //   돌고 한 세션에 많아야 일곱 번이다(모든 도구 호출마다 읽는 자리가 아니다). 상한을 둘 값이 안 나온다.
 function readTranscriptStrict(transcriptPath) {
@@ -91,7 +91,7 @@ function readTranscriptStrict(transcriptPath) {
   const objs = [];
   for (const ln of String(raw).split("\n")) {
     const s = ln.trim(); if (!s) continue;
-    try { objs.push(JSON.parse(s)); } catch (_) { /* skip — 쓰이는 중인 꼬리 줄 */ }
+    try { objs.push(JSON.parse(s)); } catch (_) { /* skip: 쓰이는 중인 꼬리 줄 */ }
   }
   return objs;
 }
@@ -106,7 +106,7 @@ function deny(reasonKey, unattended, detail) {
   process.exit(2); // PreToolUse: exit 2 = 도구 호출 차단, stderr를 Claude에 전달
 }
 
-// 제어파일(.chageun/STOP·token) 위치를 한 곳에 못 박는다 — 세션이 하위폴더·전용 worktree로
+// 제어파일(.chageun/STOP·token) 위치를 한 곳에 못 박는다: 세션이 하위폴더·전용 worktree로
 // 옮겨 다녀도 "사람이 STOP을 두는 곳"과 "훅이 찾는 곳"이 갈라지지 않게. cwd는 신뢰 안 함.
 // 1순위: 런처가 준 CHAGEUN_ROOT(env는 cd로 안 바뀜). 2순위: cwd에서 위로 올라가며 .chageun 탐색
 // (STOP을 더 잘 찾는 안전 방향). 못 찾으면 cwd(그러면 통과표 부재 → fail-closed park).
@@ -139,12 +139,12 @@ function readRuntime() {
   if (!fs.existsSync(p)) return { absent: true };
   try {
     const state = JSON.parse(fs.readFileSync(p, "utf8"));
-    // 파싱은 됐어도 스키마가 틀리면(null·숫자·startedAt 없음) 손상으로 취급 — 조용히 리셋 금지.
+    // 파싱은 됐어도 스키마가 틀리면(null·숫자·startedAt 없음) 손상으로 취급: 조용히 리셋 금지.
     if (!state || typeof state.startedAt !== "number") return { corrupt: true };
     return { state };
   } catch (_) { return { corrupt: true }; }
 }
-// 원자적 쓰기(temp+rename) — 동시 서브에이전트 읽기가 잘린 파일을 보지 않게(POSIX rename 원자적).
+// 원자적 쓰기(temp+rename): 동시 서브에이전트 읽기가 잘린 파일을 보지 않게(POSIX rename 원자적).
 function writeRuntime(s) {
   try {
     const p = ctlPath("runtime.json"), tmp = p + ".tmp";
@@ -153,7 +153,7 @@ function writeRuntime(s) {
   } catch (_) { /* 무시 */ }
 }
 
-// transcript를 읽어 pr-reviewer 실행 흔적 확인. 못 읽으면 fail-open(true) — 훅 오류로 정상작업 안 막음.
+// transcript를 읽어 pr-reviewer 실행 흔적 확인. 못 읽으면 fail-open(true): 훅 오류로 정상작업 안 막음.
 function prReviewerRan(transcriptPath) {
   try {
     if (!transcriptPath || !fs.existsSync(transcriptPath)) return true; // fail-open(no-op)
@@ -180,7 +180,7 @@ const BOARD_FILE = "status.md";
 const BOARD_MARK = "chageun:auto";
 const BOARD_HEAD_BYTES = 512 * 1024;   // 표시는 파일 앞쪽에 있다
 
-// 이번에 **새로 쓰는 텍스트**만 모은다. 🛑 편집 후 파일 전체를 재지 않는다 — 예전에 한 번
+// 이번에 **새로 쓰는 텍스트**만 모은다. 🛑 편집 후 파일 전체를 재지 않는다: 예전에 한 번
 // 들어간 값이 남아 있으면 그 뒤 모든 편집이 영영 막히고, 그 값을 지우는 편집조차 막혀
 // 회복 경로가 사라진다.
 function boardNewText(name, ti) {
@@ -190,7 +190,7 @@ function boardNewText(name, ti) {
   if (nm === "MultiEdit") return (Array.isArray(ti.edits) ? ti.edits : []).map((e) => String((e && e.new_string) || "")).join("\n");
   return "";
 }
-// 못 읽으면 (a)는 거짓으로 본다 — 오차단 대신 통과다(§4.6 fail-open 관례).
+// 못 읽으면 (a)는 거짓으로 본다: 오차단 대신 통과다(§4.6 fail-open 관례).
 function boardHasMark(abs) {
   try {
     const len = Math.max(0, Math.min(fs.statSync(abs).size, BOARD_HEAD_BYTES));
@@ -214,14 +214,14 @@ function boardTargetOf(name, ti, cwd) {
   return { abs, exists, armed };
 }
 
-// 세션당 한 번만 안내하기 위한 표식. 🛑 트랜스크립트를 안 읽는다 — 매 편집마다 세션 기록
+// 세션당 한 번만 안내하기 위한 표식. 🛑 트랜스크립트를 안 읽는다: 매 편집마다 세션 기록
 // 전체를 파싱하면 긴 세션에서 훅이 10초 제한을 넘겨 **하드 차단 전부가 조용히 꺼진다**.
 function boardNoticeKey(input) {
   const raw = input.session_id || (input.transcript_path ? path.basename(input.transcript_path) : "");
   return raw ? String(raw).replace(/[^A-Za-z0-9_-]/g, "-") : null;
 }
 // 성공 = 이번 세션 처음. EEXIST 든 그 밖의 실패든 **전부 침묵**이다(중복을 못 막으면
-// 편집마다 같은 말이 붙는다). ⚠ 상위 폴더를 먼저 만든다 — 새 기계에는 이 폴더가 없고,
+// 편집마다 같은 말이 붙는다). ⚠ 상위 폴더를 먼저 만든다: 새 기계에는 이 폴더가 없고,
 // 없으면 배타 생성이 ENOENT 로 실패해 **새 사용자에게 주 경로가 한 번도 안 울린다.**
 function claimBoardNotice(key) {
   const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
@@ -403,7 +403,7 @@ process.stdin.on("end", () => {
   const UNATTENDED = process.env.CHAGEUN_UNATTENDED === "1";
   // 🛑 `name` 선언을 try **밖**으로 올린다(v0.65.0 F-29). 파일 끝 무인 fail-closed catch 가 이 값을
   //   봐야 하는데, try 안 선언이면 그 자리에서 ReferenceError 가 나고 catch 안에서 난 예외는 아무도
-  //   안 잡아 훅이 비정상 종료한다 — **무인 park 이 통과로 뒤집힌다.** 대입 자리는 아래 그대로 두고
+  //   안 잡아 훅이 비정상 종료한다: **무인 park 이 통과로 뒤집힌다.** 대입 자리는 아래 그대로 두고
   //   형도 안 바꾼다(소비자들은 이미 String(name||"") 로 감싸 쓴다).
   let name;
   try {
@@ -416,24 +416,24 @@ process.stdin.on("end", () => {
     const spawn = spawnIntent(name, ti);
 
     // v0.65.0 F-29(결정 3번 · **사용자**가 정했다 2026-08-11): **무인 범위는 안 넓힌다.**
-    //   뜻은 딱 하나다 — 그물을 넓혀 무인에 **새로 도달하게 된** 차단만 무인에서 안 켠다.
+    //   뜻은 딱 하나다: 그물을 넓혀 무인에 **새로 도달하게 된** 차단만 무인에서 안 켠다.
     //   🛑 **기존에 이미 무인에서 돌던 차단을 끄라는 뜻이 아니다.** 그래서 무인 **전용** 판정
     //   네 곳(§0 STOP·통과표 · §0.5 예산·워치독 · §2 unattendedBlock·u-pr · 파일 끝 바깥 catch)만
     //   옛 매처 집합 안에서 돈다. 세는 호출 수가 그대로라 **무인 예산 소진 속도가 v0.65.0 전과
     //   정확히 같다.**
     //   🛑 **그 밖의 판정은 넓힌 범위 그대로다**(리뷰 격리 · base block · 게이트 모델 · 계획 규모 ·
     //   게이트 스폰 · **불투명 통로 차단** · 신선도 · 색 · 컴포넌트 · 리마인더). 여기까지 좁히면
-    //   **무인이 유인보다 헐거워진다** — 무인 서브에이전트만 Workflow 를 자유롭게 쓰게 되어
+    //   **무인이 유인보다 헐거워진다**: 무인 서브에이전트만 Workflow 를 자유롭게 쓰게 되어
     //   결정 4번과 정면으로 어긋난다. **무인은 유인보다 느슨해질 수 없다**는 것이 이 저장소의 규율이다.
     //   🛑 그래서 무인 갈래를 **함수 머리에서 통째로 조기 종료**하는 모양으로 짜지 말 것.
     //   그렇게 짜도 (가)·(나) 칸과 965건 재생이 전부 초록이라, 그 실수만 잡는 칸을 따로 뒀다:
     //   test/hook-net.test.mjs 의 무인 (다).
     const UNATTENDED_SCOPED = UNATTENDED && LEGACY_UNATTENDED_SCOPE.test(String(name || ""));
 
-    // 0-pre) 리뷰 에이전트 격리(Claude 서브에이전트 한정 — 순수 문자열·fail-closed).
+    // 0-pre) 리뷰 에이전트 격리(Claude 서브에이전트 한정: 순수 문자열·fail-closed).
     //   transcript·fs 접근 없이 훅 초반에 판정. 판정 예외 시 안전측 차단(ra-error). agent_type은
     //   서브에이전트에만 있음(메인 세션은 없음 → 무영향). deny는 항상 ra-* 문구라 UNATTENDED 무관 false.
-    //   파싱 실패 시엔 이 분기 전에 바깥 catch로 빠져 유인 fail-open(메인 배려 — 스펙 §최대위험).
+    //   파싱 실패 시엔 이 분기 전에 바깥 catch로 빠져 유인 fail-open(메인 배려: 스펙 §최대위험).
     if (isReviewAgent(input.agent_type)) {
       let raHit;
       try { raHit = reviewAgentBlock(input.agent_type, name, ti); } catch (_) { raHit = "ra-error"; }
@@ -441,7 +441,7 @@ process.stdin.on("end", () => {
     }
 
     // 0-pre2) 감독의 쓰기 금지(v0.65.0 F-28 · 0-pre 와 같은 모양). 허용 목록(`tools:` 넷)이 본체이고
-    //   이것은 둘째 겹이다 — 에이전트 정의 파일은 사람이 한 줄 고치면 조용히 넓어지는 자리이고,
+    //   이것은 둘째 겹이다: 에이전트 정의 파일은 사람이 한 줄 고치면 조용히 넓어지는 자리이고,
     //   그때 아무 검사도 안 울린다. 판정 예외는 안전측 차단(ra-error 와 같은 원칙).
     //   deny 의 두 번째 인자가 항상 false 인 이유도 0-pre 와 같다: 이 문구는 무인이냐가 아니라
     //   **감독이라는 자리**에서 나온 것이라, 무인 park 문구로 바꾸면 무엇이 왜 막혔는지가 사라진다.
@@ -459,7 +459,7 @@ process.stdin.on("end", () => {
     }
 
     // 0.5) 무인 예산·워치독: 매 호출 카운트+시각 검사. 초과/헛돎 → park. commit은 진전.
-    //    v0.65.0: **옛 집합만** — 세는 호출 수가 그대로라 소진 속도가 v0.65.0 전과 정확히 같다.
+    //    v0.65.0: **옛 집합만** - 세는 호출 수가 그대로라 소진 속도가 v0.65.0 전과 정확히 같다.
     if (UNATTENDED_SCOPED) {
       const rt = readRuntime();
       if (rt.corrupt) return deny("u-error", true); // 손상 시 시계 리셋 대신 안전 park
@@ -502,12 +502,12 @@ process.stdin.on("end", () => {
     //   ⚠ 자체 try/catch 를 둔다. 바깥 catch(stdin 'end' 핸들러 끝)는 유인 모드에서 **아무 말 없이
     //     exit 0** 이라, 판정에 버그가 들어가면 가드가 꺼진 줄 모른 채 몇 주가 지난다
     //     (pr-reviewer 1회차 medium). 여기서는 통과시키되 stderr 한 줄로 꺼졌음을 남긴다.
-    //   **크기 한 축만** 본다. 회차 축은 만들지 않기로 확정됐다(2026-08-09 · 되살릴 계획 없음 —
+    //   **크기 한 축만** 본다. 회차 축은 만들지 않기로 확정됐다(2026-08-09 · 되살릴 계획 없음:
     //   사유는 pretooluse-core.js planScaleBlock 주석).
     {
       // ⚠ try 는 이 절 **전체**를 감싼다. 3회차까지는 planScaleBlock 호출만 감쌌는데, 그 아래
       //   승인 확인·차단문 조립에서 던지면 파일 맨 끝 바깥 catch 로 가 유인 모드에서 **아무 말 없이
-      //   exit 0** 이었다 — 바로 이 절이 막으려던 그 경로다(4회차 low). deny 는 process.exit 이라
+      //   exit 0** 이었다: 바로 이 절이 막으려던 그 경로다(4회차 low). deny 는 process.exit 이라
       //   try 안에서도 그대로 빠져나간다.
       try {
       // ⚠ 트랜스크립트는 여기서 **읽지 않는다.** 3회차에 기계 회차 계수를 먹이려고 이 자리에서
@@ -517,13 +517,13 @@ process.stdin.on("end", () => {
       //   승인 확인용 읽기는 아래에서 **차단이 실제로 걸렸을 때만** 한다.
         const cwdBase = input.cwd || process.cwd();
         const hits = planScaleBlock(name, ti, {
-          // `~/…` 는 셸이 아니라 우리가 편다 — path.resolve 는 `<cwd>/~/…` 로 만들어 읽기가 실패하고,
+          // `~/…` 는 셸이 아니라 우리가 편다: path.resolve 는 `<cwd>/~/…` 로 만들어 읽기가 실패하고,
           //   실패는 후보 탈락이라 **가드가 조용히 꺼진다**(3회차 low · 한글 경로와 같은 실패 종류).
           readFile: (rel) => fs.readFileSync(
             /^~\//.test(rel) ? path.join(os.homedir(), rel.slice(2)) : path.resolve(cwdBase, rel), "utf8"),
         });
         // 승인 키·형식 안내는 **사람만** 쓸 수 있다. 무인과 서브에이전트는 그 화면을 못 띄우므로
-        //   켤 수 없는 스위치를 안내하지 않는다(왕복만 늘린다 — 이 파일 위쪽 배포 문구의 실측 교훈).
+        //   켤 수 없는 스위치를 안내하지 않는다(왕복만 늘린다: 이 파일 위쪽 배포 문구의 실측 교훈).
         const humanCanApprove = !UNATTENDED && !IS_SUBAGENT;
         if (hits && hits.length) {
           const approvals = humanCanApprove
@@ -533,7 +533,7 @@ process.stdin.on("end", () => {
             if (verdict.approved) continue;
             // 승인 질문은 **있었는데** 인정 못 한 경우를 구분해 알려준다. 같은 차단문만 다시 내면
             //   무엇이 틀렸는지 알 길이 없어 같은 실패를 반복한다(2회차 high).
-            //   ⚠ "형식 오류"와 "사용자가 안 눌렀다"를 갈라야 한다 — 사용자가 첫 번째(거절)를 눌렀는데
+            //   ⚠ "형식 오류"와 "사용자가 안 눌렀다"를 갈라야 한다: 사용자가 첫 번째(거절)를 눌렀는데
             //   형식 오류라고 안내하면 모델이 같은 질문을 다시 띄운다. 사람의 "아니오"가 기계 오류로
             //   포장돼 재촉으로 바뀐다(3회차 medium).
             const tried = humanCanApprove && approvals.some((r) => {
@@ -543,21 +543,21 @@ process.stdin.on("end", () => {
             });
             const why = !tried ? ""
               : verdict.wellFormed
-                ? " ⚠ 이 키가 든 승인 질문은 형식이 맞는데 **두 번째 선택지가 눌리지 않았습니다** —"
+                ? " ⚠ 이 키가 든 승인 질문은 형식이 맞는데 **두 번째 선택지가 눌리지 않았습니다**:"
                   + " 사용자가 거절했거나 아직 답하지 않은 것입니다. **거절이면 다시 묻지 말고 일을 쪼개세요.**"
-                : " ⚠ 이 키가 든 승인 질문은 찾았지만 **형식이 안 맞아 인정되지 않았습니다** —"
+                : " ⚠ 이 키가 든 승인 질문은 찾았지만 **형식이 안 맞아 인정되지 않았습니다** -"
                   + " 차단문의 형식 요건을 확인하세요.";
             return deny(hit.key, UNATTENDED,
               humanCanApprove ? hit.detail + " · " + hit.measured + why : hit.measured);
           }
         }
       } catch (e) {
-        // 무인은 이 파일의 관례대로 **fail-closed** — 판정 불확실 = park(바깥 catch와 같은 원칙).
+        // 무인은 이 파일의 관례대로 **fail-closed**: 판정 불확실 = park(바깥 catch와 같은 원칙).
         //   사람이 없는 자리에서 "큰 계획은 무조건 멈춤"이 조용히 꺼지면 안 된다(2회차 medium).
         if (UNATTENDED) return deny("u-error", true);
         // ⚠ 유인 모드는 exit 0 으로 통과시킨다. 그런데 이 훅 계약에서 **stderr 가 Claude 에게 가는 길은
         //   exit 2 뿐**이라(이 파일 deny 주석), stderr 한 줄만 남기면 "가드가 꺼졌다"는 사실이
-        //   아무에게도 안 닿는다 — 이 절이 막으려던 상태 그대로다(5회차 medium). 리마인더와 같은
+        //   아무에게도 안 닿는다: 이 절이 막으려던 상태 그대로다(5회차 medium). 리마인더와 같은
         //   stdout 통로로 보낸다. stderr 는 사람이 훅을 직접 돌릴 때를 위해 함께 남긴다.
         const msg = "[chageun] 계획 규모 가드가 판정에 실패해 이번 호출은 통과시킵니다: "
           + (e && e.message ? e.message : e);
@@ -565,7 +565,7 @@ process.stdin.on("end", () => {
         try {
           process.stdout.write(JSON.stringify({ hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: msg + " — 큰 계획서가 검사 없이 통과했을 수 있습니다. 사용자에게 알리세요.",
+            additionalContext: msg + " - 큰 계획서가 검사 없이 통과했을 수 있습니다. 사용자에게 알리세요.",
           } }));
           reminderEmitted = true;
         } catch (_) { /* 진단 실패가 차단 사유가 되지는 않는다 */ }
@@ -575,42 +575,42 @@ process.stdin.on("end", () => {
     // 1.7) 서브에이전트의 게이트 스폰 차단(v0.64.0 H-2). 재료는 1.5와 같지만(Task/Agent + subagent_type)
     //   **자리는 계획 규모 가드(1.6) 뒤**다. 앞에 두면 서브에이전트의 plan-validator 호출이 여기서
     //   먼저 끊겨 1.6 의 서브에이전트 갈래(`humanCanApprove` 의 `!IS_SUBAGENT` · REASONS_SUBAGENT의
-    //   "plan-size")가 통째로 도달 불가가 된다 — 그 층은 이 차단이 나중에 느슨해질 때를 위한 백스톱이라
+    //   "plan-size")가 통째로 도달 불가가 된다: 그 층은 이 차단이 나중에 느슨해질 때를 위한 백스톱이라
     //   살려 둔다. 큰 계획을 든 호출은 1.6 이 이미 더 자세히(잰 줄 수까지) 세우고, 나머지 게이트 호출을
     //   여기서 세운다. 둘 다 "멈추고 본 세션에 BLOCKED 로 올려라"로 끝나 방향이 같다.
-    //   탈출구 없음 — 켤 수 있는 사람이 이 자리에 없고(서브에이전트는 세션 환경변수를 못 만든다),
+    //   탈출구 없음: 켤 수 있는 사람이 이 자리에 없고(서브에이전트는 세션 환경변수를 못 만든다),
     //   열어야 할 정당한 경우는 "게이트는 본 세션이 띄운다"로 이미 덮인다.
     //   deny 의 두 번째 인자가 **항상 false** 인 이유는 0-pre(ra-*)와 같다: 이 문구는 무인이냐가 아니라
     //   서브에이전트라는 자리에서 나온 것이라, 무인 park 문구로 바꾸면 무엇이 왜 막혔는지가 사라진다.
     //   v0.65.0 F-29: 이 판정이 사유를 **두 가지**로 낸다(게이트 스폰 · 불투명 통로). 돌려받은 키를
-    //   그대로 쓴다 — 예전처럼 키를 여기 박아 두면 새 사유를 더해도 문구가 안 갈려서, 막힌 쪽은
+    //   그대로 쓴다: 예전처럼 키를 여기 박아 두면 새 사유를 더해도 문구가 안 갈려서, 막힌 쪽은
     //   무엇에 막혔는지 모른 채 엉뚱한 회복(게이트를 안 띄우면 되겠지)을 시도한다.
     {
       const sgs = subagentGateSpawn(input.agent_type, name, ti);
       if (sgs) return deny(sgs, false);
     }
 
-    // 1.7b) 감독 폭주 상한(v0.65.0 F-28). 문을 지난 **감독이 스폰 통로를 부를 때만** 돈다 —
+    // 1.7b) 감독 폭주 상한(v0.65.0 F-28). 문을 지난 **감독이 스폰 통로를 부를 때만** 돈다:
     //   한 세션에 많아야 일곱 번이라 비용이 안 나온다(모든 도구 호출마다 읽는 자리가 아니다).
     //   자리가 문 판정 **바로 뒤**인 이유: 앞에 두면 감독의 감독 스폰(subagent-supervisor-spawn)이
     //   상한 문구로 뒤바뀌어, 왜 막혔는지가 사라진다.
     // 🛑 **읽는 것은 input.transcript_path 가 아니라 조립한 자기 기록이다**(위 조립기 주석).
-    //   못 읽으면 통과가 아니라 멈춤이다(fail-closed) — 첫 스폰도 막는다. 통과로 두면 최상위 모델
+    //   못 읽으면 통과가 아니라 멈춤이다(fail-closed): 첫 스폰도 막는다. 통과로 두면 최상위 모델
     //   에이전트가 **상한 없이 늘어나는** 길이 열린다. 요금이 걸린 자리라 "값이 안 보이면 안전측"이다.
-    //   "첫 1건만 봐주기"는 배선할 수 없다 — 지금이 첫 스폰인지 알려면 지금까지의 수를 세야 하는데
+    //   "첫 1건만 봐주기"는 배선할 수 없다: 지금이 첫 스폰인지 알려면 지금까지의 수를 세야 하는데
     //   그 수를 세는 유일한 재료가 못 읽은 그 기록이고, 훅은 호출마다 새 프로세스라 기억이 없다.
     if (isSupervisor(input.agent_type) && spawnIntent(name, ti)) {
       const own = supervisorTranscriptPath(input);
       const objs = own ? readTranscriptStrict(own) : null;
       if (!objs) return deny("supervisor-cap-unreadable", false);   // 조립 실패·못 읽음 = 첫 스폰도 차단
-      // 🛑 견주는 규칙은 core 의 spawnCapReached 하나다 — **지금 부르려는 이 호출이 기록에 이미 적혀
+      // 🛑 견주는 규칙은 core 의 spawnCapReached 하나다: **지금 부르려는 이 호출이 기록에 이미 적혀
       //   있어서**(2026-08-12 실측) 그 한 건을 빼야 "6번 성공 · 7번째 차단"이 된다(사용자 결정).
       //   여기서 다시 `>= SUPERVISOR_SPAWN_CAP` 로 견주면 쓸 수 있는 스폰이 5건으로 돌아간다.
       if (spawnCapReached(objs)) return deny("supervisor-spawn-cap", false);
     }
 
     // 2) 무인 전용 추가 차단(push·배포프리뷰·DB쓰기·설치·경로·PR).
-    //    v0.65.0: **옛 집합만** — "새로 도달한 차단"이 사는 자리가 여기다(u-mcp-write 등).
+    //    v0.65.0: **옛 집합만** - "새로 도달한 차단"이 사는 자리가 여기다(u-mcp-write 등).
     //    표본 쌍으로 재는 이유: `mcp__…__create_branch` 는 옛 매처에 부분일치하고
     //    `mcp__…__create_file` 은 안 한다. **같은 규칙·다른 도달 여부**라, 예외가 규칙 단위가 아니라
     //    **도달 단위**로 잡혔다는 증거가 된다(무인 (가)·(나) 칸).
@@ -620,21 +620,21 @@ process.stdin.on("end", () => {
       if (uhit) return deny(uhit, true);
     }
 
-    // 3) 게이트 생략 감지(P3: git push 포함 — 무인은 위 2)의 u-push가 선행 차단이라 유인 전용 확장):
+    // 3) 게이트 생략 감지(P3: git push 포함 - 무인은 위 2)의 u-push가 선행 차단이라 유인 전용 확장):
     //    무인 모드는 SKIP 탈출구(CHAGEUN_SKIP_GATE_CHECK)를 무시.
     if (isPrCreate(name, ti) || isPush(name, ti)) {
       // v0.64.0 H-2: 서브에이전트는 **트랜스크립트와 무관하게 항상** 막는다. 전에는 "자기 기록에
       //   pr-reviewer 흔적이 없어서" 막혔는데, 그건 조건이라 흔적이 생기는 순간 풀린다(스스로 게이트를
       //   띄우거나, 게이트가 자기 기록에 남는 경로가 생기거나). 이 자리 문구는 이미 "push 와 PR 은 본
       //   세션이 합니다"라는 조건 없는 단정이니 기계도 조건 없이 만든다.
-      //   사람용 탈출구(CHAGEUN_SKIP_GATE_CHECK)보다 앞에 둔다 — 그 스위치는 "게이트 검사를 건너뛴다"는
+      //   사람용 탈출구(CHAGEUN_SKIP_GATE_CHECK)보다 앞에 둔다: 그 스위치는 "게이트 검사를 건너뛴다"는
       //   뜻이지 "push 를 뒤에서 돌게 한다"는 뜻이 아니고, 사람은 본 세션에서 그대로 push 할 수 있다.
       //   v0.64.0 리뷰 2회차가 여기에 전용 회복 스위치(CHAGEUN_ALLOW_SUBAGENT_PUSH)를 넣었고,
       //   **3회차가 도로 뺐다.** 스위치를 켠 세션에서는 이 자리가 아래 신선도 검사로 떨어지는데,
       //   그 검사(prReviewerRan)는 게이트 호출이 **실제로 실행됐는지**(tool_result 의 is_error)를 안 본다.
       //   PreToolUse 가 막은 호출도 트랜스크립트에는 tool_use 로 남는다. 그래서 스위치를 켠 세션에서
       //   서브에이전트가 (a) 코드를 고치고 (b) 게이트를 부르려다 1.7 에 막히고 (c) 그 막힌 시도가
-      //   "리뷰 흔적"이 되어 (d) push 가 통과한다 — 이 절이 막으려던 바로 그 사고가 되살아난다.
+      //   "리뷰 흔적"이 되어 (d) push 가 통과한다: 이 절이 막으려던 바로 그 사고가 되살아난다.
       //   회복 경로는 스위치가 아니라 **사람**이다(문구 끝 안내: 본 세션인데 이게 떴으면 사람에게 알린다).
       //   다시 넣으려면 hasPrReviewer 가 is_error 를 보게 하는 일이 **먼저**다.
       if (IS_SUBAGENT) return deny("gate-skip", UNATTENDED);
@@ -648,7 +648,7 @@ process.stdin.on("end", () => {
     //    P3(soft 리마인더)와 별개 채널 = 기계 강제층: raw 색이 새 코드에 박히는 순간 그 편집을 차단(exit 2).
     //    검출은 tool_input의 content/new_string만(제약: 트리 스캔 없음). Edit/MultiEdit는 old엔 없고 new에
     //    생긴 색 토큰만(브라운필드 오탐 방지). Write는 신규 파일일 때만 검사(기존 파일 통짜 덮어쓰기는 v1 미차단
-    //    = 정직한 열린 구멍 — old를 안 읽어 added 판정 불가). exit 2는 stderr 채널이라 §4 stdout 리마인더와
+    //    = 정직한 열린 구멍: old를 안 읽어 added 판정 불가). exit 2는 stderr 채널이라 §4 stdout 리마인더와
     //    충돌 없음(블록 시 리마인더 도달 전 종료). 무인·유인 모두 발동(색은 안전-park 사유는 아니나 회복
     //    가능+watchdog 바운드). 이 백스톱은 이 래퍼에만 배선. 자체 try/catch로 격리.
     if (EDIT_RE.test(String(name || "")) && isDesignScanTarget(ti.file_path || ti.notebook_path)
@@ -661,7 +661,7 @@ process.stdin.on("end", () => {
           let viol = violationsForEdit(name, ti, allow);
           if (viol === null && String(name || "") === "Write") {
             // Write: old_string 없음 → 신규 파일(!existsSync)만 content 전체가 '새 색'으로 확실. 기존 파일은 skip.
-            //   경로는 readDesignDoc과 같은 cwd 기준으로 resolve(상대경로 오판 방지 — 둘의 기준 통일).
+            //   경로는 readDesignDoc과 같은 cwd 기준으로 resolve(상대경로 오판 방지: 둘의 기준 통일).
             const abs = ti.file_path ? path.resolve(cwd, ti.file_path) : null;
             viol = (abs && !fs.existsSync(abs)) ? scanColors(ti.content, allow) : [];
           }
@@ -670,7 +670,7 @@ process.stdin.on("end", () => {
             return deny("design-color", false, tokens);
           }
         }
-      } catch (_) { /* fail-open — 백스톱 오류가 정상 작업을 막지 않는다 */ }
+      } catch (_) { /* fail-open: 백스톱 오류가 정상 작업을 막지 않는다 */ }
     }
 
     // 4.8) 공용 component 경계(hard block, Claude 전용): 색 검사 뒤, soft 리마인더 전에 실행한다.
@@ -689,10 +689,10 @@ process.stdin.on("end", () => {
     // 4.8b) 상황판 하드 차단 둘(v0.65.0 F-27): **비밀 값**과 **무시가 확인 안 된 상황판**.
     //    둘 다 (1) 손해가 되돌릴 수 없고 (2) 회복이 항상 있고 밟고 나면 차단이 스스로
     //    풀리는 자리라 단다. 이 잣대를 넘는 차단은 더 안 단다.
-    //    🛑 차단할 때 `deny(key, false)` 로 부른다 — `true` 로 부르면 무인 문구 표에 없는
+    //    🛑 차단할 때 `deny(key, false)` 로 부른다: `true` 로 부르면 무인 문구 표에 없는
     //    열쇠라 일반 park 문구로 떨어져 **회복 문구가 통째로 사라진다**(탈출구 없는 차단이라
     //    문구가 유일한 안내다). 기존 하드 차단 둘(design-color·component-boundary)도 false 다.
-    //    🛑 판정이 실패하면 유인·무인 모두 통과(§4.6 관례) — 상황판은 안전 장치가 아니라
+    //    🛑 판정이 실패하면 유인·무인 모두 통과(§4.6 관례): 상황판은 안전 장치가 아니라
     //    편의이고, 판정을 못 했다고 작업을 막으면 안 된다.
     //    ⚠ 이 자리는 PreToolUse 훅에서 자식 프로세스를 띄우는 첫 자리다. 정상 작업에서는
     //    두 번째 조건(절대 경로)이 사실상 항상 거짓이라 git 호출이 0회다.
@@ -703,16 +703,16 @@ process.stdin.on("end", () => {
         const cwd = input.cwd || process.cwd();
         const secrets = collectSecrets(cwd);
         const leaks = secrets.length ? findLeaks(boardNewText(name, ti), secrets) : [];
-        // 값은 절대 다시 안 적는다 — 걸린 **열쇠 이름만** 붙인다.
+        // 값은 절대 다시 안 적는다: 걸린 **열쇠 이름만** 붙인다.
         if (leaks.length) return deny("statusboard-secret", false, [...new Set(leaks)].slice(0, 8).join(", "));
         if (boardIgnoreVerdict(path.dirname(boardTarget.abs)) === "blocked") {
           return deny("statusboard-unignored", false);
         }
       }
-    } catch (_) { /* fail-open — 판정 오류가 정상 작업을 막지 않는다 */ }
+    } catch (_) { /* fail-open: 판정 오류가 정상 작업을 막지 않는다 */ }
 
     // 4) P1 리마인더(soft): plan 문서를 쓰고 plan-validator 없이 첫 코드 수정 시작 →
-    //    차단 없이 리마인더 한 줄 주입(additionalContext). 자체 try/catch — 리마인더는 어떤
+    //    차단 없이 리마인더 한 줄 주입(additionalContext). 자체 try/catch: 리마인더는 어떤
     //    경우에도 차단·park 사유가 되지 않는다(무인 fail-closed catch로 새지 않게).
     if (EDIT_RE.test(String(name || ""))) {
       try {
@@ -749,9 +749,9 @@ process.stdin.on("end", () => {
 
     // 4.5) routing 리마인더(soft, batch6): 구현 에이전트 첫 위임 직전 chageun:routing
     //    스킬 미로드 → 리마인더 1회 주입. P1과 동일하게 자체 try/catch로 격리(예외가 무인
-    //    fail-closed catch로 새어 park가 되지 않게 — plan-validator medium 반영). needle 조기
-    //    탈출은 못 쓴다(부재가 신호) — Agent 스폰은 드물어 전체 파싱 비용 수용.
-    //    v0.65.0: 판정을 spawnIntent 로 옮겼다. **`readable` 일 때만** 이 절에 들어간다 —
+    //    fail-closed catch로 새어 park가 되지 않게: plan-validator medium 반영). needle 조기
+    //    탈출은 못 쓴다(부재가 신호): Agent 스폰은 드물어 전체 파싱 비용 수용.
+    //    v0.65.0: 판정을 spawnIntent 로 옮겼다. **`readable` 일 때만** 이 절에 들어간다:
     //    `spawnIntent !== null` 로 적으면 `Workflow` 호출에서도 여기 들어와 트랜스크립트 전체를
     //    파싱한다(실측 400ms대). 불투명 통로는 무엇을 띄우는지 못 읽으니 라우팅 판정이 성립하지 않는다.
     if (!reminderEmitted && spawn && spawn.kind === "readable") {
@@ -780,7 +780,7 @@ process.stdin.on("end", () => {
     //    🛑 **훅이 파일을 만들지 않는다.** 빈 껍데기를 만들면 그 순간 조건 (d)가 참이 되어
     //    다음부터 안내가 영영 안 나가고, §2.1 절차의 판단 걸린 갈래를 10초 제한 훅이
     //    대신 내리게 된다.
-    //    🛑 앞 리마인더가 이미 나갔으면 **표식도 안 만든다** — 그래야 다음 편집에서 다시
+    //    🛑 앞 리마인더가 이미 나갔으면 **표식도 안 만든다**: 그래야 다음 편집에서 다시
     //    시도한다(양보는 미룸이지 취소가 아니다).
     //    ⚠ 위임 갈래에는 `file_path` 가 없다. 삼항이 빠지면 path.resolve 가 TypeError 를
     //    내고 이 절의 try/catch 가 조용히 삼켜, **위임만 하는 세션에서 안내가 영영 안 나간다.**
@@ -797,7 +797,7 @@ process.stdin.on("end", () => {
             process.stdout.write(JSON.stringify({
               hookSpecificOutput: {
                 hookEventName: "PreToolUse",
-                additionalContext: "차근 안내: 이 프로젝트에는 작업 상황판(`status.md`)이 없습니다. 뒤에서 돌 일이 생기거나 사용자가 결정할 것이 생기는 일이면 지금 만드는 것이 좋습니다 — 파일 하나를 15분 안에 고치고 끝나는 일이면 안 만들어도 됩니다. **상황판을 만들기로 정했으면 파일부터 만들지 말고 `chageun:statusboard` 를 먼저 열어 git 무시 절차부터 밟으세요**(안 그러면 이 평문 보고서가 저장소에 올라갑니다).",
+                additionalContext: "차근 안내: 이 프로젝트에는 작업 상황판(`status.md`)이 없습니다. 뒤에서 돌 일이 생기거나 사용자가 결정할 것이 생기는 일이면 지금 만드는 것이 좋습니다: 파일 하나를 15분 안에 고치고 끝나는 일이면 안 만들어도 됩니다. **상황판을 만들기로 정했으면 파일부터 만들지 말고 `chageun:statusboard` 를 먼저 열어 git 무시 절차부터 밟으세요**(안 그러면 이 평문 보고서가 저장소에 올라갑니다).",
               },
             }));
             reminderEmitted = true;
@@ -806,33 +806,33 @@ process.stdin.on("end", () => {
       } catch (_) { /* 안내 실패는 어떤 경우에도 차단·park 사유가 아니다 */ }
     }
 
-    // 4.5c) 표시 없이 **지금 만드는** 편집 — 차단이 아니라 안내 한 줄(v0.65.0 F-27).
+    // 4.5c) 표시 없이 **지금 만드는** 편집: 차단이 아니라 안내 한 줄(v0.65.0 F-27).
     //    위 4.8b 가 내용 신호까지 보게 되면서, 스킬을 안 열고 손으로 만드는 그 편집은
-    //    표시가 없어 차단에 안 걸린다. 🛑 **차단을 되돌리지 않는다** — 남의 루트
+    //    표시가 없어 차단에 안 걸린다. 🛑 **차단을 되돌리지 않는다**: 남의 루트
     //    `status.md` 오차단이 더 나쁘다. 대신 막지 않고 한 줄만 낸다(exit 0).
     //    🛑 **이미 있는 파일에는 안 낸다.** 남의 팀 문서를 고칠 때마다 같은 잔소리가 붙으면
     //    그것도 마찰이고, 그 파일은 이 기능과 무관하다.
-    //    판정을 두 번 짜지 않는다 — 4.8b 의 결과(boardTarget)를 갈라 쓰기만 하고 git 은
+    //    판정을 두 번 짜지 않는다: 4.8b 의 결과(boardTarget)를 갈라 쓰기만 하고 git 은
     //    안 부른다(내용 신호에서 이미 끝나는 자리라 비용도 그대로 0이다).
     if (!reminderEmitted && boardTarget && !boardTarget.armed && !boardTarget.exists) {
       try {
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            additionalContext: "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 — `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.",
+            additionalContext: "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.",
           },
         }));
         reminderEmitted = true;
       } catch (_) { /* 안내 실패는 차단 사유가 아니다 */ }
     }
 
-    // 4.9) 목록 밖 도구 알림(soft · v0.65.0 F-29 층3). **가장 낮은 우선순위** — "그 밖에 할 말이
+    // 4.9) 목록 밖 도구 알림(soft · v0.65.0 F-29 층3). **가장 낮은 우선순위**: "그 밖에 할 말이
     //    없을 때"만 나간다. 상황판(F-27)이 자기 안내를 붙일 때 이 순서를 전제한다.
     //    🛑 **어떤 경우에도 exit 2 를 내지 않는다.** 모르는 도구를 막으면 판올림마다 사용자 작업이
     //    멈춘다(이 저장소의 최대 실패 양식은 오차단이다). 자체 try/catch 로 격리해 예외가 무인
-    //    fail-closed catch 로 새지 않게 한다 — 알림 실패가 park 사유가 되면 안 된다.
+    //    fail-closed catch 로 새지 않게 한다: 알림 실패가 park 사유가 되면 안 된다.
     //    🛑 **세션 dedup 을 하지 않는다.** 상태 파일이 없어 못 하기도 하고(결정 1번: 파일 안 만듦),
-    //    안 하는 편이 낫다 — 같은 도구가 다시 쓰이면 다시 알린다. dedup 이 없으니 **소음의 유일한
+    //    안 하는 편이 낫다: 같은 도구가 다시 쓰이면 다시 알린다. dedup 이 없으니 **소음의 유일한
     //    방어선은 스폰꼴 열쇠 목록**이고, 그래서 거기서 `code`·`script` 를 뺐다(tool-ledger-core.js).
     //    비용: 집합 조회 1번. 파일도 트랜스크립트도 안 읽는다.
     if (!reminderEmitted) {
@@ -852,7 +852,7 @@ process.stdin.on("end", () => {
   } catch (_) {
     // 무인: 판정 중 예외 = 불확실 = 안전측(park). 유인: 기존대로 fail-open(사람이 백스톱).
     // 🛑 v0.65.0: 여기서 조건을 **뒤집어** 적는다. 그냥 `옛 집합.test(name)` 으로 쓰면
-    //   **fail-closed 가 fail-open 으로 뒤집힌다** — 이 catch 가 잡는 **대표 경우가 입력 JSON
+    //   **fail-closed 가 fail-open 으로 뒤집힌다**: 이 catch 가 잡는 **대표 경우가 입력 JSON
     //   파싱 실패**이고, 그때는 도구 이름이 아예 없다. 빈 이름은 옛 집합에 안 맞아 통과해 버리는데
     //   **지금은 park 하는 자리**다. 규칙 한 문장: **"도구 이름을 못 읽었으면 옛 집합에 있는 것으로 본다."**
     //   검사 = test/hook-net.test.mjs 의 무인 (라).
