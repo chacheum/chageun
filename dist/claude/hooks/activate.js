@@ -22,6 +22,26 @@ function head(file, max) {
   } finally { fs.closeSync(fd); }
 }
 
+// 상황판 뿌리 찾기: 켠 폴더부터 위로 올라가며 `status.md` 를 찾는다.
+// 🛑 작업방(git worktree)이나 하위 폴더에서 켜면 `status.md` 는 켠 폴더가 아니라 몇 단
+//    위 저장소 뿌리에 있다(이 저장소 자체가 `<repo>/.claude/worktrees/<이름>` 로 3단 깊이
+//    중첩한다). 켠 폴더 한 곳만 보면 있는데도 "없다"고 판정해, 세션에 **한 번뿐인** 안내를
+//    그 세션 내내 못 낸다.
+// 경계는 `board-core.mjs` 의 `resolveRoot` 와 같은 규칙(홈 폴더·`/` 에 닿으면 멈춘다 - 남의
+// 홈 트리를 함부로 안 오른다)을 그대로 옮겨 쓴다. `resolveRoot` 자체는 ESM 이고 "형제 프로젝트
+// 훑기"용이라 이 훅(CJS · 단일 파일 존재 확인)에는 그대로 못 부른다.
+function findBoardDir(startDir, home) {
+  let dir = startDir;
+  for (let i = 0; i < 12; i++) {
+    if (fs.existsSync(path.join(dir, "status.md"))) return dir;
+    if (dir === home || dir === "/") return null;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+
 // 표시 한 벌이 **짝으로 정확히 하나씩**, 여는 것이 먼저일 때만 온전하다고 본다.
 function pairOk(text, open, close) {
   const a = text.indexOf(open), b = text.indexOf(close);
@@ -49,8 +69,10 @@ try {
   // fs 를 못 쓴다: 파일이 있는지·표식이 온전한지는 이 자리에서만 알 수 있다.
   // 🛑 상황판이 없는 프로젝트의 상시 비용은 `existsSync` 한 번이다. 표식 판정(파일 읽기)은
   //    상황판이 있을 때만 한다.
-  const boardPath = path.join(process.cwd(), "status.md");
-  const hasBoard = fs.existsSync(boardPath);
+  const home = process.env.HOME || require("os").homedir();
+  const boardDir = findBoardDir(process.cwd(), home);
+  const hasBoard = boardDir !== null;
+  const boardPath = path.join(hasBoard ? boardDir : process.cwd(), "status.md");
   const ctx = {
     env: process.env,
     board: hasBoard,

@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -67,6 +67,19 @@ test("상황판이 있는 폴더: 부록 본문 + board-server.mjs 절대 경로
   const abs = join(ROOT, "src", "skills", "statusboard", "board-server.mjs");
   assert.ok(r.stdout.includes(abs), "board-server.mjs 절대 경로가 안 박혔다");
   assert.ok(!r.stdout.includes(core.BOARD_SERVER_SLOT), "자리표시자가 그대로 남았다");
+});
+
+test("작업방(worktree)처럼 몇 단 아래에서 켜도 저장소 뿌리의 상황판을 찾는다", () => {
+  // 이 저장소 자체가 켠 폴더를 `<repo>/.claude/worktrees/<이름>` 로 3단 깊이 중첩한다.
+  // status.md 는 켠 폴더가 아니라 그 위 저장소 뿌리에 있으므로, 켠 폴더 한 곳만 보면
+  // 있는데도 "없다"고 오판한다.
+  const repo = boardDir(INTACT);
+  const nested = join(repo, ".claude", "worktrees", "agent-abc123");
+  mkdirSync(nested, { recursive: true });
+  const r = run(nested);
+  assert.equal(r.status, 0);
+  assert.ok(r.stdout.includes("상황판 `status.md`"),
+    "몇 단 위 저장소 뿌리의 status.md 를 못 찾아 부록이 안 붙었다");
 });
 
 test("무인 + 상황판: 한 조각에 둘 다 붙고 무인이 먼저다", () => {
