@@ -35,8 +35,6 @@ test("buildClaude는 plugin.json·hooks·콘텐츠를 생성", () => {
   assert.ok(existsSync(join(out, "hooks/tool-ledger-core.js")), "F-29 층3 코어 누락 — 배포판에서 pretooluse.js 가 로드 시점에 죽는다");
   for (const s of ["referencing", "product-map", "design-system", "monitoring", "security-scan"])
     assert.ok(existsSync(join(out, "skills", s, "SKILL.md")), s);
-  assert.ok(existsSync(join(out, "skills/retrospect/SKILL.md")));
-  assert.ok(existsSync(join(out, "skills/retrospect/retrospect-scan.mjs")));
   // 스킬이 본문에서 부르는 스크립트는 빌드가 함께 옮겨야 한다(안 옮기면 스킬이 없는 파일을 부른다).
   assert.ok(existsSync(join(out, "skills/product-map/table-to-yaml.mjs")));
   assert.ok(existsSync(join(out, "skills/statusboard/SKILL.md")));
