@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -81,6 +81,51 @@ test("코어 '작업 유형별 진행'이 `chageun:test-design` 을 가리킨다
     "누락: chageun:test-design — 새 검사를 짜는 경로가 가리킬 스킬 이름이 코어에서 사라졌다");
   assert.ok(!RULES.includes("test-driven-development"),
     "옛 이름 test-driven-development 가 코어에 남았다 — 그 스킬이 없는 사용자에게 막다른 길이 배포된다");
+});
+
+// pr-reviewer 재리뷰 2회차 medium: 이 판에서 걷어낸 남의 스킬 이름은 넷인데(test-driven-development ·
+//   executing-plans · using-git-worktrees · writing-skills), 되살아남을 막는 검사는 위 하나뿐이었다.
+//   나머지 셋은 코어(RULES)에 그물이 없어, 되살아나면 `:82`(=위 두 검사 옆)가 "차근을 재설치하라"고
+//   안내하는데 그 이름은 차근에 없으니 몇 번 재설치해도 안 고쳐지는 막다른 길이 조용히 배포된다.
+const RETIRED_SUPERPOWERS_NAMES_REST = ["executing-plans", "using-git-worktrees", "writing-skills"];
+
+test("코어에 걷어낸 옛 이름 셋(executing-plans·using-git-worktrees·writing-skills)이 안 남았다", () => {
+  for (const name of RETIRED_SUPERPOWERS_NAMES_REST)
+    assert.ok(!RULES.includes(name),
+      `옛 이름 ${name} 이 코어에 남았다 — 그 스킬이 없는 사용자에게 막다른 길이 배포된다`);
+});
+
+// 위 두 검사는 RULES(코어 한 파일)만 훑는다. 그런데 `using-git-worktrees` 는 코어가 아니라
+//   src/skills/routing/SKILL.md:61 에 있던 이름이라 코어만 훑으면 안 걸린다 — 스킬 본문까지
+//   훑어야 한다. 훑는 범위 = src/rules/*.md + src/skills/*/SKILL.md + src/agents/*.md.
+//   NOTICE 파일은 **일부러 안 읽는다**: src/skills/test-design/NOTICE:12 가
+//   `test-driven-development` 를 MIT 저작권 표시로 정당하게 들고 있다(라이선스 고지) — 그것까지
+//   잡으면 저작권 표기를 지우라는 잘못된 압력이 생긴다. 이 함수는 SKILL.md 파일명만 지목해서
+//   읽으므로 같은 폴더의 NOTICE 는 애초에 대상이 아니다.
+function readCoreAndSkillFiles() {
+  const files = [];
+  const rulesDir = join(ROOT, "src", "rules");
+  for (const f of readdirSync(rulesDir)) if (f.endsWith(".md")) files.push(join(rulesDir, f));
+  const skillsDir = join(ROOT, "src", "skills");
+  for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillMd = join(skillsDir, entry.name, "SKILL.md");
+    if (existsSync(skillMd)) files.push(skillMd); // NOTICE 는 여기서 지목 안 됨 — 위 사유
+  }
+  const agentsDir = join(ROOT, "src", "agents");
+  for (const f of readdirSync(agentsDir)) if (f.endsWith(".md")) files.push(join(agentsDir, f));
+  return files;
+}
+
+const RETIRED_SUPERPOWERS_NAMES_ALL = ["test-driven-development", ...RETIRED_SUPERPOWERS_NAMES_REST];
+
+test("src/rules · src/skills/*/SKILL.md · src/agents (NOTICE 제외) 전체에 걷어낸 옛 이름 넷이 안 남았다", () => {
+  for (const filePath of readCoreAndSkillFiles()) {
+    const content = readFileSync(filePath, "utf8");
+    for (const name of RETIRED_SUPERPOWERS_NAMES_ALL)
+      assert.ok(!content.includes(name),
+        `${filePath} 에 걷어낸 옛 이름 ${name} 이 남았다 — 그 스킬이 없는 사용자에게 막다른 길이 배포된다`);
+  }
 });
 
 // 🛑 v0.67.0: "우리 스킬이 있으면 남의 스킬을 부르지 않는다"는 **기계 강제가 없는 규칙**이다

@@ -256,9 +256,18 @@ const FILE_CEILINGS = {
 //     test/rules-labels.test.mjs(코어에 옛 이름 `test-driven-development` 부재 단언 · `chageun:*`
 //     포인터 6문장 존재) + test/debugging-skill.test.mjs(`systematic-debugging` 부재, 배선 4자리) +
 //     test/test-design-skill.test.mjs(옛 이름 부재, 2자리).
-//     ⚠ **정직 회계: 이 그물은 부분적이다.** 걷어낸 옛 이름 두 개의 재등장만 막고, **처음 보는 남의
-//     스킬 이름**이 이 절에 새로 적히는 것은 아무 검사도 막지 않는다. 그때 이 갈래를 되살릴지 판단하는
-//     것은 사람이다.
+//     🛑 재리뷰 2회차 medium: 위 그물이 이 판이 걷어낸 옛 이름 **넷 중 하나**(test-driven-development)
+//     만 막고 있었다 — 나머지 셋(executing-plans · using-git-worktrees · writing-skills)은 재등장을
+//     잡는 칸이 하나도 없었다. test/rules-labels.test.mjs 에 두 검사를 더해 채웠다: (a) 코어(RULES)
+//     에 셋이 안 남았다 (b) src/rules/*.md + src/skills/*/SKILL.md + src/agents/*.md 전체에 넷이 안
+//     남았다 — `using-git-worktrees` 는 코어가 아니라 스킬 본문(routing/SKILL.md)에 있던 이름이라
+//     (b)가 있어야 잡힌다. `src/skills/test-design/NOTICE` 는 (b)에서 **일부러 뺐다**: 그 파일
+//     `:12`가 `test-driven-development` 를 MIT 저작권 표시로 정당하게 들고 있어(라이선스 고지),
+//     잡으면 저작권 표기를 지우라는 잘못된 압력이 된다(SKILL.md 파일명만 지목해 읽으므로 같은 폴더의
+//     NOTICE 는 애초에 대상이 아니다).
+//     ⚠ **정직 회계: 이 그물도 여전히 부분적이다.** 걷어낸 옛 이름 **넷**의 재등장만 막고, **처음 보는
+//     남의 스킬 이름**이 이 절에 새로 적히는 것은 아무 검사도 막지 않는다. 그때 이 갈래를 되살릴지
+//     판단하는 것은 사람이다.
 //   🛑 **순증 사유를 정직하게 적는다.** 이 판은 수퍼파워스 이름을 걷어내는 판이라 "줄어든다"고
 //     예상하기 쉬운데, 실제로는 늘었다(+181). 늘린 자리는 셋이다: `:83` +138(새 규칙 한 줄) ·
 //     `:82` +61(걷어낸 이름이 하던 안내를 우리 말로 다시 적은 값 — 초안의 두 갈래 가르기는 되돌렸다) ·
