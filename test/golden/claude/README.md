@@ -59,18 +59,12 @@ chageun는 **기획 → 게이트 → 구현 → 검증 → 마무리** 흐름 �
 
 > **자동 업데이트(선택).** 서드파티 마켓은 기본이 수동 업데이트라, 새 버전은 `/plugin marketplace update chageun`(그다음 `/reload-plugins`)로 받습니다. 공식 플러그인처럼 자동으로 받으려면 직접 켜세요: `/plugin` → Marketplaces → chageun → **Enable auto-update**. 기본 OFF는 의도된 것입니다(서드파티 플러그인이 동의 없이 업데이트를 몰래 밀어 넣지 못하게). chageun는 아직 빠르게 바뀌므로 수동 업데이트가 더 안전한 기본값이에요.
 
-### 함께 설치되는 것 (중요)
+### 함께 깔리는 것은 없습니다 (중요)
 
-이 플러그인은 `claude-plugins-official` 마켓플레이스의 **Superpowers** 방법론 스킬 가운데 **계획 실행·테스트 먼저(TDD)** 등을 사용합니다. **기획 대화·계획서 쓰기·디버깅은 chageun가 직접 갖습니다**(그 세 자리는 이제 Superpowers를 안 씁니다). 남는 자리 때문에 의존성은 그대로 둡니다.
+chageun는 **다른 플러그인에 의존하지 않습니다.** 새로 설치하면 chageun 하나만 깔립니다. 기획 대화 · 계획서 쓰기 · 디버깅 · 테스트 설계 · 계획 실행은 모두 chageun가 직접 갖습니다.
 
-- Superpowers는 **의존성으로 자동 설치**됩니다(따로 설치하지 않아도 됩니다).
-- 자동 설치는 **최신 Claude Code(권장 v2.1.143+)**에서 안정적입니다.
-- 자동 설치가 안 됐으면 수동으로(이 순서 그대로):
-  ```
-  /plugin marketplace add claude-plugins-official
-  /plugin install superpowers
-  ```
-  chageun의 의존성과 **같은 출처**에서 설치해야 버전이 어긋나지 않습니다.
+- 이전 버전은 `claude-plugins-official` 마켓플레이스의 **Superpowers** 방법론 스킬 몇 개를 썼고, 그것이 의존성으로 함께 깔렸습니다. 지금은 그 자리를 chageun 스킬이 받습니다.
+- **이미 Superpowers가 깔려 있으면 그대로 남습니다.** chageun를 업데이트해도 그 플러그인은 사라지지 않습니다(다른 플러그인을 지우는 일은 chageun가 할 수 없습니다). 남겨 둬도 chageun는 그것을 부르지 않으니 그냥 두어도 되고, 안 쓰면 직접 지우면 됩니다.
 
 ### 안 쓰는 개발 서버를 정리합니다 (Linux · WSL)
 
@@ -96,7 +90,7 @@ chageun는 **기획 → 게이트 → 구현 → 검증 → 마무리** 흐름 �
 ### 문제 해결
 
 - **개발 서버가 자꾸 꺼진다:** 위 "안 쓰는 개발 서버를 정리합니다"를 보세요. `CHAGEUN_SKIP_REAP=1` 로 끕니다.
-- **활성 안내가 안 보인다 / 게이트·스킬이 안 돈다:** 워크플로우가 안 켜진 것입니다. 1) Superpowers 설치 확인(위 수동 설치) 2) 이 플러그인은 `node`를 쓰므로 `node -v` 확인 3) 이미 열린 세션은 `/reload-plugins` 하거나 새 세션을 엽니다.
+- **활성 안내가 안 보인다 / 게이트·스킬이 안 돈다:** 워크플로우가 안 켜진 것입니다. 1) 이 플러그인은 `node`를 쓰므로 `node -v` 확인 2) 이미 열린 세션은 `/reload-plugins` 하거나 새 세션을 엽니다 3) 그래도 안 되면 `/plugin` 에서 chageun가 설치·활성 상태인지 보고, 아니면 다시 설치합니다.
 
 ---
 
@@ -138,7 +132,7 @@ Plus **scheduled monitoring · security scans · design verification** for the o
 /plugin install chageun
 ```
 
-The workflow turns on automatically when a new session starts — no config files to edit. Superpowers is auto-installed as a dependency (works reliably on recent Claude Code, v2.1.143+). chageun uses some Superpowers methodology skills (plan execution, test-first/TDD), but **planning conversations, plan writing, and debugging are chageun's own skills now**, so those three slots no longer use Superpowers; the dependency stays for the slots that remain. If you don't see an activation notice, install Superpowers manually from the same `claude-plugins-official` source, check `node -v`, and run `/reload-plugins`.
+The workflow turns on automatically when a new session starts — no config files to edit. **chageun has no plugin dependencies**: planning conversations, plan writing, debugging, test design, and plan execution are all chageun's own skills. Earlier versions pulled in Superpowers as a dependency; if it is already installed it stays until you remove it yourself, and chageun no longer calls it. If you don't see an activation notice, check `node -v`, run `/reload-plugins`, and confirm chageun is installed and enabled under `/plugin`.
 
 > Language-adaptive: the workflow replies in the language you use (defaults to Korean). The source content is Korean; Claude reads it and answers you in your language.
 

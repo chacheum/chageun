@@ -10,7 +10,7 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 test("loadManifest는 정본 필드를 읽는다", () => {
   const m = loadManifest(SRC);
   assert.equal(m.name, "chageun");
-  assert.equal(m.version, "0.66.0");
+  assert.equal(m.version, "0.67.0");
   assert.equal(m.components.skills.length, 16);
 });
 
@@ -22,7 +22,7 @@ test("claudePluginJson은 현 plugin.json과 의미 동일(의존성 칸 없음)
   assert.deepEqual(j, {
     name: "chageun",
     description: "Safe build workflow for non-developers — task cards, verification gates, real run-through, plain-language summaries (replies in your language; default Korean). 비개발자가 안전하게 만들도록 돕는 워크플로우.",
-    version: "0.66.0",
+    version: "0.67.0",
     license: "MIT",
     keywords: ["workflow", "non-developer", "vibe-coding", "review", "safety", "korean", "english"]
   });
