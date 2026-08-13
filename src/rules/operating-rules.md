@@ -79,7 +79,7 @@ Call the matching skill first via the Skill tool.
 - **Bug / failing test:** `chageun:debugging` before fixing. **Code:** `chageun:test-design` where a test culture exists. **UI:** read `design-system` rules first.
 - **Plan execution:** delegation per `chageun:routing`. Final review slot → pr-reviewer gate.
 - **Simple targeted fixes:** proceed directly. Unsure → confirm in one line.
-> **Important:** any skill or agent in this flow missing → never fail silent, don't route: `chageun:*` = broken install (reinstall chageun · `/reload-plugins`), others = tell the user to install/enable, no `Plan` agent → main writes the plan itself.
+> **Important:** any skill or agent in this flow missing → never fail silent, don't route: they all ship with chageun, so missing = broken install (reinstall chageun · `/reload-plugins`); no `Plan` agent → main writes the plan itself.
 > **Ours first:** where a `chageun:*` skill covers the same purpose, don't call another source's skill for it (unless the user names it).
 
 # Product map (제품 지도 — `product-map` owns the format)
