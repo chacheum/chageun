@@ -8,7 +8,7 @@ import { writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpDir } from "./support-tmpdir.mjs";
 
 const require = createRequire(import.meta.url);
-const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush, approvedDesignVariant, executableText } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
+const { block, isPrCreate, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isPush, approvedDesignVariant, executableText, rmHitsDangerTarget } = require(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse-core.js"));
 
 const bash = (command) => block("Bash", { command });
 const sql = (query) => block("mcp__plugin_supabase_supabase__execute_sql", { query });
@@ -47,7 +47,6 @@ test("(가) 글자로 인용된 위험 명령은 통과한다: 커밋 메시지�
   assert.equal(bash('git commit -m "골든 절차: rm -rf test/golden/claude 로 지우고 다시 만든다"'), null);
   // 🛑 아래 둘은 **마스킹이 없으면 통과할 수 없다**(위험 타깃이 인용된 rm 바로 옆에 붙어 있다).
   //   위치 좁힘만으로는 안 되는 자리라, 이 줄이 빠지면 마스킹을 통째로 걷어내도 검사가 초록이다.
-  //   (이 축은 뺐다 · 위 🅿 절)
   assert.equal(bash('git commit -m "위험 예시: rm -rf / 는 되돌릴 수 없다"'), null);
   assert.equal(bash("cat > note.md <<'EOF'\n주석 예시: bash(\"rm -fr /*\") 를 주석 시작으로 읽으면 안 된다\nEOF"), null);
   // 실측 그대로: 훅을 검토하던 에이전트가 **자기 검색어**에 막혔다.
@@ -55,6 +54,7 @@ test("(가) 글자로 인용된 위험 명령은 통과한다: 커밋 메시지�
   assert.equal(isPush("Bash", { command: "git commit -F - <<'MSG'\n- git push --dry-run → 막힘을 확인했다\nMSG" }), false);
   // 글로 적어 두는 것(계획서·보고서·시험용 JSON)도 실행이 아니다.
   assert.equal(isPush("Bash", { command: `printf '%s' '{"tool_input":{"command":"git push origin main"}}' | node dist/claude/hooks/pretooluse.js` }), false);
+  assert.equal(bash("cd /x && rm -rf build && cd .. && ls"), null, "`cd ..` 는 그 rm 의 인자가 아니다");
   assert.equal(bash("rm -rf png && mkdir -p png"), null);
 });
 
@@ -82,6 +82,8 @@ test("(나) 실제로 실행되는 위험 명령은 여전히 막힌다: 래퍼�
   // 인터프리터가 먹는 히어독은 본문이 곧 코드다.
   assert.equal(bash("python3 - <<'PY'\nimport os\nos.system('rm -rf / ')\nPY"), "rm-recursive");
   assert.equal(bash("bash <<'EOF'\nrm -rf /\nEOF"), "rm-recursive");
+  // 셸 키워드 뒤도 그대로 본다(명령 자리 화이트리스트를 안 쓰는 이유).
+  assert.equal(bash("if true; then rm -rf /; fi"), "rm-recursive");
   assert.equal(isPush("Bash", { command: "if true; then git push; fi" }), true);
   assert.equal(isPush("Bash", { command: "for b in a; do git push -u origin $b; done" }), true);
 });
@@ -106,7 +108,7 @@ test("(다) 목록 밖이면 안 덮는다: 전체 경로 표기 · 모르는 �
   assert.equal(bash(`myfunc "rm -rf /*"`), "rm-recursive", "사용자가 만든 함수도 모르는 도구다");
   assert.equal(isPush("Bash", { command: `awk 'BEGIN{system("git push")}'` }), true);
   assert.equal(isPush("Bash", { command: 'myfunc "git push origin main"' }), true);
-  // 축 3: 대상을 파이프·find 로 넘겨 rm 자리에 인자가 안 보이는 형태. (이 축은 뺐다 · 위 🅿 절)
+  // 축 3: 대상을 파이프·find 로 넘겨 rm 자리에 인자가 안 보이는 형태.
   assert.equal(bash("find / -name '*.log' | xargs rm -rf"), "rm-recursive");
   assert.equal(bash("find / -print0 | xargs -0 rm -rf"), "rm-recursive");
   assert.equal(bash("ls / | xargs rm -rf"), "rm-recursive");
@@ -170,6 +172,19 @@ test("(마) 파이프 뒤를 경로로 부르면 접는다: `| /bin/sh` 는 맨 
     "따옴표 안의 `|` 는 파이프가 아니다");
 });
 
+test("(마) find 자리표는 인자로 안 친다: `{} +` · `\"{}\"` 도 대상이 안 보이는 것이다", () => {
+  // 2회차가 연 자리 ③④: `+` 나 `"{}"` 를 못 알아봐 '인자가 보인다'로 판단하고 짧은 구간만 봤다.
+  assert.equal(bash("find / -name '*.log' -exec rm -rf {} +"), "rm-recursive", "`{} +` 는 요즘 권장 표기다");
+  assert.equal(bash('find / -exec rm -rf "{}" \\;'), "rm-recursive");
+  assert.equal(bash("find / -exec rm -rf '{}' \\;"), "rm-recursive");
+  assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive", "맨 자리표 대조군");
+  assert.equal(bash("find / -name x -exec rm -rf {} +"), "rm-recursive");
+  // 반대 방향: 구체적인 경로가 하나라도 보이면 그 rm 의 인자 구간만 본다(과차단 방지).
+  assert.equal(bash("cd / && rm -rf ./build"), null, "앞 세그먼트의 `/` 를 이 rm 의 대상으로 읽지 않는다");
+  assert.equal(bash("find / -name '*.log' -exec rm -rf ./tmp//x {} +"), null,
+    "경로로 보이는 토큰이 있으면 그 구간만 본다");
+});
+
 // 🛑🛑 **3회차가 또 5건을 열었다.** 히어독 검사 4개가 **전부 따옴표 있는 형태**여서 못 잡았다.
 //   따옴표 없는 축이 한 줄도 없었다. 이 칸이 그 축이다.
 //   bash 규칙: `<<'EOF'`·`<<"EOF"` 는 본문이 안 전개되지만 **`<<EOF`(맨 이름)는 본문에
@@ -203,7 +218,7 @@ test("(바) 히어독은 끝말의 따옴표를 본다: 맨 이름이면 본문 
     "히어독 본문의 `\"` 는 escape 가 아니라 글자다");
 });
 
-test("(자) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
+test("(바) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
   // 3회차가 연 자리 ③④: `|&` 는 `|` 다음이 `&` 라 매칭 자체가 실패해 '파이프 없음'으로 떨어졌다.
   assert.equal(bash('echo "rm -rf /*" |& bash'), "rm-recursive");
   assert.equal(bash('echo "rm -rf /*" |& /bin/sh'), "rm-recursive");
@@ -271,8 +286,127 @@ test("(아) 각본 파일은 **첫 비플래그 낱말**일 때만 예외다: �
     "각본이 첫 낱말이면 뒤 플래그는 상관없다");
 });
 
+// 🛑🛑 **5회차: `rm` 인자 판정이 따옴표를 못 봐 안전측 되돌림이 꺼졌다.** 마스킹이 `';'` 를
+//   `' '` 로 만들면 외톨이 `'` 가 남는데, 옛 판은 "자리표 목록에 없는 낱말 = 대상이 보인다"라서
+//   그 조각 하나에 되돌림이 풀렸다. 지금은 **자리마다 무엇인지**로 본다(이름 / 꼭대기 / 모름).
+test("(자) rm 인자의 따옴표 조각·종결자는 대상이 아니다: 되돌림이 안 꺼진다", () => {
+  assert.equal(bash("find / -exec rm -rf {} ';'"), "rm-recursive", "홑따옴표 종결자");
+  assert.equal(bash('find / -exec rm -rf {} ";"'), "rm-recursive", "겹따옴표 종결자");
+  assert.equal(bash('find / -exec rm -rf "{}" ";"'), "rm-recursive", "자리표·종결자 둘 다 따옴표");
+  assert.equal(bash("find / -exec rm -rf {} \\+"), "rm-recursive", "이스케이프한 `+`");
+  assert.equal(bash('rm -rf ";" /*'), "rm-recursive", "인자 안에 낀 따옴표 조각");
+  assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive", "대조군: 이스케이프 종결자");
+  assert.equal(bash("find / -exec rm -rf {} +"), "rm-recursive", "대조군: 맨 `+`");
+  // 반대 방향 ①: **맨 이름 폴더는 그냥 상대 경로다.** 이것을 "대상이 아니다"로 읽으면 온 명령
+  //   검사로 되돌아가 옆 자리 글자에 막힌다 = 이 판이 고친 실측 오차단이 되돌아온다.
+  //   🛑 이 세 줄이 `rmSegKind` 의 "이름 글자가 있으면 이름" 갈래를 붙든다. 빼면 빨개진다.
+  assert.equal(bash("rm -rf build && cd .."), null, "맨 이름도 지울 대상이다");
+  assert.equal(bash("rm -rf png && mkdir -p png"), null);
+  assert.equal(bash("rm -rf node_modules && cd .."), null);
+  // 반대 방향 ②: **변수로 조립한 경로.** 앞자락이 변수라 "첫 글자만" 보는 판정에서 빠진다.
+  //   🛑 이 축이 검사에 없어서 회귀가 조용히 지나갔다(5회차 · 게이트가 40개 사례 대조로 잡음).
+  //   이 네 줄이 "자리 하나라도 이름이면 대상이 보인다" 갈래를 붙든다. 빼면 빨개진다.
+  assert.equal(bash("rm -rf $S/bt4 && cd .."), null, "변수로 조립한 하위 경로");
+  assert.equal(bash('rm -rf "$HOME/x/build" && cd ..'), null, "따옴표 씌운 변수 경로");
+  assert.equal(bash("rm -rf ${TMPDIR}/scratch && cd .."), null, "중괄호 변수 경로");
+  assert.equal(bash("S=/tmp/x && rm -rf $S/bt4 $S/bt5"), null, "변수 경로 여럿");
+  // 단 변수만 있고 이름 자리가 없으면(= 지울 곳을 여기서 알 수 없다) 안전측으로 되돌아간다.
+  assert.equal(bash("rm -rf $TARGET && cd .."), "rm-recursive", "이름 자리 없는 맨 변수는 불투명이다");
+});
+
+// 🛑🛑 **6회차: 자르는 쪽(RM_ARGS_END)과 읽는 쪽이 서로의 전제를 몰랐다.**
+//   `2>/dev/null` 을 붙이면 `>` 에서 잘려 앞의 `2` 만 인자 구간에 남고, 그 한 글자가 "경로 글자로
+//   시작"이라 "대상이 보인다"로 읽혀 **안전측 되돌림이 통째로 안 돌았다.** 저장소 검사 전체에
+//   `2>` 축이 0건이라 조용히 지나갔다. 이 칸이 그 축이다.
+test("(차) 리다이렉션 꼬리는 인자 구간 밖이다: `2>` 가 되돌림을 끄지 않는다", () => {
+  // 6회차가 연 자리: 꼬리를 붙이는 것만으로 위 (자) 칸의 판정이 전부 풀렸다.
+  assert.equal(bash("find / -name '*.log' -exec rm -rf {} + 2>/dev/null"), "rm-recursive");
+  assert.equal(bash("find / -type f | xargs rm -rf 2>/dev/null"), "rm-recursive");
+  assert.equal(bash("cd / && rm -rf * 2>/dev/null"), "rm-recursive");
+  assert.equal(bash("find / -exec rm -rf {} + 1>/dev/null"), "rm-recursive", "fd 번호는 1도 있다");
+  assert.equal(bash("find / -exec rm -rf {} + >/dev/null 2>&1"), "rm-recursive", "꼬리 두 개");
+  assert.equal(bash("find / -exec rm -rf {} ';' 2>/dev/null"), "rm-recursive");
+  assert.equal(isPush("Bash", { command: "find / -exec rm -rf {} + 2>/dev/null" }), false);
+  // 반대 방향: 꼬리가 붙어도 지울 대상이 구체적이면 그대로 통과한다(꼬리만 잘라내는 것이지
+  //   인자를 통째로 안 보는 것이 아니다).
+  assert.equal(bash("rm -rf build 2>/dev/null"), null, "맨 이름 + 꼬리");
+  assert.equal(bash("rm -rf ./build 2>/dev/null"), null, "상대 경로 + 꼬리");
+  assert.equal(bash("rm -rf $S/bt4 2>/dev/null"), null, "변수 경로 + 꼬리");
+  // 🛑 자르는 규칙이 **이미 붙들고 있던 전제**: 줄 이음(`\` + 개행)은 구간의 끝이 아니다.
+  //   `\s*` 가 개행을 먹지만 `\` 는 공백이 아니라 그 앞으로 못 넘어간다. 이 두 줄이 그 자리다.
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  /"), true, "줄 이음 뒤 위험 대상은 여전히 잡는다");
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  ./build && cd /"), false, "줄 이음 뒤 안전 대상도 그대로");
+  // 🛑🛑 **7회차가 스스로 연 자리(실행으로 잡음)**: 자르는 글자가 **따옴표 안**이면 자른 자리가
+  //   진짜 인자의 끝이 아니라 **뒤의 위험 대상이 통째로 안 보인다.** 다섯 형태 전부 옛 판은 막던
+  //   것이다. 짝이 안 맞으면 "못 읽었다"로 보고 온 명령으로 되돌린다. 이 다섯 줄이 그 자리다.
+  assert.equal(bash('rm -rf "x&" /'), "rm-recursive", "따옴표 안의 `&` 는 인자의 끝이 아니다");
+  assert.equal(bash("rm -rf 'a;b' /"), "rm-recursive", "따옴표 안의 `;`");
+  assert.equal(bash('rm -rf "a|b" ~'), "rm-recursive", "따옴표 안의 `|`");
+  assert.equal(bash('rm -rf "a>b" /'), "rm-recursive", "따옴표 안의 `>`");
+  assert.equal(bash('rm -rf "a\nb" /'), "rm-recursive", "따옴표 안의 개행");
+  // 반대 방향: 짝이 맞으면 그대로 자리로 읽는다(못 읽었다고 통째로 되돌리지 않는다).
+  assert.equal(bash('rm -rf "my dir"'), null, "짝 맞는 따옴표 안의 공백은 그냥 이름이다");
+  assert.equal(bash('rm -rf "x&" ./build'), null, "못 읽어도 온 명령에 위험이 없으면 안 막는다");
+});
+
+// 🛑🛑 **7회차가 반드시 먼저 닫아야 했던 두 자리**(계획서 표 · 6회차 판에서 실측으로 열려 있었다).
+//   둘 다 원인이 하나다: 옛 판은 위험 대상을 **글자 무늬**(`\*\s*$` 처럼 "별표 뒤가 줄 끝")로 봤다.
+//   그러면 인자가 여럿이거나 뒤에 글자가 하나만 더 붙어도 무늬가 깨져 통째로 빠져나간다.
+//   그래서 **자리(토큰)마다** 무엇인지를 본다: 이 자리가 이름을 가리키나, 꼭대기를 가리키나, 모르나.
+test("(카) 위험 대상은 자리로 본다: 인자가 여럿이어도 · 뒤에 글자가 붙어도 잡는다", () => {
+  // 구멍 ①: fd 숫자와 `>` 사이에 공백이 있으면 `2` 가 인자로 남는다(bash 도 그렇게 읽는다).
+  //   옛 판은 `*` 뒤에 `2` 가 붙어 "별표 뒤 줄 끝" 무늬가 깨져 통과시켰다.
+  assert.equal(bash("cd / && rm -rf * 2 > /dev/null"), "rm-recursive", "fd 와 `>` 사이 공백");
+  assert.equal(bash("rm -rf * 2 > /dev/null"), "rm-recursive");
+  assert.equal(bash("rm -rf build *"), "rm-recursive", "안전한 인자 옆에 별표가 있어도 잡는다");
+  // 구멍 ②: 별표 뒤 슬래시. 옛 판은 `*` 도 `/` 도 무늬가 안 맞아 통째로 빠졌다.
+  assert.equal(bash("cd / && rm -rf */"), "rm-recursive", "별표 뒤 슬래시");
+  assert.equal(bash("rm -rf */"), "rm-recursive");
+  assert.equal(bash("rm -rf ./*"), "rm-recursive", "현재 폴더 전체");
+  assert.equal(bash("rm -rf .*"), "rm-recursive", "숨김 전체는 `..` 까지 문다");
+  // 계획서 "덤" 세 줄: 셸 제어문 안에서 뿌리를 지우는 흔한 모양. 지금 설치본도 못 잡던 자리다.
+  assert.equal(bash("if true; then rm -rf /; fi"), "rm-recursive");
+  assert.equal(bash("for f in a b; do rm -rf /; done"), "rm-recursive");
+  assert.equal(bash("rm -rf . && ls"), "rm-recursive");
+  assert.equal(bash("rm -rf ./ && ls"), "rm-recursive");
+  // 🛑 뿌리·홈 **바로 밑**을 글로브로 고르는 것도 꼭대기다. 이름 글자가 섞여 "구체적"으로 보이지만
+  //   고르는 자리가 트리의 맨 위다. 지금 설치본이 `\/\*`·`~\/\s*\*` 로 잡던 축이고, 자리 판정으로
+  //   옮기면서 한 번 헐거워졌다(사례 대조로 되찾음). 이 세 줄이 `RM_ROOTED` 갈래를 붙든다.
+  assert.equal(bash("rm -rf /*.log"), "rm-recursive", "뿌리 바로 밑 글로브");
+  assert.equal(bash("rm -rf ~/*.log"), "rm-recursive", "홈 바로 밑 글로브");
+  assert.equal(bash("rm -rf $HOME/*.bak"), "rm-recursive");
+  // 반대 방향: 이름이 하나라도 보이면 그대로 통과한다(이 판이 고치려는 헛막음이 되돌아오면 안 된다).
+  assert.equal(bash("rm -rf *.log"), null, "지금 폴더 안 글로브는 뿌리가 아니다");
+  assert.equal(bash("rm -rf ./*.log"), null);
+  assert.equal(bash("rm -rf /tmp/*.log"), null, "이름 붙은 폴더 아래 글로브");
+  assert.equal(bash("rm -rf ~/projects/*.bak"), null);
+  assert.equal(bash("rm -rf dist/*"), null, "이름 붙은 폴더 아래 전체");
+  assert.equal(bash("rm -rf build 2 > /dev/null"), null, "꼬리 앞 숫자만으로 막지 않는다");
+  assert.equal(bash("rm -rf ../build"), null, "상위의 이름 붙은 폴더");
+});
+
+// 🛑 **축 2: 따옴표·중괄호를 씌운 위험 대상.** `RM_DANGER_TARGET` 앞자락이 `(?:\s|^)` 라
+//   따옴표·중괄호가 끼면 매칭이 실패한다. 지금 설치본도 6회차 판도 이 넷을 통과시켰다.
+//   🛑 벗기는 일은 **`rmUnwrap` 한 자리에서만** 한다. 두 군데서 벗기면 어디가 진짜 판정인지 모른다.
+test("(타) 따옴표·중괄호를 씌운 위험 대상도 잡는다", () => {
+  assert.equal(bash('rm -rf "/"'), "rm-recursive", "겹따옴표 씌운 뿌리");
+  assert.equal(bash("rm -rf '/'"), "rm-recursive", "홑따옴표 씌운 뿌리");
+  assert.equal(bash('rm -rf "$HOME"'), "rm-recursive", "따옴표 씌운 홈");
+  assert.equal(bash("rm -rf ${HOME}"), "rm-recursive", "중괄호 씌운 홈");
+  assert.equal(bash('rm -rf "${HOME}"'), "rm-recursive", "따옴표 + 중괄호");
+  assert.equal(bash("rm -rf '~'"), "rm-recursive", "따옴표 씌운 물결");
+  assert.equal(bash('rm -rf "/*"'), "rm-recursive", "따옴표 씌운 뿌리 전체");
+  assert.equal(bash("rm -rf \"$HOME\"/*"), "rm-recursive", "따옴표가 앞자락에만 걸린 것");
+  assert.equal(bash("rm -rf ${HOME}/"), "rm-recursive");
+  // 반대 방향: 따옴표를 벗겨도 **이름이 보이면** 그대로 통과한다.
+  assert.equal(bash('rm -rf "$HOME/x/build"'), null, "따옴표 씌운 홈 하위 경로");
+  assert.equal(bash("rm -rf '/etc/myapp/cache'"), null, "따옴표 씌운 구체 경로");
+  assert.equal(bash("rm -rf ${TMPDIR}/scratch"), null, "중괄호 변수 + 이름");
+  assert.equal(bash('rm -rf "my dir"'), null, "이름에 공백이 있어도 이름이다");
+});
+
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
-  const same = (cmd) => assert.equal(executableText(cmd).length, cmd.length, "길이가 바뀌면 다음 판의 인자 구간 자르기가 어긋난다");
+  const same = (cmd) => assert.equal(executableText(cmd).length, cmd.length, "길이가 바뀌면 인자 구간 자르기가 어긋난다");
   same('git commit -m "rm -rf /"');
   same("git commit -F - <<'MSG'\n본문\nMSG\nls");
   same("echo `x`");
@@ -289,6 +423,22 @@ test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 �
   assert.equal(executableText(deep), deep, "너무 깊으면 원문으로 떨어진다");
   assert.doesNotThrow(() => block("Bash", { command: deep }));
   assert.doesNotThrow(() => isPush("Bash", { command: deep }));
+});
+
+test("rm 위험 타깃은 그 rm 자신의 인자 구간에서만 본다", () => {
+  assert.equal(rmHitsDangerTarget("rm -rf build && cd .."), false, "다른 명령의 `..` 는 이 rm 의 인자가 아니다");
+  assert.equal(rmHitsDangerTarget("cd .. && rm -rf build"), false);
+  assert.equal(rmHitsDangerTarget("rm -rf build; rm -rf /"), true, "여러 rm 중 하나라도 위험하면 잡는다");
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  /"), true, "줄 이음 뒤 위험 대상은 잡는다");
+  // 🛑 줄 이음을 구간의 끝으로 보면 인자가 **빈 것처럼** 보여 아래가 옛 판 검사로 떨어지고,
+  //   남의 자리 `cd /` 때문에 정상 삭제가 막힌다. 위 줄만으로는 이 되돌림이 안 잡힌다
+  //   (거기선 온 명령 검사도 같은 답을 내서 두 배선이 구분되지 않는다).
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  ./build && cd /"), false, "줄 이음 뒤 안전한 대상이 보여야 한다");
+  // 대상이 이 자리에 안 보이면(파이프·자리표) 옛 판대로 온 명령을 본다(안전측 되돌림).
+  assert.equal(rmHitsDangerTarget("ls / | xargs rm -rf"), true, "인자가 비었으면 앞 세그먼트도 본다");
+  assert.equal(rmHitsDangerTarget("find / -exec rm -rf {} \\;"), true, "자리표뿐이면 앞도 본다");
+  assert.equal(rmHitsDangerTarget("ls build | xargs rm -rf"), false, "앞에도 위험 대상이 없으면 안 막는다");
+  assert.equal(rmHitsDangerTarget("rm -rf . && ls"), true, "구간을 자르면 `.` 이 이 rm 의 인자로 보인다");
 });
 
 test("파괴적 SQL: Bash(SQL클라이언트)·MCP 차단, 안전 쿼리 허용", () => {

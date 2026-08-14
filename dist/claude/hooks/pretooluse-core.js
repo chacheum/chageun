@@ -8,31 +8,111 @@ const path = require("path");
 const FORCE_PUSH = /\bgit\b(?:\s+-c\s+\S+|\s+-C\s+\S+|\s+--git-dir=\S+|\s+--work-tree=\S+)*\s+push\b[^\n|&;<>]*?(?:--force(?!-with-lease)\b|(?:^|\s)-[a-zA-Z]*f\b|--mirror\b|\s\+[\w./:-]+)/;
 // rm 재귀+강제(-rf·-fr·-r -f·--recursive --force)가 루트/홈/현재트리 등 위험 타깃을 지울 때.
 const RM_RECURSIVE = /\brm\s+(?:-[a-zA-Z]*\b\s*){0,3}(?:-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|--recursive|--force)\b/;
+// ⚠ 이 무늬는 이제 **되돌림 전용**이다(아래 `rmHitsDangerTarget` 의 마지막 줄). 지울 곳이 그
+//   rm 자리에 안 보일 때만 온 명령에 건다. 평소 판정은 자리(토큰)별로 아래에서 짓는다.
 const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/\*|\.\.(?:\s|$|\/(?:\s|$|\*|\.))|\.\s*$|\*\s*$)/;
-// 🅿 **`rm` 인자 구간 좁히기 축은 이 판에서 뺐다**(6회차 · 사용자가 미리 정한 조건).
-//   여섯 회차 중 네 번이 이 한 축에서 구멍을 냈다: 자르는 쪽(구간 끝)과 읽는 쪽(대상 판정)이
-//   서로의 전제를 몰라 계속 이음매가 생겼다. 한 판에 얹어 닫을 크기가 아니라고 보고 떼어냈다.
-//   보존: 브랜치 `rm-region-narrowing-parked` · 계획서 `docs/plans/2026-08-14-rm-argument-region-followup.md`.
+// 위험 타깃은 **그 `rm` 자신의 인자 구간**에서만 본다(위 `실행 구간 마스킹` 절과 한 묶음이다).
 //
-// 지금은 **옛 형태**다: 재귀삭제와 위험 대상을 **따로** 온 명령에서 본다. 안전측(과차단)이고,
-//   알려진 헛막음 4건을 그대로 안고 간다(전부 다음 판이 고칠 것 · 지금 설치본에도 있는 증상):
-//     `rm -rf build && cd ..`      - 옆 자리 `cd ..` 가 위험 대상으로 읽힌다
-//     `rm -rf $S/bt4 && cd ..`     - 변수로 조립한 경로도 같다
-//     rm -rf 뒤에 역슬래시-줄바꿈으로 이어붙인 ./build && cd / - 줄 이음 뒤 안전한 대상도 같다
-//     `cd / && rm -rf ./build`     - 위험 글자가 **앞 세그먼트**에 있어도 같이 걸린다
+// 🛑 **실측 9건 전부 오차단이었다**(2026-08-13, 실기록 2,137파일 471,445줄 전수 재생).
+//   옛 판은 `RM_RECURSIVE.test(cmd) && RM_DANGER_TARGET.test(cmd)` 로 **둘을 따로** 온 명령에 걸었다.
+//   그래서 지우는 대상이 구체적이어도(`rm -rf node_modules/.deno`) 명령 **어딘가**에 위험해
+//   보이는 글자가 있으면 막혔다: `cd ..` · 파이썬 코드의 ` / ` · 마크다운 표의 `3,191,040 / 6,711,694`.
+//   가장 나쁜 모양은 **하는 것은 통과하고 설명하는 것이 막히는 것**이었다(커밋 메시지 1건 실측).
 //
-//   반대로 **못 잡는 것도 있다**(이 판이 지운 검사 줄이 그 증거 · 지금 설치본도 같이 통과시킨다 ·
-//   새로 생긴 구멍이 아니다): 위험 대상 표기(`RM_DANGER_TARGET`)가 `/` 뒤에 공백·줄끝·별표만
-//   인정해서 `;` 처럼 다른 글자가 오면 안 걸린다. `.` 는 규칙이 조금 다르다(줄 끝까지 가야 한다).
-//     `if true; then rm -rf /; fi`      - 셸 제어문 안에 있어도 그대로 실행된다
-//     `for f in a b; do rm -rf /; done` - 반복문 안도 같다
-//     `rm -rf . && ls`                  - `.` 는 뒤에 공백만 있고 명령이 거기서 끝나야 잡는다.
-//                                          `&& ls` 가 이어져서 못 걸린다.
-//   ⚠ **여기를 좁히려면 계획서를 먼저 읽어라.** 인자 구간을 자르는 순간 자르는 쪽과 읽는 쪽
-//   두 자리가 생기고, 네 번 다 그 사이가 벌어졌다. 한 줄짜리 수정으로 될 자리가 아니다.
+// 🛑🛑 **여덟 회차가 같은 자리에서 구멍을 냈고, 원인은 언제나 "목록"이었다.** 자리표 목록·
+//   위험 무늬 목록을 늘려 고치려 들면 **목록 밖이 열린다.** 그래서 이 판은 목록을 버리고
+//   **자리(토큰)마다 무엇인지**를 묻는다. 갈래는 셋뿐이고, 모르는 표기는 전부 안전측으로 떨어진다:
+//     "이름"   - 구체적인 대상을 가리킨다(`build` · `dist/*` · `$S/bt4`) → 이 rm 은 지울 곳을 밝혔다
+//     "꼭대기" - 자리만 가리키고 이름이 없다(`/` · `~` · `$HOME` · `.` · `..` · `*` · `*/`) → 위험
+//     그 밖   - 모른다(맨 변수 `$TARGET` · 자리표 `{}` · 따옴표 조각 · 종결자) → 온 명령으로 되돌린다
+//
+//   이 뒤집기가 **계획서 표의 구멍 두 개**를 함께 닫는다. 둘 다 원인이 하나였다: 옛 판은 위험
+//   대상을 **글자 무늬**(`\*\s*$` = "별표 뒤가 줄 끝")로 봐서, 인자가 여럿이거나 뒤에 글자가
+//   하나만 더 붙어도 무늬가 깨져 통째로 빠져나갔다.
+//     `cd / && rm -rf * 2 > /dev/null` - fd 와 `>` 사이 공백. bash 는 `2` 를 rm 의 인자로 읽으므로
+//                                        구간에 남는 것이 옳고, 자리로 보면 `*` 가 그대로 걸린다.
+//     `cd / && rm -rf */`              - `*` 뒤 슬래시. 자리로 쪼개면 `*` 하나짜리 경로다.
+//   덤으로 계획서가 "지금 설치본도 못 잡는다"라고 적어 둔 셋도 닫힌다(셸 제어문 안의 `rm -rf /` ·
+//   반복문 안 · `rm -rf . && ls`): 구간을 자르면 `;` 나 `&&` 가 인자의 끝이라 자리가 또렷해진다.
+//
+// 구간의 끝: 첫 셸 연산자·리다이렉션(앞에 붙은 fd 숫자 포함)·개행. 단 **줄 이음(`\` + 개행)은
+//   끝이 아니다** - 거기서 끊으면 `rm -rf \`(개행)` /` 같은 진짜 위험이 인자 없는 rm 으로 보인다.
+//   ⚠ `\s*` 가 개행도 먹지만 줄 이음 전제는 그대로 산다: `\` 는 공백이 아니라 `\s*` 가 그 앞으로
+//   못 넘어간다. 검사 `(차)` 칸 마지막 두 줄이 그 자리를 붙든다.
+const RM_RECURSIVE_G = new RegExp(RM_RECURSIVE.source, "g");
+const RM_ARGS_END = /\s*\d*[<>]|[|;&]|(?<!\\)\n/;
+// 🛑 **따옴표·중괄호를 벗기는 자리는 여기 하나뿐이다.** 여러 군데서 벗기면 어디가 진짜 판정인지
+//   알 수 없게 된다(계획서 마지막 절). 되돌림용 `RM_DANGER_TARGET` 은 원문 그대로 본다 - 그쪽은
+//   "지울 곳이 안 보인다"일 때만 도는 안전측 백스톱이라 벗길 필요도 자격도 없다.
+//   `${NAME}` 은 `$NAME` 으로만 편다. `${NAME:-/}` 같은 확장 표기는 안 펴지고 "모른다"로 떨어진다.
+function rmUnwrap(tok) {
+  return String(tok).replace(/['"]/g, "").replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, "$$$1");
+}
+// 경로의 한 자리(`/` 로 쪼갠 조각)가 무엇인지. "꼭대기"는 **이름이 없는 자리 표시**뿐이다:
+//   점만(`.`·`..`) · 물결 · `$HOME` · 글로브만(`*`·`?`·`.*`). 지금 설치본이 위험이라고 부르던
+//   것과 같은 집합이고, 늘리지 않았다(늘리는 순간 목록으로 돌아간다).
+const RM_SEG_TOP = /^(?:\.+|~|\$HOME|[*?]+|\.+[*?]+)$/;
+function rmSegKind(seg) {
+  if (RM_SEG_TOP.test(seg)) return "top";
+  if (seg.charAt(0) === "$") return null;   // 변수는 무엇이 들었는지 여기서 모른다
+  if (/[\w-]/.test(seg)) return "name";     // 이름 글자가 하나라도 있으면 구체적인 대상이다
+  return null;                              // 자리표 `{}` · 따옴표 조각 · 종결자 `+`·`;`·`\`
+}
+// 🛑 **뿌리 바로 밑을 글로브로 쓸어 담는 것도 꼭대기다**(`rm -rf /*.log` · `rm -rf ~/*.log`).
+//   이름 글자가 섞여 있어 "구체적인 대상"으로 보이지만, 고르는 자리가 트리의 맨 위다.
+//   지금 설치본이 `\/\*` · `~\/\s*\*` 로 잡던 것이 이 축이고, 자리로 옮기면서 놓칠 뻔했다
+//   (사례 대조에서 `rm -rf /*.log` 한 줄이 옛 판보다 헐거워진 것을 보고 되찾았다).
+//   ⚠ **뿌리·홈에서 시작할 때만** 건다. 맨 이름 글로브(`*.log`)와 `./*.log` 는 그냥 지금 폴더 안이라
+//   여기 걸리면 안 된다(그건 이 판이 고치려는 헛막음 쪽이다).
+const RM_ROOTED = /^(?:\/|~|\$HOME\b)/;
+const RM_GLOB = /[*?]/;
+// 인자 한 자리가 무엇을 가리키나. `null` = 모른다(되돌림 후보).
+function rmTokenKind(rawTok) {
+  const t = rmUnwrap(rawTok);
+  if (!t || t.charAt(0) === "-") return null;        // 빈 조각 · 플래그 · `--`
+  const segs = t.split("/").filter(Boolean);
+  if (!segs.length) return "top";                    // `/` · `//` = 뿌리 그 자체
+  let top = false, atRoot = RM_ROOTED.test(t);
+  for (const seg of segs) {
+    const kind = rmSegKind(seg);
+    if (kind === "top") { top = true; continue; }    // 자리 표시가 이어지는 동안은 아직 꼭대기다
+    if (atRoot && RM_GLOB.test(seg)) return "top";   // 뿌리 바로 밑을 글로브로 고른다
+    atRoot = false;
+    if (kind === "name") return "name";              // 자리 하나라도 이름이면 지울 곳이 정해졌다
+  }
+  return top ? "top" : null;
+}
+// 🛑🛑 **자른 자리가 따옴표 안이면 그 구간을 믿으면 안 된다**(7회차에 스스로 열고 실행으로 잡았다).
+//   `rm -rf "x&" /` 는 `&` 가 따옴표 안이라 인자의 끝이 아닌데, 구간을 거기서 자르면 **뒤의 `/` 가
+//   통째로 안 보인다.** 옛 판은 온 명령을 봐서 막던 것들이다(실측 5건: `"x&" /` · `'a;b' /` ·
+//   `"a|b" ~` · `"a>b" /` · 따옴표 안 개행).
+//   구간 자르기를 따옴표까지 읽게 고치는 길도 있지만, 그러면 **자르는 쪽에 셸 파서가 또 하나**
+//   생긴다(이 파일이 여덟 회차 동안 구멍을 낸 자리가 바로 그 이음매다). 그래서 반대로 간다:
+//   **짝이 안 맞으면 "지울 곳을 못 읽었다"로 보고 온 명령으로 되돌린다**(이 파일의 fail-closed 규율).
+//   대가는 정직하게 적는다: 이름에 `&`·`;`·`|`·`<`·`>` 가 든 파일을 따옴표로 감싸 지우면서 명령
+//   다른 자리에 위험 글자가 있으면 과차단이 난다(옛 판도 똑같이 막던 자리라 새 손해는 아니다).
+function rmArgsUnreadable(args) {
+  return args.split("'").length % 2 === 0 || args.split('"').length % 2 === 0;
+}
 function rmHitsDangerTarget(cmd) {
   const s = String(cmd || "");
-  return RM_RECURSIVE.test(s) && RM_DANGER_TARGET.test(s);
+  RM_RECURSIVE_G.lastIndex = 0;   // 전역 정규식은 상태를 들고 다닌다: 누가 test 를 부르면 시작점이 밀린다
+  for (const m of s.matchAll(RM_RECURSIVE_G)) {
+    const rest = s.slice(m.index + m[0].length);
+    const end = rest.search(RM_ARGS_END);
+    const args = end === -1 ? rest : rest.slice(0, end);
+    let sawName = false;
+    for (const tok of args.trim().split(/\s+/)) {
+      const kind = rmTokenKind(tok);
+      if (kind === "top") return true;               // 이 rm 이 꼭대기를 지운다
+      if (kind === "name") sawName = true;
+    }
+    if (rmArgsUnreadable(args)) sawName = false;     // 따옴표 짝이 안 맞다 = 구간을 못 읽었다
+    // 지울 곳이 이 자리에 안 보이면(`… | xargs rm -rf` · `-exec rm -rf {} \;`) 옛 판대로 온 명령을
+    //   본다. 정적으로 푼 것이 아니라 안전측에 머무는 것이라 앞 세그먼트 글자로 과차단이 날 수 있다.
+    if (!sawName && RM_DANGER_TARGET.test(s)) return true;
+  }
+  return false;
 }
 
 // 파괴적 SQL(스키마·대량삭제). DELETE는 WHERE 없을 때만.
@@ -177,7 +257,7 @@ function isDeploy(cmd) {
 //   (4) **모르겠으면 원문**(fail-closed). 따옴표 짝이 안 맞거나 히어독 끝을 못 찾거나 통째로 셸에
 //       먹이는 형태(`echo "…" | bash`)면 마스킹을 아예 안 한다.
 // 길이는 반드시 보존한다(덜어낸 자리는 같은 수의 공백). 이 함수 자신이 인덱스로 오가고,
-//   다음 판이 인자 구간을 다시 자를 때 필요하다(위 🅿 절). 아래 검사가 이 불변식을 붙들고 있다.
+//   `rmHitsDangerTarget` 이 인자 구간을 자를 때도 필요하다. 아래 검사가 이 불변식을 붙들고 있다.
 //
 // 남는 구멍(정직):
 //   - 글자를 파일에 적어 두고 나중에 그 파일을 돌리는 형태(`echo "git push" > f; bash f`)는 못 잡는다.
@@ -191,8 +271,8 @@ function isDeploy(cmd) {
 //         **이 손실은 수용된 것이다**: 그 우연을 남기려면 히어독 본문을 다시 다 훑어야 하고,
 //         그러면 이 판이 고치려던 헛막음(문서·커밋 메시지 본문)이 통째로 돌아온다.
 //   - **파이프로 대상을 받는 삭제**(`… | xargs rm -rf`)는 인자가 그 자리에 안 보인다.
-//     `rmHitsDangerTarget` 은 **언제나 온 명령을 본다**(위 🅿 절). 정적으로 푼 것이 아니라
-//     안전측에 머무는 것이라, 앞 세그먼트에 위험 글자가 있으면 과차단이 난다.
+//     그때 `rmHitsDangerTarget` 은 **온 명령으로 되돌아간다**(위 그 함수의 마지막 줄). 정적으로
+//     푼 것이 아니라 안전측에 머무는 것이라, 앞 세그먼트에 위험 글자가 있으면 과차단이 난다.
 // 이 목록은 **글자를 먹는 쪽**이다: 여기 없으면 안 덮는다(닫히는 쪽으로 틀린다).
 //   근거는 전부 실측 코퍼스다 - `git commit -m/-F`(커밋 메시지 본문) · `git grep`·`grep`(검색어) ·
 //   `echo`·`printf`(시험용 JSON) · `cat`(히어독으로 문서·각본 쓰기). 그 밖은 안 넣었다.
@@ -1900,6 +1980,7 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-// `rmHitsDangerTarget` export: 지금은 이 파일 안(`block()` 안)에서만 쓴다. 밖에서 부르는 데는
-//   아직 없다 - 다음 판(인자 구간 좁히기)이 다시 쓴다. 다음 판 대비로 export를 남겨 둔다.
+// `rmHitsDangerTarget` export: 제품 코드는 이 파일 안(`block()` 안)에서만 쓴다. 밖에서 부르는
+//   자리는 검사뿐이다 - `block()` 으로는 두 배선(자리 판정 / 온 명령 되돌림)이 같은 답을 내는
+//   구간이 있어 구분이 안 되는 줄들을 이 함수로 직접 잰다(검사 `(차)` 칸 마지막 두 줄).
 module.exports = { executableText, rmHitsDangerTarget, statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };
