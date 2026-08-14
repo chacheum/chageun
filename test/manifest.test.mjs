@@ -10,7 +10,7 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 test("loadManifest는 정본 필드를 읽는다", () => {
   const m = loadManifest(SRC);
   assert.equal(m.name, "chageun");
-  assert.equal(m.version, "0.67.0");
+  assert.equal(m.version, "0.68.0");
   assert.equal(m.components.skills.length, 15);
 });
 
@@ -24,7 +24,7 @@ test("claudePluginJson은 현 plugin.json과 의미 동일(의존성 칸 없음)
     // v0.67.0 T7-다: 긴 줄표를 하이픈으로. 이 문자열은 src/manifest.src.json:4 와 **한 벌**이라
     // 소스와 이 단언을 같은 커밋에서 함께 고쳐야 한다(한쪽만 고치면 이 deepEqual 이 빨개진다).
     description: "Safe build workflow for non-developers - task cards, verification gates, real run-through, plain-language summaries (replies in your language; default Korean). 비개발자가 안전하게 만들도록 돕는 워크플로우.",
-    version: "0.67.0",
+    version: "0.68.0",
     license: "MIT",
     keywords: ["workflow", "non-developer", "vibe-coding", "review", "safety", "korean", "english"]
   });
