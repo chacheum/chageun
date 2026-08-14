@@ -100,7 +100,9 @@ function buildCtx({ env, board, boardMarkersIntact, boardServer }) {
 //    닫는 것은 훅 stdout 을 직접 재는 test/activate.test.mjs · test/statusboard-activate.test.mjs 쪽이다.
 // 🛑 변형을 늘리면서 render 가 그 이름으로 갈라지지 않으면, 매트릭스는 늘어나는데 두 칸이
 //    같은 글을 재는 헛검사가 된다. test/rule-pieces.test.mjs 가 변형끼리 글이 다른지 본다.
-const SAMPLE_BOARD_SERVER = "/x/skills/statusboard/board-server.mjs"; // 예시 자리표시자. 실제 경로는 활성화 시점에 구해진다.
+// 경로 모양이 아닌 값으로 둔다: 경로처럼 적으면 "sampleCtx 로 렌더까지 재는구나"로 오해할 수 있다.
+// applies()·variantOf() 는 이 값을 안 읽는다(둘 다 boardServer 를 안 본다) - 자리 채우기일 뿐이다.
+const SAMPLE_BOARD_SERVER = "(예시)";
 const APPENDICES = [
   { id: "unattended", file: "unattended-appendix.md",
     applies: (ctx) => ctx.env.CHAGEUN_UNATTENDED === "1",

@@ -249,7 +249,10 @@ test("등록부의 모든 칸에 applies 를 거짓으로 만드는 예시도 �
 // 🛑 이 검사가 못 잡는 것: 칸 **이름**만 맞추지, 훅이 그 조건에 맞는 **값**을 실제로 채우는지는
 //    안 잰다(위 정직 회계 참고).
 test("sampleCtx·sampleCtxOff 의 칸 이름이 진짜 ctx(buildCtx) 칸 안에 들어간다", () => {
-  const realKeys = Object.keys(core.buildCtx({ env: {}, board: false, boardMarkersIntact: true, boardServer: "" }));
+  // buildCtx({}) 로 부른다: 열쇠(키)는 함수 리터럴이 정하지 인자 값과 무관하다는 사실을 코드로 보인다.
+  // 인자를 채워 넣으면(예: boardServer:"") buildCtx 가 나중에 조건부로 칸을 넣는 꼴로 바뀔 때
+  // 그 값 때문에 엉뚱한 빨간불이 뜰 수 있다.
+  const realKeys = Object.keys(core.buildCtx({}));
   for (const a of core.APPENDICES) {
     for (const key of Object.keys(a.sampleCtx))
       assert.ok(realKeys.includes(key),
@@ -260,6 +263,23 @@ test("sampleCtx·sampleCtxOff 의 칸 이름이 진짜 ctx(buildCtx) 칸 안에 
         `부록 "${a.id}" 의 sampleCtxOff 에 진짜 ctx 에 없는 칸 "${key}" 이 있다. ` +
         `진짜 칸은 ${realKeys.join(", ")} 뿐이다.`);
   }
+});
+
+// [medium] buildCtx({ env, board, boardMarkersIntact, boardServer }) 는 인자를 이름으로 뽑아
+// 같은 이름의 새 객체를 낸다 - 그래서 칸 이름이 두 자리(activate.js 호출부의 인자 이름 ·
+// activate-core.js 의 함수 리터럴)에 따로 적힌다. 둘이 어긋나면 오류 없이 그 칸이 undefined 가
+// 된다(호출부가 안 채운 이름은 그냥 없는 프로퍼티가 되어 조용히 넘어간다). 위 검사는 함수
+// 쪽만 보므로 이 어긋남을 못 잡는다 - 그래서 activate.js 소스 글을 읽어 호출부의 칸 이름을
+// 직접 뽑아 대조한다(이 저장소가 이미 쓰는 방식: 소스 글을 앵커로 삼기).
+test("activate.js 호출부가 넘기는 칸 이름이 buildCtx 의 칸 이름과 같다 - 어긋나면 그 칸이 조용히 undefined 가 된다", () => {
+  const activateSrc = readFileSync(join(ROOT, "src", "hooks", "activate.js"), "utf8");
+  const callMatch = activateSrc.match(/core\.buildCtx\(\{([\s\S]*?)\}\)/);
+  assert.ok(callMatch, "activate.js 에서 core.buildCtx({...}) 호출을 못 찾았다 - 자리를 옮겼으면 위 정규식도 같이 고쳐라");
+  const calledKeys = [...callMatch[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]).sort();
+  const definedKeys = Object.keys(core.buildCtx({})).sort();
+  assert.deepEqual(calledKeys, definedKeys,
+    `activate.js 호출부가 넘기는 칸(${calledKeys.join(", ")})과 buildCtx 정의의 칸` +
+    `(${definedKeys.join(", ")})이 다르다. 한쪽만 고치면 다른 쪽 칸이 조용히 undefined 가 된다.`);
 });
 
 // ── 자리 참조 가드 ───────────────────────────────────────────────────────────
