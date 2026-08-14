@@ -38,6 +38,17 @@ function scene(boardText) {
   writeFileSync(sc.tpath, "");
   return sc;
 }
+// 무시가 **확인 안 된** 상황판. `boardIgnoreVerdict` 가 `blocked` 를 돌려주고, 그 판정은
+// 캐시가 세션 내내 굳어(`boardIgnorePasses` 가 blocked 면 다시 재지 않는다) 이번 세션에는
+// 절대 안 풀린다. 위 `scene()` 과 딱 한 가지만 다르다: `info/exclude` 에 줄을 안 넣는다.
+function blockedScene() {
+  const dir = tmpDir("blocked-");
+  git(dir, ["init", "-q"]);
+  const sc = { dir, board: join(dir, "status.md"), tpath: join(dir, "t.jsonl"), cache: tmpDir("cache-"), key: "sess" + (++seq) };
+  writeFileSync(sc.board, TEMPLATE);
+  writeFileSync(sc.tpath, "");
+  return sc;
+}
 function fire(sc, extra = {}) {
   const input = {
     session_id: sc.key, transcript_path: sc.tpath, cwd: sc.dir,
@@ -247,6 +258,46 @@ test("마지막 일감까지 끝난 뒤 미룬 쓰기도 다음 회차에 나간
     "끝난 일을 계속 '도는 중'으로 보여 주면 자리를 비웠다 온 사장님이 정반대로 읽는다");
   assert.match(board(sc), /\| 혼자 돌던 일감 \| 끝남 \|/, "표의 그 줄도 끝난 것으로 바뀐다");
   assert.equal(stateOf(sc).pendingWrite, false, "나갔으면 표시를 내려야 다음 회차가 헛돌지 않는다");
+});
+
+// ── 갚을 수 있는 빚만 든다(미룸 표시를 켜는 갈래 하나) ───────────────────────
+//
+// 🛑 두 칸은 **한 가지만** 다르게 두고 갈린다. 미룸 표시(`pendingWrite`)는 조기 탈출을 여는
+//    열쇠라, 갚을 길이 없는 갈래에서 켜면 그 문이 세션 내내 열린 채가 된다: 상황판을 한 글자도
+//    못 쓰는 프로젝트에서 도구 호출마다 파싱·비밀값 수집·상황판 읽기 비용만 계속 나간다.
+
+test("못 갚을 빚: 무시가 안 된 상황판에서는 미룸 표시를 켜지 않는다", () => {
+  const sc = blockedScene();
+  const t0 = Date.now();
+  appendFileSync(sc.tpath, spawnRec("c1", A1, "막힌 판의 일감", t0));
+  fire(sc);
+  appendFileSync(sc.tpath, notifRec(A1, "completed", 'Agent "막힌 판의 일감" 끝', t0 + 1000));
+  fire(sc);
+
+  const st = stateOf(sc);
+  // ⚠ 재려는 갈래를 실제로 밟았는지 먼저 확인한다. 이 줄이 없으면 판정이 `ok` 로 뒤집힌
+  //   기계에서도(전역 무시 목록 등) 아래가 전부 초록이 되어 아무것도 안 잰다.
+  assert.equal(st.ignoreVerdict, "blocked", "이 칸은 '무시가 확인 안 됨' 갈래를 재는 칸이다");
+  assert.equal(board(sc), TEMPLATE, "무시가 확인 안 된 상황판에는 한 글자도 안 쓴다");
+  assert.notEqual(st.pendingWrite, true, "이번 세션에 못 갚을 빚을 들고 있으면 안 된다");
+  // 여기가 본론이다: 표시가 남으면 소식 없는 회차에도 비용 문지기가 열린다.
+  assert.equal(core.shouldParse(idleRec(t0 + 2000), st), false,
+    "빚 표시가 남으면 도구 호출마다 파싱·비밀값 수집이 세션 내내 계속 돈다");
+  // 내려도 잃는 것이 없다는 근거: 장부에는 그대로 남아, 다음 진짜 소식이 문을 열면 함께 나간다.
+  assert.equal(st.tasks[A1].status, "completed", "표시를 내리면서 장부까지 버리면 안 된다");
+});
+
+test("갚을 수 있는 빚: 상황판을 건드린 회차 뒤에는 미룸 표시가 켜져 있다", () => {
+  const sc = scene();
+  const t0 = Date.now();
+  appendFileSync(sc.tpath, spawnRec("c1", A1, "정상 판의 일감", t0));
+  fire(sc);
+  appendFileSync(sc.tpath, notifRec(A1, "completed", 'Agent "정상 판의 일감" 끝', t0 + 1000));
+  fire(sc, { tool_name: "Read", tool_input: { file_path: sc.board } });
+
+  const st = stateOf(sc);
+  assert.equal(st.pendingWrite, true, "다음 회차에 갚을 수 있는 갈래에서까지 안 켜면 밀린 쓰기가 사라진다");
+  assert.equal(core.shouldParse(idleRec(t0 + 2000), st), true, "갚으라고 문이 열려 있어야 한다");
 });
 
 // ── 표시가 깨졌거나 없을 때 ──────────────────────────────────────────────────

@@ -227,16 +227,29 @@ function autoBoard(input) {
 
   // 이번 도구 호출의 대상이 상황판이었으면 이 회차에는 안 쓴다(경로만 본다: 안 쓰는 쪽으로
   //   기우는 판정이라 넓어도 안전하다). [Read status.md → 기계가 씀 → 그 Edit 이 거부됨] 을 막는다.
-  //   🛑 밀린 쓰기를 잃지 않게 `pendingWrite` 로 다음 회차에 넘긴다.
   const ti = input.tool_input || {};
   const targetIsBoard = !!(ti && ti.file_path && path.resolve(cwd, String(ti.file_path)) === board);
   const wantWrite = changed || st.pendingWrite === true;
   if (!wantWrite) { save(); return; }
+  // 🛑 **표시(`pendingWrite`)를 켜는 갈래는 이 하나뿐이다.** 다음 회차의 대상은 대개 다른
+  //    파일이라 이 빚은 곧 갚는다. `shouldParse` 가 이 표시를 보고 조기 탈출을 열어 주는
+  //    근거가 그 "곧 갚는다"이다.
+  if (targetIsBoard) { st.pendingWrite = true; save(); return; }
   // 무시 판정은 **상황판이 있는 폴더**에서 짓는다. `boardIgnoreVerdict` 는 그 폴더에서
   //   `git ls-files/check-ignore status.md` 를 돌려 **상대 경로 하나**를 묻기 때문이다.
   //   위 경계 한 줄 덕분에 여기서는 boardDir === cwd 가 이미 참이지만, 묻는 대상을 이름으로
   //   적어 둔다: 나중에 그 줄이 풀리면 이 자리가 조용히 엉뚱한 파일을 묻게 된다.
-  if (targetIsBoard || text == null || !boardIgnorePasses(st, boardDir, now)) { st.pendingWrite = true; save(); return; }
+  //   ⚠ `boardIgnorePasses` 는 git 을 부르는 **부수효과**가 있다. `text == null` 을 먼저 놓고
+  //     `||` 로 단락시키는 이 순서를 유지한다(위 `targetIsBoard` 갈래가 먼저 나가는 것도 같은 이유다):
+  //     자리를 바꾸면 못 읽는 회차마다 자식 프로세스가 새로 는다.
+  // 🛑 **아래 둘에서는 표시를 내린다.** 이 둘은 위 갈래와 달리 **이번 세션에 안 풀린다**:
+  //    무시 판정이 `blocked` 면 `boardIgnorePasses` 가 다시 재지 않고 세션 내내 그 값으로 굳고,
+  //    상황판을 못 읽는 상태도 대개 그대로 이어진다. 켜 두면 갚을 길이 없는 빚이 되어
+  //    `shouldParse` 의 조기 탈출이 세션 내내 열린 채가 되고, 한 글자도 못 쓰는 프로젝트에서
+  //    도구 호출마다 파싱·비밀값 수집·상황판 읽기 비용만 계속 나간다.
+  //    🛑 내려도 잃는 것이 없다: 표는 조각이 아니라 **장부 전체**로 다시 그리므로(`renderBlock`),
+  //       다음 진짜 소식(`agentId:` · `<task-notification>`)이 문을 열 때 이번 변화도 함께 나간다.
+  if (text == null || !boardIgnorePasses(st, boardDir, now)) { st.pendingWrite = false; save(); return; }
 
   let out = text;
   const s2 = auto.spliceBlock(out, auto.renderBlock(st.tasks, now), "chageun:auto");
