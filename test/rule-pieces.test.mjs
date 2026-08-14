@@ -210,6 +210,28 @@ test("variantOf 는 등록된 변형 이름만 낸다", () => {
         `부록 "${a.id}" 의 variantOf 가 등록 밖 이름 "${a.variantOf(ctx)}" 를 냈다`);
 });
 
+// 🛑 등록부의 `applies` 는 어떤 검사도 부르지 않았다 — 그래서 "등록은 됐는데 조건이 영원히
+//    거짓이라 한 번도 안 붙는 부록"이 생겨도 볼 자리가 0곳이었다(D-2). sampleCtx/sampleCtxOff 는
+//    등록부 자신이 들고 있는 값이라, 검사가 기대값을 스스로 지어내는 자기참조가 아니다 —
+//    실제로 applies() 를 두 방향(참·거짓)으로 실행해 결과를 잰다.
+test("등록부의 모든 칸에 applies 를 참으로 만드는 예시가 있다 — 없으면 그 부록은 영원히 안 붙어도 못 잡는다", () => {
+  for (const a of core.APPENDICES) {
+    assert.ok(a.sampleCtx, `부록 "${a.id}" 에 sampleCtx 가 없다 — applies 조건을 참으로 만드는 예시 ctx 를 등록부에 추가해라.`);
+    assert.equal(a.applies(a.sampleCtx), true,
+      `부록 "${a.id}" 의 sampleCtx 로 applies() 를 불렀는데 거짓이 나왔다 — ` +
+      "이 조건은 실제로 한 번도 참이 될 수 없을 가능성이 있다(영원히 안 붙는 부록).");
+  }
+});
+
+test("등록부의 모든 칸에 applies 를 거짓으로 만드는 예시도 있다 — 한쪽만 재면 조건을 아무 값으로나 바꿔도 초록이다", () => {
+  for (const a of core.APPENDICES) {
+    assert.ok(a.sampleCtxOff, `부록 "${a.id}" 에 sampleCtxOff 가 없다 — applies 조건을 거짓으로 만드는 예시 ctx 를 등록부에 추가해라.`);
+    assert.equal(a.applies(a.sampleCtxOff), false,
+      `부록 "${a.id}" 의 sampleCtxOff 로 applies() 를 불렀는데 참이 나왔다 — ` +
+      "조건이 거짓을 낼 수 없다면(늘 붙는 부록이라면) 등록부에서 그 사실을 밝히고 이 검사를 그에 맞게 고쳐야 한다.");
+  }
+});
+
 // ── 자리 참조 가드 ───────────────────────────────────────────────────────────
 // 🛑 대상은 안전 캡슐 절이 아니라 **주입되는 글 전체**(코어 + 등록된 부록)다. 조각은 순서가
 //    섞이므로 어느 절에서든 "위/아래/끝에" 는 거짓이 될 수 있다. 캡슐만 지키면 다음 자리 참조는

@@ -72,13 +72,18 @@ function renderStatusboard(text, variant, ctx) {
 // (test/rule-pieces.test.mjs): 주입은 되는데 등록이 안 된 부록이 생기면 그 부록은
 // 조합 매트릭스에도 바이트 예산에도 안 잡힌다. 이번 사고와 같은 방향의 구멍이다.
 //
-// 등록부 한 칸이 갖는 것 넷:
+// 등록부 한 칸이 갖는 것 여섯:
 //   applies(ctx)    조건이 맞나. ctx 는 activate.js 가 모아 준 **바깥 사실**(env · 파일 존재 여부).
 //   variants        조건이 맞았을 때 낼 수 있는 **서로 다른 글**의 이름들. 조합 매트릭스가
 //                   이 목록에서 자동으로 늘어난다(부록 하나가 만드는 상태 = 꺼짐 1 + 변형 수).
 //   variantOf(ctx)  ctx 를 보고 그중 어느 변형인지 고른다. 훅이 부른다.
 //   render(t,v,ctx) 원문을 그 변형의 최종 글로 다듬는다. **훅과 검사가 이 함수를 같이 부른다**:
 //                   검사가 자기 나름의 다듬기를 다시 짜면 실제 주입되는 글과 다른 것을 재게 된다.
+//   sampleCtx       `applies` 를 **참으로 만드는** 예시 ctx. test/rule-pieces.test.mjs 가 이 값으로
+//                   `applies(sampleCtx) === true` 를 확인한다 — 조건이 영원히 거짓인 칸(등록은 됐지만
+//                   한 번도 안 붙는 부록)을 잡기 위함이다. 없으면 그 검사가 빨간불을 낸다.
+//   sampleCtxOff    `applies` 를 **거짓으로 만드는** 예시 ctx. 한쪽만 재면 조건을 아무 값으로나
+//                   (`() => true` 등) 바꿔도 검사가 초록이 되므로, 반대 방향도 함께 잰다.
 // 🛑 변형을 늘리면서 render 가 그 이름으로 갈라지지 않으면, 매트릭스는 늘어나는데 두 칸이
 //    같은 글을 재는 헛검사가 된다. test/rule-pieces.test.mjs 가 변형끼리 글이 다른지 본다.
 const APPENDICES = [
@@ -86,13 +91,17 @@ const APPENDICES = [
     applies: (ctx) => ctx.env.CHAGEUN_UNATTENDED === "1",
     variants: ["only"],
     variantOf: () => "only",
-    render: (text) => text },
+    render: (text) => text,
+    sampleCtx: { env: { CHAGEUN_UNATTENDED: "1" }, board: false, boardMarkersIntact: true },
+    sampleCtxOff: { env: {}, board: false, boardMarkersIntact: true } },
   // 🛑 무인 **다음**에 등록한다. 등록 순서 = 붙는 순서이고, 무인 안전 규칙이 먼저 읽혀야 한다.
   { id: "statusboard", file: "statusboard-appendix.md",
     applies: (ctx) => ctx.board === true,
     variants: ["표식온전", "표식깨짐"],
     variantOf: (ctx) => (ctx.boardMarkersIntact ? "표식온전" : "표식깨짐"),
-    render: renderStatusboard },
+    render: renderStatusboard,
+    sampleCtx: { env: {}, board: true, boardMarkersIntact: true },
+    sampleCtxOff: { env: {}, board: false, boardMarkersIntact: true } },
 ];
 
 // 부록 조각의 번호. 본문 조각 뒤 한 자리.
