@@ -23,6 +23,9 @@ const HOOKS = join(SRC, "hooks");
 const boardRoot = require(join(HOOKS, "board-root-core.js"));
 const { resolveRoot } = await import(join(SRC, "skills", "statusboard", "board-core.mjs"));
 const TEMPLATE = readFileSync(join(SRC, "skills", "statusboard", "board.template.md"), "utf8");
+// 아래 "네 갈래" 표에서 `armed` 갈래는 TEMPLATE 이 `chageun:auto` 표시를 담고 있다는 데 기댄다.
+// 표시가 템플릿에서 빠지면 그 갈래가 "손글씨"와 똑같아져 표가 조용히 두 갈래로 줄어든다.
+assert.ok(TEMPLATE.includes("chageun:auto"), "board.template.md 에 chageun:auto 표시가 없다 - 네 갈래 검사가 armed 를 못 잰다");
 
 const { findBoardDir, findBoardPath, isBoundaryDir, homeDirOf, FILE, MAX_UP, BOUNDARY_NAMES } = boardRoot;
 const MARK = "<!-- chageun:auto -->";   // 하드 차단의 내용 신호(경로만으로는 안 무장된다)
@@ -312,16 +315,19 @@ test("위에 있는데 여기에 또 만들려 하면 그 자리에서 알린다
 const IGNORE_FRAG = "저장소에 올라갈 수 있습니다";
 const ALREADY_FRAG = "이미";
 
-for (const [name, above, content, wantAlready, wantIgnore] of [
-  ["already && armed", true, "TEMPLATE", true, true],
-  ["already && !armed", true, "손글씨", true, true],
-  ["!already && armed", false, "TEMPLATE", false, false],
-  ["!already && !armed", false, "손글씨", false, true],
+for (const [idx, name, above, content, wantAlready, wantIgnore] of [
+  [0, "already && armed", true, "TEMPLATE", true, true],
+  [1, "already && !armed", true, "손글씨", true, true],
+  [2, "!already && armed", false, "TEMPLATE", false, false],
+  [3, "!already && !armed", false, "손글씨", false, true],
 ]) {
   test(`새로 만드는 편집 ${name}: 받을 것을 받는다`, () => {
     const s = scene("br-4-", above ? { board: true } : {});
     const cwd = above ? s.nested : s.proj;
-    const sid = "br-4-" + name.replace(/[^a-z]/g, "");
+    // 🛑 열쇠를 이름에서 뽑지 않는다: `name.replace(/[^a-z]/g, "")` 는 `!`·`&`·공백을 지워
+    //    네 이름이 전부 "alreadyarmed" 로 뭉개진다(세션 캐시 슬롯이 서로 덮어써 갈래를
+    //    가려내지 못한다). 반복문 인덱스로 짓는다.
+    const sid = "br-4-" + idx;
     const cache = burnNoticeSlot(cwd, sid, s.env, tmpDir("br-cache4x-"));
     const r = runHook("pretooluse.js", {
       tool_name: "Write", cwd, session_id: sid,

@@ -896,12 +896,18 @@ process.stdin.on("end", () => {
     //    도는 자리라 안전 안내가 0이 된다: 뿌리 `.gitignore` 가 `/status.md` 로 앵커된 모노레포에서
     //    `<repo>/packages/api` 를 켜고 손으로 만들면, 그 경로는 무시 대상이 아닌데 아무도 안 말해
     //    평문 업무 보고가 커밋 이력에 남는다. 네 갈래를 아래 표로 못박는다:
-    //      already && armed    → 이미문구 + 무시절차
-    //      already && !armed   → 이미문구 + 무시절차   (4.8b 가 안 도는 자리 - 여기가 뚫렸던 곳)
+    //      already && armed    → 이미문구(+무시절차 확인)
+    //      already && !armed   → 이미문구(+무시절차 확인)   (4.8b 가 안 도는 자리 - 여기가 뚫렸던 곳)
     //      !already && armed   → 조용(4.8b 가 이미 봤다)
-    //      !already && !armed  → 무시절차
-    //    `already` 에 무시절차를 **조건 없이** 붙이는 이유: 조건을 하나 더 달면 그 조건이 다음에
-    //    또 한 갈래를 삼킨다. 둘 다 소프트 안내라 붙여도 마찰이 안 는다.
+    //      !already && !armed  → 무시절차(먼저 밟으세요)
+    //    `already` 에 무시절차 언급을 **조건 없이** 붙이는 이유: 조건을 하나 더 달면 그 조건이
+    //    다음에 또 한 갈래를 삼킨다. 둘 다 소프트 안내라 붙여도 마찰이 안 는다.
+    //    🛑 **`already` 갈래의 뒷문장은 "먼저 밟으세요"가 아니라 "확인하세요"다.** "여기에 새로
+    //    만들지 말라"는 앞문장과 "절차를 먼저 밟으라"는 뒷문장을 나란히 두면, 읽는 쪽이 "절차
+    //    밟고 나서 여기 만들라"로 읽어 상황판이 두 권이 된다. 게다가 이 갈래에 닿았다는 것 자체가
+    //    대개 git 이 이미 무시하고 있다는 뜻이라 "먼저 밟으세요"는 사실과도 어긋난다(실행 재현
+    //    완료, 4회차 게이트 지적). `!already` 갈래(IGNORE_LINE)는 실제로 아직 안 밟았을 자리라
+    //    그대로 "먼저 밟으세요"를 쓴다.
     if (!reminderEmitted && boardTarget && !boardTarget.exists) {
       try {
         const cwd = path.resolve(input.cwd || process.cwd());
@@ -910,9 +916,10 @@ process.stdin.on("end", () => {
           ? boardRoot.findBoardDir(cwd) : null;
         const already = upper !== null && upper !== cwd;
         const IGNORE_LINE = "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.";
+        const ALREADY_IGNORE_TAIL = "혹시 이미 만들었다면, 그 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 확인하세요.";
         let msg = null;
         if (already) {
-          msg = "차근 안내: 이미 `" + path.join(upper, BOARD_FILE) + "` 에 이 프로젝트의 작업 상황판이 있습니다. **여기에 새로 만들지 말고 그 파일을 고치세요.** 하나 더 만들면 기계가 채우는 칸은 새 파일로 가고, 사용자가 웹에서 보던 원래 상황판은 그 자리에서 멈춥니다. " + IGNORE_LINE;
+          msg = "차근 안내: 이미 `" + path.join(upper, BOARD_FILE) + "` 에 이 프로젝트의 작업 상황판이 있습니다. **여기에 새로 만들지 말고 그 파일을 고치세요.** 하나 더 만들면 기계가 채우는 칸은 새 파일로 가고, 사용자가 웹에서 보던 원래 상황판은 그 자리에서 멈춥니다. " + ALREADY_IGNORE_TAIL;
         } else if (!boardTarget.armed) {
           msg = IGNORE_LINE;
         }
