@@ -196,13 +196,22 @@ test("짝 2: 라우팅 표에서 인라인 행이 사라지고 크기 하한 없
   //    안전 tie-break 는 산문 세 겹뿐이라 기계가 되돌려 주지 않는다. 그래서 `보안·판단 무관`
   //    조건이 **그 행 안에** 남아 있는지를 같은 줄에서 잰다(파일 어디엔가 있는 것으로는 부족하다).
   // 위 두 문단이 쓰는 행 이름(안전 바닥 행 · fail-safe 행)이 실제로 표에 있는지를 기계로 잰다.
-  // 표 문구가 다듬어지면 이름만 조용히 낡아, 주석이 가리키는 행을 사람이 못 찾게 된다.
-  assert.ok(ROUTING.includes("보안·판단·권한·동시성·아키텍처·애매·복잡"),
-    "안전 바닥 행의 문구가 라우팅 표에서 사라졌다 - 위 주석의 `안전 바닥 행`이 어느 행인지 " +
+  // 조건 칸으로 그 줄을 먼저 찾고, 찾은 그 줄 안에서 이름까지 확인한다(부재 확인만으로는
+  // 부족하다 - 이름은 오른쪽 칸에 있어서, 조건 칸만 재면 이름이 조용히 바뀌어도 초록이 된다).
+  const safetyFloorRow = ROUTING.split("\n").find((l) =>
+    l.includes("보안·판단·권한·동시성·아키텍처·애매·복잡"));
+  assert.ok(safetyFloorRow,
+    "안전 바닥 행의 조건 문구가 라우팅 표에서 사라졌다 - 위 주석의 `안전 바닥 행`이 어느 행인지 " +
     "더 이상 찾을 수 없다");
-  assert.ok(ROUTING.includes("독립성·명확성·안전성이 애매"),
-    "fail-safe 행의 문구가 라우팅 표에서 사라졌다 - 위 주석의 `fail-safe 행`이 어느 행인지 " +
+  assert.ok(safetyFloorRow.includes("안전 바닥"),
+    `이름이 바뀌어 위 주석이 가리키는 행을 못 찾게 됐다 - \`안전 바닥\`: ${safetyFloorRow}`);
+  const failSafeRow = ROUTING.split("\n").find((l) =>
+    l.includes("독립성·명확성·안전성이 애매"));
+  assert.ok(failSafeRow,
+    "fail-safe 행의 조건 문구가 라우팅 표에서 사라졌다 - 위 주석의 `fail-safe 행`이 어느 행인지 " +
     "더 이상 찾을 수 없다");
+  assert.ok(failSafeRow.includes("fail-safe"),
+    `이름이 바뀌어 위 주석이 가리키는 행을 못 찾게 됐다 - \`fail-safe\`: ${failSafeRow}`);
   const row = ROUTING.split("\n").find((l) => l.includes("크기 하한 없음(한두 줄도 여기)"));
   assert.ok(row, "라우팅 표('GO 후 자동 결정')의 code-implementer 단일 행에 새 크기 조건 " +
     "`크기 하한 없음(한두 줄도 여기)` 이 없다");
