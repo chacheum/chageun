@@ -22,7 +22,8 @@
 "use strict";
 const { execFileSync } = require("child_process");
 
-const FILE = "status.md";
+// 파일 이름은 **한 자리에서만** 정한다: 이 판의 목표가 "이 질문의 답은 한 파일"이었다.
+const { FILE } = require("./board-root-core.js");
 const GIT_OPTS = { timeout: 2000, stdio: "ignore" };
 
 /**

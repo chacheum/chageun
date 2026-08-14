@@ -149,14 +149,15 @@ test("훅 셋이 전부 board-root-core.js 를 부른다", () => {
   }
 });
 
-test("훅 안에 옛 판정(켠 폴더만 보기)이 되살아나지 않았다", () => {
-  // 이 문자열이 다시 나타나면 세 답이 또 갈린다. 되살아난 자리를 이름으로 짚어 준다.
-  for (const f of HOOK_FILES) {
-    const src = readFileSync(join(HOOKS, f), "utf8");
-    for (const bad of ['path.join(cwd, BOARD_FILE)', 'path.join(process.cwd(), "status.md")']) {
-      assert.ok(!src.includes(bad), `${f} 에 옛 판정이 되살아났다: ${bad}`);
-    }
-  }
+test("하드 차단이 두 자리(켠 폴더 · 찾은 자리)를 합집합으로 본다", () => {
+  // 🛑 앞 판에는 여기에 "옛 판정 문자열이 없다"는 감시가 있었는데 **지키는 척만 했다**:
+  //    감시 문자열이 `path.join(cwd, BOARD_FILE)` 인데 옛 판정은 `path.resolve(…)` 였고,
+  //    지금 코드는 `here` 를 만들며 그 표현을 정당하게 쓴다. 다음 사람을 속이는 줄이라
+  //    지우고, 실제로 지켜야 할 성질(합집합 두 갈래가 남아 있는가)로 바꾼다.
+  //    행동층은 아래 차단 칸들이 잰다 - 이 칸은 갈래가 통째로 사라지는 것만 짚는다.
+  const src = readFileSync(join(HOOKS, "pretooluse.js"), "utf8");
+  assert.ok(/abs !== here && abs !== boardRoot\.findBoardPath\(cwd\)/.test(src),
+    "합집합 두 갈래 중 하나가 사라졌다 - 켠 폴더만 보면 뿌리 상황판이, 찾은 자리만 보면 새로 만드는 편집이 차단 밖으로 나간다");
 });
 
 test("이 파일이 없어져도 규칙 6조각은 살아 있다(편의가 안전을 데려가지 않는다)", () => {
@@ -175,6 +176,16 @@ test("이 파일이 없어져도 규칙 6조각은 살아 있다(편의가 안�
   assert.equal(r.status, 0);
   assert.ok(r.stdout.includes("# Stop rules"),
     `상황판 판정 모듈 하나가 규칙 조각을 데려갔다: ${JSON.stringify(r.stdout)}`);
+});
+
+test("모듈이 없을 때 쓰는 대체 객체가 내보내는 칸을 전부 갖는다", () => {
+  // 🛑 빠뜨린 칸은 **모듈이 없을 때만** undefined 라, 나중에 그 칸을 쓰는 코드가 이 갈래에서만
+  //    조용히 어긋난다(가장 늦게 발견되는 방향). 이름 목록으로 양방향 대조한다.
+  const src = readFileSync(join(HOOKS, "pretooluse.js"), "utf8");
+  const block = src.slice(src.indexOf("let boardRoot = {"), src.indexOf("};", src.indexOf("let boardRoot = {")));
+  for (const k of Object.keys(boardRoot))
+    assert.ok(block.includes(k + ":"), `대체 객체에 \`${k}\` 칸이 없다`);
+  assert.ok(block.includes('FILE: "status.md"'), "대체값의 파일 이름이 모듈과 달라졌다");
 });
 
 test("매니페스트에 실려 배포판까지 간다", () => {
@@ -236,7 +247,10 @@ test("행동층: 상황판이 위에 있으면 훅 셋이 **다 같이** 있다�
   // 2) 안내: "없습니다" 가 **안** 나간다
   const pre = runHook("pretooluse.js", delegate(s.nested, "br-h1"), { ...s.env, XDG_CACHE_HOME: cache });
   assert.equal(pre.code, 0);
-  assert.ok(!/작업 상황판/.test(pre.out), "있는데도 없다고 안내했다(같은 세션에서 두 지시가 충돌한다)");
+  // 🛑 "작업 상황판" 이라는 낱말로만 재면 안 된다: 있는 세션에 나가는 안내(경로·§2 사정)도
+  //    그 낱말을 쓴다. **"없습니다" 갈래가 나갔는가**만 본다.
+  assert.ok(!/상황판\(`status.md`\)이 없습니다/.test(pre.out),
+    "있는데도 없다고 안내했다(같은 세션에서 두 지시가 충돌한다)");
 });
 
 test("행동층: 어디에도 없으면 훅 셋이 **다 같이** 없다고 본다", () => {
@@ -246,6 +260,43 @@ test("행동층: 어디에도 없으면 훅 셋이 **다 같이** 없다고 본�
   const pre = runHook("pretooluse.js", delegate(s.nested, "br-i1"), { ...s.env, XDG_CACHE_HOME: cache });
   assert.equal(pre.code, 0);
   assert.match(pre.out, /작업 상황판/, "없는데 안내가 안 나갔다");
+});
+
+test("상황판이 위에 있는 세션은 절대 경로와 §2 를 안 쓴다는 것을 안내받는다", () => {
+  // 얼어붙은 `마지막 확인` 은 "낡았다"로도 "안 돈다"로도 읽혀 눈에 보이는 것만으로는
+  // 신호가 안 된다. 세션당 한 번 말로 알린다.
+  const s = scene("br-say-", { board: true });
+  const r = runHook("pretooluse.js", delegate(s.nested, "br-say1"),
+    { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache11-") });
+  assert.equal(r.code, 0, "안내는 차단이 아니다");
+  assert.ok(r.out.includes(join(s.proj, FILE)), "찾은 상황판의 절대 경로를 안 알려 준다");
+  assert.match(r.out, /§2/, "이 세션이 §2 를 안 쓴다는 사실을 안 알려 준다");
+  assert.ok(!/상황판\(`status.md`\)이 없습니다/.test(r.out), "있는데 없다고 말했다");
+});
+
+test("위에 있는데 여기에 또 만들려 하면 그 자리에서 알린다(본보기 표시가 있어도)", () => {
+  // 🛑 본보기에는 `chageun:auto` 가 있어 `armed` 로 잡히고, 작업방은 뿌리와 같은 무시 규칙을
+  //    공유해 차단이 통과한다. 그 순간부터 기계가 작업방 파일에 쓰고 뿌리 상황판은 멈춘다.
+  const s = scene("br-dup-", { board: true });
+  const r = runHook("pretooluse.js", {
+    tool_name: "Write", cwd: s.nested, session_id: "br-dup1",
+    tool_input: { file_path: join(s.nested, FILE), content: TEMPLATE },
+  }, { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache12-") });
+  assert.equal(r.code, 0, "차단이 아니라 안내다");
+  assert.match(r.out, /이미/, "이미 위에 있다는 말이 없다");
+  assert.ok(r.out.includes(join(s.proj, FILE)), "어디에 있는지 절대 경로를 안 준다");
+});
+
+test("위에 없으면 새로 만드는 편집 안내는 옛 모양 그대로", () => {
+  // 표시 없는 새 파일 → 무시 절차 안내 · 표시 있는 새 파일 → 조용(옛 조건).
+  const s = scene("br-new-");
+  const mk = (content, sid) => runHook("pretooluse.js", {
+    tool_name: "Write", cwd: s.proj, session_id: sid,
+    tool_input: { file_path: join(s.proj, FILE), content },
+  }, { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache13-") });
+  assert.match(mk("# 손으로 만든 판\n", "br-new1").out, /무시 절차/, "표시 없는 새 파일 안내가 사라졌다");
+  const armed = mk(TEMPLATE, "br-new2").out;
+  assert.ok(!/이미/.test(armed), "위에 아무것도 없는데 '이미 있다'고 했다");
 });
 
 test("행동층: 홈의 상황판으로는 훅 셋이 **다 같이** 없다고 본다", () => {
@@ -310,7 +361,7 @@ function srcWithout(prefix, rel) {
 
 const DESTRUCTIVE = { tool_name: "Bash", tool_input: { command: "psql -c 'DROP TABLE users;'" }, cwd: "/srv/app" };
 
-for (const missing of ["hooks/board-root-core.js", "hooks/board-ignore-core.js"]) {
+for (const missing of ["hooks/board-root-core.js", "hooks/board-ignore-core.js", "hooks/tool-ledger-core.js"]) {
   test(`${missing.split("/")[1]} 가 없어도 PreToolUse 차단은 종료코드 2 를 낸다`, () => {
     const hooks = srcWithout("br-miss-", missing);
     const r = spawnSync(process.execPath, [join(hooks, "pretooluse.js")],
@@ -343,11 +394,13 @@ for (const missing of ["hooks/board-root-core.js", "hooks/statusboard-auto-core.
 test("작업방에서 뿌리 상황판에 비밀값을 넣는 편집이 차단된다", () => {
   // 🛑 상황판은 평문 업무 보고서이고 웹으로도 보인다. 접속 정보가 적히는 것을 막는 겹이
   //    이 차단뿐인데, 켠 폴더만 보던 판에서는 작업방 세션의 그 편집이 통째로 밖에 있었다.
-  // ⚠ `.env` 를 **켠 폴더**에 둔다: `collectSecrets` 는 cwd 에서 아래로만 훑고 위로는 안 간다
-  //    (이 판이 안 건드린 별개 한계). 여기서 재는 것은 "그 편집이 차단 대상인가" 한 축이다.
+  // 🛑 `.env` 는 **저장소 뿌리에만** 둔다 - 이것이 실제 작업방 모양이다. `git worktree add` 는
+  //    추적 안 하는 파일을 안 옮기므로 새 작업방에는 `.env` 가 없다. 켠 폴더에 심어 두고 재면
+  //    "차단이 돈다"가 아니라 "심어 둔 것을 봤다"를 재는 검사가 된다(2회차 게이트 지적).
+  //    같은 모양이 `<저장소>/frontend` 처럼 평범한 하위 폴더 세션에도 그대로 있다.
   const s = scene("br-leak-", { board: MARK + "\n| 무엇 | 언제 |\n" });
   const value = "sk-" + "live-3c81d0aa27";              // 가짜 열쇠(값은 보고에 안 적는다)
-  writeFileSync(join(s.nested, ".env"), "DB_URL=" + value + "\n");
+  writeFileSync(join(s.proj, ".env"), "DB_URL=" + value + "\n");
   const r = runHook("pretooluse.js", {
     tool_name: "Edit", cwd: s.nested, session_id: "br-leak1",
     tool_input: { file_path: join(s.proj, FILE), old_string: "| 무엇 | 언제 |", new_string: "| 접속 | " + value + " |" },
@@ -375,6 +428,18 @@ test("작업방에서 git 이 안 막은 뿌리 상황판을 고치면 차단된
   assert.equal(r.code, 2, "안 막힌 뿌리 상황판을 작업방에서 고치는 편집이 통과했다");
   assert.match(r.err, /check-ignore|무시/, "무시 전용 사유가 아니라 다른 차단에 걸렸다");
   assert.ok(!r.err.includes("되돌리기 어려운 고위험 명령"), "일반 문구로 떨어졌다");
+});
+
+test("켠 폴더에만 `.env` 가 있어도 그대로 차단된다(합집합의 다른 쪽)", () => {
+  const s = scene("br-leak2-", { board: MARK + "\n| 무엇 | 언제 |\n" });
+  const value = "sk-" + "live-77aa10bb43";
+  writeFileSync(join(s.nested, ".env"), "DB_URL=" + value + "\n");
+  const r = runHook("pretooluse.js", {
+    tool_name: "Edit", cwd: s.nested, session_id: "br-leak2a",
+    tool_input: { file_path: join(s.proj, FILE), old_string: "| 무엇 | 언제 |", new_string: "| 접속 | " + value + " |" },
+  }, { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache10-") });
+  assert.equal(r.code, 2, "켠 폴더 쪽 사전이 사라졌다");
+  assert.ok(!r.err.includes(value), "차단하면서 값을 다시 적었다");
 });
 
 test("남의 팀 status.md 오차단은 그대로 0(내용 신호가 없으면 안 막는다)", () => {

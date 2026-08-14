@@ -72,7 +72,8 @@ function decide(input) {
 //    다른 훅에서 되살리지 않는다: 늘어난 만큼만 바이트 자리로 읽는다.
 // ⚠ **도구 이름으로 안 거른다.** 읽는 것은 `tool_response` 가 아니라 `transcript_path` 라,
 //    이 절은 "PostToolUse 가 Agent 호출에서도 도는가"에 안 걸린다(안 돌면 다음 호출이 따라잡는다).
-const BOARD_FILE = boardRoot ? boardRoot.FILE : "status.md";
+// 🛑 이름 리터럴을 여기 또 적지 않는다(한 자리는 board-root-core.js 다). 이 값은 autoBoard
+//    안에서만 쓰이고 그 첫 줄이 모듈 부재를 이미 걸러 낸다.
 const TAIL_BYTES = 512 * 1024;          // 자리를 못 믿을 때 다시 보는 꼬리
 const MAX_DELTA = 4 * 1024 * 1024;      // 한 회차에 보는 최대량
 const FP_WINDOW = 64 * 1024;            // 지문 대조용 창
@@ -163,7 +164,7 @@ function autoBoard(input) {
   //    읽기만 한다(있다는 사실은 안내·부록이 이미 알려 준다).
   //    ⚠ 이 한 줄이 **읽기와 쓰기의 경계**다. 지우면 겹쳐 쓰기가 그날로 돌아온다.
   if (path.resolve(cwd) !== boardDir) return;
-  const board = path.join(boardDir, BOARD_FILE);
+  const board = path.join(boardDir, boardRoot.FILE);
 
   const size = fs.statSync(tpath).size;
   let from = Number(st.offset) || 0;
