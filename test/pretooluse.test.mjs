@@ -297,11 +297,21 @@ test("(아) rm 인자의 따옴표 조각·종결자는 대상이 아니다: 되
   assert.equal(bash('rm -rf ";" /*'), "rm-recursive", "인자 안에 낀 따옴표 조각");
   assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive", "대조군: 이스케이프 종결자");
   assert.equal(bash("find / -exec rm -rf {} +"), "rm-recursive", "대조군: 맨 `+`");
-  // 반대 방향(이 판정의 값이 걸린 자리): **맨 이름 폴더는 그냥 상대 경로다.** 이것을 "대상이 아니다"로
-  //   읽으면 온 명령 검사로 되돌아가 옆 자리 글자에 막힌다 = 이 판이 고친 실측 오차단이 되돌아온다.
+  // 반대 방향 ①: **맨 이름 폴더는 그냥 상대 경로다.** 이것을 "대상이 아니다"로 읽으면 온 명령
+  //   검사로 되돌아가 옆 자리 글자에 막힌다 = 이 판이 고친 실측 오차단이 되돌아온다.
+  //   🛑 이 세 줄이 `RM_PATHISH` 에서 `^[\w./~]` 갈래를 붙든다. 빼면 빨개진다.
   assert.equal(bash("rm -rf build && cd .."), null, "맨 이름도 지울 대상이다");
   assert.equal(bash("rm -rf png && mkdir -p png"), null);
   assert.equal(bash("rm -rf node_modules && cd .."), null);
+  // 반대 방향 ②: **변수로 조립한 경로.** 첫 글자가 `$`·따옴표라 "첫 글자만" 보는 판정에서 빠진다.
+  //   🛑 이 축이 검사에 없어서 회귀가 조용히 지나갔다(5회차 · 게이트가 40개 사례 대조로 잡음).
+  //   이 네 줄이 `RM_PATHISH` 에서 `[/]` 갈래를 붙든다. 빼면 빨개진다.
+  assert.equal(bash("rm -rf $S/bt4 && cd .."), null, "변수로 조립한 하위 경로");
+  assert.equal(bash('rm -rf "$HOME/x/build" && cd ..'), null, "따옴표 씌운 변수 경로");
+  assert.equal(bash("rm -rf ${TMPDIR}/scratch && cd .."), null, "중괄호 변수 경로");
+  assert.equal(bash("S=/tmp/x && rm -rf $S/bt4 $S/bt5"), null, "변수 경로 여럿");
+  // 단 변수만 있고 슬래시가 없으면(= 지울 곳을 여기서 알 수 없다) 안전측으로 되돌아간다.
+  assert.equal(bash("rm -rf $TARGET && cd .."), "rm-recursive", "슬래시 없는 맨 변수는 불투명이다");
 });
 
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
