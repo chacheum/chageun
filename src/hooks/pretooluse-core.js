@@ -23,10 +23,11 @@ const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/
 //
 //   반대로 **못 잡는 것도 있다**(이 판이 지운 검사 줄이 그 증거 · 지금 설치본도 같이 통과시킨다 ·
 //   새로 생긴 구멍이 아니다): 위험 대상 표기(`RM_DANGER_TARGET`)가 `/` 뒤에 공백·줄끝·별표만
-//   인정해서 `;` 처럼 다른 글자가 오면 안 걸린다.
+//   인정해서 `;` 처럼 다른 글자가 오면 안 걸린다. `.` 는 규칙이 조금 다르다(줄 끝까지 가야 한다).
 //     `if true; then rm -rf /; fi`      - 셸 제어문 안에 있어도 그대로 실행된다
 //     `for f in a b; do rm -rf /; done` - 반복문 안도 같다
-//     `rm -rf . && ls`                  - `.` 뒤에 공백이 아니라 ` &&` 가 와서 못 잡는다
+//     `rm -rf . && ls`                  - `.` 는 뒤에 공백만 있고 명령이 거기서 끝나야 잡는다.
+//                                          `&& ls` 가 이어져서 못 걸린다.
 //   ⚠ **여기를 좁히려면 계획서를 먼저 읽어라.** 인자 구간을 자르는 순간 자르는 쪽과 읽는 쪽
 //   두 자리가 생기고, 네 번 다 그 사이가 벌어졌다. 한 줄짜리 수정으로 될 자리가 아니다.
 function rmHitsDangerTarget(cmd) {
@@ -1899,6 +1900,6 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
-// `rmHitsDangerTarget` export: 지금은 이 파일 안(위 545행 부근)에서만 쓴다. 밖에서 부르는 데는
+// `rmHitsDangerTarget` export: 지금은 이 파일 안(`block()` 안)에서만 쓴다. 밖에서 부르는 데는
 //   아직 없다 - 다음 판(인자 구간 좁히기)이 다시 쓴다. 다음 판 대비로 export를 남겨 둔다.
 module.exports = { executableText, rmHitsDangerTarget, statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };
