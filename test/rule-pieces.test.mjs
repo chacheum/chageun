@@ -198,16 +198,103 @@ test("변형은 서로 다른 글을 낸다 — 이름만 늘리고 render 가 �
 
 // 훅이 고른 변형이 등록된 이름 안에 있어야 한다. variantOf 가 목록 밖 이름을 내면 render 가
 // 기본 갈래로 떨어져 **매트릭스가 한 번도 안 재 본 글**이 실제로 주입된다.
+// CTXS 는 등록부의 sampleCtx/sampleCtxOff 에서 뽑는다(손으로 사본을 안 늘린다). 단
+// "표식깨짐" 변형(boardMarkersIntact:false)은 어느 등록부 예시에도 없다 — sampleCtx/sampleCtxOff 는
+// applies() 참·거짓만 가르면 되고 boardMarkersIntact 값은 안 가르기 때문이다. 그래서 statusboard 의
+// sampleCtx 를 베끼되 그 한 칸만 뒤집는다(등록부에서 파생 — 칸 이름을 손으로 다시 안 적는다:
+// boardMarkersIntact 를 나중에 개명하면서 이 줄만 잊으면 옛 이름이 안 남는다).
 test("variantOf 는 등록된 변형 이름만 낸다", () => {
+  const statusboard = core.APPENDICES.find((a) => a.id === "statusboard");
   const CTXS = [
-    { env: {}, board: false, boardMarkersIntact: true },
-    { env: { CHAGEUN_UNATTENDED: "1" }, board: true, boardMarkersIntact: true },
-    { env: { CHAGEUN_UNATTENDED: "1" }, board: true, boardMarkersIntact: false },
+    ...core.APPENDICES.flatMap((a) => [a.sampleCtx, a.sampleCtxOff]),
+    { ...statusboard.sampleCtx, boardMarkersIntact: false }, // 표식깨짐 전용
   ];
   for (const a of core.APPENDICES)
     for (const ctx of CTXS)
       assert.ok(a.variants.includes(a.variantOf(ctx)),
         `부록 "${a.id}" 의 variantOf 가 등록 밖 이름 "${a.variantOf(ctx)}" 를 냈다`);
+});
+
+// 🛑 등록부의 `applies` 는 어떤 검사도 부르지 않았다 — 그래서 "등록은 됐는데 조건이 영원히
+//    거짓이라 한 번도 안 붙는 부록"이 생겨도 볼 자리가 0곳이었다(D-2). sampleCtx/sampleCtxOff 는
+//    등록부 자신이 들고 있는 값이라, 검사가 기대값을 스스로 지어내는 자기참조가 아니다 —
+//    실제로 applies() 를 두 방향(참·거짓)으로 실행해 결과를 잰다.
+// 🛑 정직 회계: 이 두 검사는 `sampleCtx`/`sampleCtxOff` 를 **손으로 쓴 값**으로 잰다. 그 필드를
+//    activate.js 가 실제로 채우는지는 안 잰다 — 훅이 안 만드는 필드(예: 아무도 안 읽는 env 이름)를
+//    조건이 읽어도 sampleCtx 를 그 조건에 맞춰 나란히 손으로 쓰면 여기서는 계속 초록이다.
+//    그 구멍은 훅 stdout 을 직접 재는 test/activate.test.mjs · test/statusboard-activate.test.mjs 가
+//    막는다. 아래 "칸 이름이 buildCtx 안에 들어간다" 검사도 칸 **이름**만 맞추지, 훅이 그 조건에
+//    맞는 **값**을 실제로 채우는지는 못 잰다.
+test("등록부의 모든 칸에 applies 를 참으로 만드는 예시가 있다 — 없으면 그 부록은 영원히 안 붙어도 못 잡는다", () => {
+  for (const a of core.APPENDICES) {
+    assert.ok(a.sampleCtx, `부록 "${a.id}" 에 sampleCtx 가 없다 — applies 조건을 참으로 만드는 예시 ctx 를 등록부에 추가해라.`);
+    assert.equal(a.applies(a.sampleCtx), true,
+      `부록 "${a.id}" 의 sampleCtx 로 applies() 를 불렀는데 참이 아니다 — ` +
+      "이 조건은 실제로 한 번도 참이 될 수 없을 가능성이 있다(영원히 안 붙는 부록). " +
+      "또는 applies 가 true/false 가 아닌 값을 냈다(이 검사는 엄격한 boolean 을 요구한다 — " +
+      "훅(activate.js)은 `if (!applies(ctx))` 라 truthy 면 충분하지만, 이 검사는 그보다 엄격하다).");
+  }
+});
+
+test("등록부의 모든 칸에 applies 를 거짓으로 만드는 예시도 있다 — 한쪽만 재면 조건을 아무 값으로나 바꿔도 초록이다", () => {
+  for (const a of core.APPENDICES) {
+    assert.ok(a.sampleCtxOff, `부록 "${a.id}" 에 sampleCtxOff 가 없다 — applies 조건을 거짓으로 만드는 예시 ctx 를 등록부에 추가해라.`);
+    assert.equal(a.applies(a.sampleCtxOff), false,
+      `부록 "${a.id}" 의 sampleCtxOff 로 applies() 를 불렀는데 거짓이 아니다 — ` +
+      "조건이 거짓을 낼 수 없다면(늘 붙는 부록이라면) 등록부에서 그 사실을 밝히고 이 검사를 그에 맞게 고쳐야 한다. " +
+      "또는 applies 가 true/false 가 아닌 값을 냈다(이 검사는 엄격한 boolean 을 요구한다 — " +
+      "훅(activate.js)은 `if (!applies(ctx))` 라 falsy 면 충분하지만, 이 검사는 그보다 엄격하다).");
+  }
+});
+
+// [medium] 처방: sampleCtx/sampleCtxOff 의 칸 **이름**이 진짜 ctx(buildCtx 결과) 칸 이름 안에
+// 들어가는지 대조한다. 새 부록이 진짜 ctx 에 없는 필드(오타·상상 필드)를 예시에 적으면 여기서 잡는다.
+// 🛑 이 검사가 못 잡는 것: 칸 **이름**만 맞추지, 훅이 그 조건에 맞는 **값**을 실제로 채우는지는
+//    안 잰다(위 정직 회계 참고).
+test("sampleCtx·sampleCtxOff 의 칸 이름이 진짜 ctx(buildCtx) 칸 안에 들어간다", () => {
+  // buildCtx({}) 로 부른다: 열쇠(키)는 함수 리터럴이 정하지 인자 값과 무관하다는 사실을 코드로 보인다.
+  // 인자를 채워 넣으면(예: boardServer:"") buildCtx 가 나중에 조건부로 칸을 넣는 꼴로 바뀔 때
+  // 그 값 때문에 엉뚱한 빨간불이 뜰 수 있다.
+  const realKeys = Object.keys(core.buildCtx({}));
+  for (const a of core.APPENDICES) {
+    for (const key of Object.keys(a.sampleCtx))
+      assert.ok(realKeys.includes(key),
+        `부록 "${a.id}" 의 sampleCtx 에 진짜 ctx 에 없는 칸 "${key}" 이 있다. ` +
+        `진짜 칸은 ${realKeys.join(", ")} 뿐이다.`);
+    for (const key of Object.keys(a.sampleCtxOff))
+      assert.ok(realKeys.includes(key),
+        `부록 "${a.id}" 의 sampleCtxOff 에 진짜 ctx 에 없는 칸 "${key}" 이 있다. ` +
+        `진짜 칸은 ${realKeys.join(", ")} 뿐이다.`);
+  }
+});
+
+// [medium] buildCtx({ env, board, boardMarkersIntact, boardServer }) 는 인자를 이름으로 뽑아
+// 같은 이름의 새 객체를 낸다 - 그래서 칸 이름이 두 자리(activate.js 호출부의 인자 이름 ·
+// activate-core.js 의 함수 리터럴)에 따로 적힌다. 둘이 어긋나면 오류 없이 그 칸이 undefined 가
+// 된다(호출부가 안 채운 이름은 그냥 없는 프로퍼티가 되어 조용히 넘어간다). 위 검사는 함수
+// 쪽만 보므로 이 어긋남을 못 잡는다 - 그래서 activate.js 소스 글을 읽어 호출부의 칸 이름을
+// 직접 뽑아 대조한다(이 저장소가 이미 쓰는 방식: 소스 글을 앵커로 삼기).
+// 🛑 `matchAll` 로 **모든** core.buildCtx({...}) 호출을 돈다(`.match` 로 첫 하나만 보면, 나중에
+//    같은 파일에 두 번째 호출이 생기고 거기서 칸 이름을 하나 틀려도 경보 없이 넘어간다).
+test("activate.js 호출부가 넘기는 칸 이름이 buildCtx 의 칸 이름과 같다 - 어긋나면 그 칸이 조용히 undefined 가 된다", () => {
+  const activateSrc = readFileSync(join(ROOT, "src", "hooks", "activate.js"), "utf8");
+  const callMatches = [...activateSrc.matchAll(/core\.buildCtx\(\{([\s\S]*?)\}\)/g)];
+  assert.ok(callMatches.length > 0, "activate.js 에서 core.buildCtx({...}) 호출을 못 찾았다 - 자리를 옮겼으면 위 정규식도 같이 고쳐라");
+  const definedKeys = Object.keys(core.buildCtx({})).sort();
+  callMatches.forEach((callMatch, i) => {
+    const calledKeys = [...callMatch[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]).sort();
+    // 이 정규식은 줄 앞머리에 `이름:` 이 오는 여러 줄 꼴만 읽는다. calledKeys 가 비면 코드가
+    // 아니라 이 정규식이 그 호출을 못 읽는 것이다 - 아래 deepEqual 이 "칸이 다르다"고 잘못
+    // 짚기 전에 먼저 여기서 원인을 밝힌다.
+    assert.ok(calledKeys.length > 0,
+      `activate.js 의 core.buildCtx 호출 ${i + 1}번째에서 칸 이름을 하나도 못 읽었다. ` +
+      "이 검사는 줄 앞머리에 `이름:` 이 오는 여러 줄 꼴만 읽는다 - 호출을 한 줄로 합쳤거나 " +
+      "짧은 표기(`{ env, board }`)로 바꿨다면, 코드가 아니라 이 검사의 정규식을 고쳐라. " +
+      "(호출부는 여러 줄 `이름:` 꼴을 유지해라.)");
+    assert.deepEqual(calledKeys, definedKeys,
+      `activate.js 의 core.buildCtx 호출 ${i + 1}번째가 넘기는 칸(${calledKeys.join(", ")})과 ` +
+      `buildCtx 정의의 칸(${definedKeys.join(", ")})이 다르다. 한쪽만 고치면 다른 쪽 칸이 조용히 undefined 가 된다.`);
+  });
 });
 
 // ── 자리 참조 가드 ───────────────────────────────────────────────────────────

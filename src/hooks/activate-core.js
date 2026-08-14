@@ -72,27 +72,53 @@ function renderStatusboard(text, variant, ctx) {
 // (test/rule-pieces.test.mjs): 주입은 되는데 등록이 안 된 부록이 생기면 그 부록은
 // 조합 매트릭스에도 바이트 예산에도 안 잡힌다. 이번 사고와 같은 방향의 구멍이다.
 //
-// 등록부 한 칸이 갖는 것 넷:
-//   applies(ctx)    조건이 맞나. ctx 는 activate.js 가 모아 준 **바깥 사실**(env · 파일 존재 여부).
+// 진짜 ctx 를 만드는 자리. activate.js:66~73 이 만들던 것과 **글자 그대로 같은 것**을 낸다
+// (test/activate.test.mjs · test/statusboard-activate.test.mjs 가 훅 stdout 으로 확인한다).
+// 여기로 옮긴 이유는 하나: 등록부의 sampleCtx/sampleCtxOff 가 이 함수의 결과 칸과 같은
+// 이름을 쓰는지 검사(test/rule-pieces.test.mjs)가 대조할 수 있게 하려는 것뿐이다.
+// fs 를 안 쓴다: board·boardMarkersIntact·boardServer 는 activate.js 가 이미 구해서 넘긴다.
+function buildCtx({ env, board, boardMarkersIntact, boardServer }) {
+  return { env, board, boardMarkersIntact, boardServer };
+}
+
+// 등록부 한 칸이 갖는 것 여섯:
+//   applies(ctx)    조건이 맞나. ctx 는 activate.js 가 모아 준 **바깥 사실**(env, 파일 존재 여부).
 //   variants        조건이 맞았을 때 낼 수 있는 **서로 다른 글**의 이름들. 조합 매트릭스가
 //                   이 목록에서 자동으로 늘어난다(부록 하나가 만드는 상태 = 꺼짐 1 + 변형 수).
 //   variantOf(ctx)  ctx 를 보고 그중 어느 변형인지 고른다. 훅이 부른다.
 //   render(t,v,ctx) 원문을 그 변형의 최종 글로 다듬는다. **훅과 검사가 이 함수를 같이 부른다**:
 //                   검사가 자기 나름의 다듬기를 다시 짜면 실제 주입되는 글과 다른 것을 재게 된다.
+//   sampleCtx       `applies` 를 **참으로 만드는** 예시 ctx. test/rule-pieces.test.mjs 가 이 값으로
+//                   `applies(sampleCtx) === true` 를 확인한다. 조건이 영원히 거짓인 칸(등록은 됐지만
+//                   한 번도 안 붙는 부록)을 잡기 위함이다. 없으면 그 검사가 빨간불을 낸다.
+//   sampleCtxOff    `applies` 를 **거짓으로 만드는** 예시 ctx. 한쪽만 재면 조건을 아무 값으로나
+//                   (`() => true` 등) 바꿔도 검사가 초록이 되므로, 반대 방향도 함께 잰다.
+// 🛑 정직 회계: sampleCtx/sampleCtxOff 는 **손으로 쓴 값**이다. 그 필드를 activate.js 가
+//    실제로 채우는지는 이 등록부도, 그 값을 읽는 검사도 안 잰다(칸 이름이 buildCtx 결과 안에
+//    있는지는 재지만, 훅이 그 조건에 맞는 값을 실제로 넣어 주는지는 못 잰다). 훅이 안 만드는
+//    필드를 조건이 읽어도(예: 존재하지 않는 env 변수 이름) 여기서는 초록일 수 있다. 그 구멍을
+//    닫는 것은 훅 stdout 을 직접 재는 test/activate.test.mjs · test/statusboard-activate.test.mjs 쪽이다.
 // 🛑 변형을 늘리면서 render 가 그 이름으로 갈라지지 않으면, 매트릭스는 늘어나는데 두 칸이
 //    같은 글을 재는 헛검사가 된다. test/rule-pieces.test.mjs 가 변형끼리 글이 다른지 본다.
+// 경로 모양이 아닌 값으로 둔다: 경로처럼 적으면 "sampleCtx 로 렌더까지 재는구나"로 오해할 수 있다.
+// applies()·variantOf() 는 이 값을 안 읽는다(둘 다 boardServer 를 안 본다) - 자리 채우기일 뿐이다.
+const SAMPLE_BOARD_SERVER = "(예시)";
 const APPENDICES = [
   { id: "unattended", file: "unattended-appendix.md",
     applies: (ctx) => ctx.env.CHAGEUN_UNATTENDED === "1",
     variants: ["only"],
     variantOf: () => "only",
-    render: (text) => text },
+    render: (text) => text,
+    sampleCtx: { env: { CHAGEUN_UNATTENDED: "1" }, board: false, boardMarkersIntact: true, boardServer: SAMPLE_BOARD_SERVER },
+    sampleCtxOff: { env: {}, board: false, boardMarkersIntact: true, boardServer: SAMPLE_BOARD_SERVER } },
   // 🛑 무인 **다음**에 등록한다. 등록 순서 = 붙는 순서이고, 무인 안전 규칙이 먼저 읽혀야 한다.
   { id: "statusboard", file: "statusboard-appendix.md",
     applies: (ctx) => ctx.board === true,
     variants: ["표식온전", "표식깨짐"],
     variantOf: (ctx) => (ctx.boardMarkersIntact ? "표식온전" : "표식깨짐"),
-    render: renderStatusboard },
+    render: renderStatusboard,
+    sampleCtx: { env: {}, board: true, boardMarkersIntact: true, boardServer: SAMPLE_BOARD_SERVER },
+    sampleCtxOff: { env: {}, board: false, boardMarkersIntact: true, boardServer: SAMPLE_BOARD_SERVER } },
 ];
 
 // 부록 조각의 번호. 본문 조각 뒤 한 자리.
@@ -139,5 +165,5 @@ module.exports = {
   PIECES, sectionsOf, bodyOfPiece,
   PIECE_MAX_CHARS, CLI_TRUNCATION_CHARS, APPENDICES, APPENDIX_PIECE,
   BOARD_SERVER_SLOT, APPENDIX_SPLIT, renderStatusboard,
-  LEGACY_HEADER, ROSTER, headerFor, assemble,
+  LEGACY_HEADER, ROSTER, headerFor, assemble, buildCtx,
 };

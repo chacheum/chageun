@@ -63,14 +63,16 @@ try {
     process.stderr.write("chageun: 상황판 판정 모듈을 못 불렀다(board-root-core.js): " + err.message + "\n");
   }
   const hasBoard = boardPath !== null;
-  const ctx = {
+  // CLAUDE_PLUGIN_ROOT 는 Bash 도구에서 비어 있다(실측). 훅에서는 채워지므로 그때
+  // 절대 경로를 박아 넣어 그 구멍을 피한다.
+  // 조립은 core.buildCtx 에 맡긴다: 등록부의 sampleCtx/sampleCtxOff(test/rule-pieces.test.mjs)가
+  // 이 함수의 결과 칸과 이름을 대조할 수 있어야 하기 때문이다. 값·칸은 그대로다(자리만 옮겼다).
+  const ctx = core.buildCtx({
     env: process.env,
     board: hasBoard,
     boardMarkersIntact: hasBoard ? markersIntact(boardPath) : true,
-    // CLAUDE_PLUGIN_ROOT 는 Bash 도구에서 비어 있다(실측). 훅에서는 채워지므로 그때
-    // 절대 경로를 박아 넣어 그 구멍을 피한다.
     boardServer: path.join(root, "skills", "statusboard", "board-server.mjs"),
-  };
+  });
   // 조건이 맞는 부록만 읽는다(일반 세션 상시 비용 0).
   // 🛑 부록은 **반드시 이 등록부를 지난다.** 여기 말고 다른 자리에서 파일을 하나 더 이어 붙이면
   //    그 글은 실제로 주입되면서 조합 매트릭스에도 바이트 예산에도 안 잡힌다
