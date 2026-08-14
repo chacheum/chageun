@@ -12,14 +12,48 @@ const os = require("os");
 const { block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, gateModelBlock, subagentGateSpawn, approvedDesignVariant, planScaleBlock, approvedBigPlan, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCapReached, statusboardTrigger } = require("./pretooluse-core.js");
 const { isDesignScanTarget, parseAllowColors, scanColors, violationsForEdit, readDesignDoc } = require("./design-scan-core.js");
 const componentBoundary = require("../skills/design-system/component-boundary-core.cjs");
-// ⚠ 이 require 가 실패하면 **PreToolUse 하드 차단 전부가 한꺼번에 꺼진다**(모듈 로드 시점 예외는
+// ⚠ 위 require 들이 실패하면 **PreToolUse 하드 차단 전부가 한꺼번에 꺼진다**(모듈 로드 시점 예외는
 //   아래 stdin 핸들러 밖이라 어떤 try/catch 도 못 잡는다). 배포판에 실리는지는 매니페스트
 //   `components.hooks` 가 정하고, test/build.test.mjs 의 existsSync 한 줄이 그 그물이다.
-const { unknownToolNotice, unknownToolMessage } = require("./tool-ledger-core.js");
-// v0.65.0 F-27(상황판). 무시 판정은 **별도 모듈**이다: 코어는 "순수 판정 로직 · fs 없음"이
-//   계약이라 git 호출이 들어가면 그 계약이 깨지고, posttooluse 가 판정 하나 때문에 코어
-//   전체를 끌어오게 된다. 소유는 여기(PreToolUse)이고 PostToolUse 는 쓰기만 한다.
-const { boardIgnoreVerdict } = require("./board-ignore-core.js");
+// 🛑 이것도 감싼다(아래 상황판 모듈과 **같은 기준**). 이 모듈이 먹이는 것은 §4.9 부드러운
+//   알림 한 줄뿐인 **순수 편의**인데, 최상위 require 면 파일 하나가 없어질 때 하드 차단이
+//   전부 꺼진다. 위 `componentBoundary` 등은 차단의 본체라 일부러 안 감싼다(없으면 차단이
+//   없는 것이라 조용히 통과시키면 안 되고 죽는 편이 옳다).
+let unknownToolNotice = () => null, unknownToolMessage = () => "";
+try {
+  ({ unknownToolNotice, unknownToolMessage } = require("./tool-ledger-core.js"));
+} catch (e) {
+  process.stderr.write("chageun: 도구 장부 모듈을 못 불렀다(차단은 그대로 산다): " + e.message + "\n");
+}
+// v0.65.0 F-27(상황판).
+// 🛑 **상황판 계열 require 는 감싼다.** 최상위 require 는 모듈 로드 시점에 던져서 아래 어떤
+//   try/catch 도 못 잡고, 이 훅이 종료코드 1 로 죽는다. 하네스는 2가 아니면 "막지 않는 오류"로
+//   보고 도구를 그대로 실행하므로, 파일 하나가 없어지는 순간 **비밀값·push·무인 park·디자인 색·
+//   컴포넌트 경계 차단이 그 세션 내내 통째로 꺼진다** - 화면에는 아무 표시도 안 난다(실측:
+//   모듈 있을 때 exit 2 차단 · 없을 때 exit 1 통과). 상황판은 안전 장치가 아니라 편의라,
+//   못 부르면 **상황판 기능만 잠들고 차단은 산다**는 것이 기준이다.
+//   대체값은 전부 "아무것도 아니다" 쪽이다: 안내를 안 내고(경계로 봄), 상황판 대상이 없다고 보고,
+//   무시 판정은 계약대로 "unknown"(PreToolUse 에서 통과)이다.
+//   🛑 이 그물을 `pretooluse-core.js` 같은 **판정 본체**로 넓히지 말 것: 그것이 없으면 차단이
+//   없는 것이라 조용히 통과시키면 안 되고, 죽는 편이 옳다.
+let boardIgnoreVerdict = () => "unknown";
+//   🛑 대체 객체는 **내보내는 것을 전부** 갖는다. 빠뜨린 칸은 모듈이 없을 때만 `undefined` 라,
+//   나중에 그 칸을 쓰는 코드가 이 갈래에서만 조용히 어긋난다(가장 늦게 발견되는 방향).
+let boardRoot = {
+  FILE: "status.md", MAX_UP: 0, BOUNDARY_NAMES: [],
+  isBoundaryDir: () => true, homeDirOf: () => "",
+  findBoardDir: () => null, findBoardPath: () => null,
+};
+try {
+  // 무시 판정은 **별도 모듈**이다: 코어는 "순수 판정 로직 · fs 없음"이 계약이라 git 호출이
+  //   들어가면 그 계약이 깨지고, posttooluse 가 판정 하나 때문에 코어 전체를 끌어오게 된다.
+  //   소유는 여기(PreToolUse)이고 PostToolUse 는 쓰기만 한다.
+  ({ boardIgnoreVerdict } = require("./board-ignore-core.js"));
+  // "상황판이 있나 · 어디인가"는 훅 셋이 **같은 답**을 내야 한다(board-root-core.js 머리 주석).
+  boardRoot = require("./board-root-core.js");
+} catch (e) {
+  process.stderr.write("chageun: 상황판 모듈을 못 불렀다(차단은 그대로 산다): " + e.message + "\n");
+}
 const { collectSecrets, findLeaks } = require("./secret-scan-core.js");
 
 // P1 리마인더 대상 도구(코드 수정류).
@@ -168,7 +202,8 @@ function prReviewerRan(transcriptPath) {
 
 // ── 공용 component 경계(Claude 편집 시점 hard block) ────────────────────────
 // ── 상황판(v0.65.0 F-27) ────────────────────────────────────────────────────
-// 하드 차단 둘이 보는 대상은 **켠 폴더의 `status.md` 이면서 실제로 상황판인 파일**이다.
+// 하드 차단 둘이 보는 대상은 **이 세션의 `status.md`(켠 폴더 자리 또는 위에서 찾은 그 파일)
+// 이면서 실제로 상황판인 파일**이다.
 // 판정이 두 겹인 이유: 경로만 보면 **저장소 루트에 원래부터 `status.md` 를 두고 git 으로
 //   추적하는 프로젝트**가 정확히 그 경로다. 차근은 공개 플러그인이고 이 차단에는 탈출구가
 //   없어, 그 팀 문서를 고치려는 모든 편집이 막히고 차단 문구가 **남의 문서를 저장소에서
@@ -176,7 +211,7 @@ function prReviewerRan(transcriptPath) {
 // 내용 신호로 `chageun:auto` 를 쓰는 이유: 본보기 골격의 **기계가 읽는 부분**이고 정확한
 //   리터럴 하나라 판정을 새로 짤 일이 없다. 머리 표시(`chageun:auto:head`)에도 들어 있는
 //   조각이라 반쯤 마이그레이션된 상황판도 그대로 무장된다.
-const BOARD_FILE = "status.md";
+const BOARD_FILE = boardRoot.FILE;
 const BOARD_MARK = "chageun:auto";
 const BOARD_HEAD_BYTES = 512 * 1024;   // 표시는 파일 앞쪽에 있다
 
@@ -208,7 +243,18 @@ function boardHasMark(abs) {
 function boardTargetOf(name, ti, cwd) {
   if (!COMPONENT_EDIT_RE.test(String(name || ""))) return null;
   const abs = ti && ti.file_path ? path.resolve(cwd, ti.file_path) : null;
-  if (!abs || abs !== path.resolve(cwd, BOARD_FILE)) return null;
+  // 🛑 **제품이 가리키는 그 상황판**을 대상으로 삼는다. 켠 폴더만 보면 작업방·하위 폴더
+  //    세션이 뿌리 상황판을 고치는 편집이 통째로 차단 밖으로 나간다: 상황판은 평문 업무
+  //    보고서이고 웹으로도 보이는데, 거기 접속 정보가 적히는 것을 막는 겹이 이 차단뿐이다.
+  //    (옛 판에서는 그 세션에 "여기엔 없으니 만들어라" 안내가 떠 작업방 안에 새로 만들었고,
+  //     그 파일이 곧 `cwd/status.md` 라 차단이 덮었다. 이제 뿌리 파일이 유일한 정답이다.)
+  // 🛑 켠 폴더 자리(`here`)도 **함께** 본다. 찾은 것으로 갈아 끼우기만 하면 상황판이 아직
+  //    없을 때 `findBoardPath` 가 null 이라, **지금 만드는 편집**이 대상에서 빠져 4.5c 안내가
+  //    영영 안 나간다. 둘의 합집합이라 옛 판정의 상위집합이다 - 새 오차단은 안 생긴다.
+  // 비용: 이름이 `status.md` 일 때만 위로 걷는다. 보통 편집은 basename 비교에서 끝난다.
+  if (!abs || path.basename(abs) !== BOARD_FILE) return null;
+  const here = path.resolve(cwd, BOARD_FILE);
+  if (abs !== here && abs !== boardRoot.findBoardPath(cwd)) return null;
   const exists = fs.existsSync(abs);
   const armed = (exists && boardHasMark(abs)) || boardNewText(name, ti).indexOf(BOARD_MARK) !== -1;
   return { abs, exists, armed };
@@ -700,8 +746,17 @@ process.stdin.on("end", () => {
     try {
       boardTarget = boardTargetOf(name, ti, input.cwd || process.cwd());
       if (boardTarget && boardTarget.armed) {
-        const cwd = input.cwd || process.cwd();
-        const secrets = collectSecrets(cwd);
+        const cwd = path.resolve(input.cwd || process.cwd());
+        // 🛑 **비밀값 사전은 대상 파일을 따라간다.** `collectSecrets` 는 준 폴더에서 아래로만
+        //    2단 훑고 위로는 안 간다: 대상이 뿌리 상황판인데 사전을 켠 폴더에서 모으면,
+        //    `.env` 가 없는 작업방(git 이 안 들고 다닌다)이나 `<저장소>/frontend` 같은 하위
+        //    폴더 세션에서 **목록이 비어 findLeaks 가 아예 안 불리고 편집이 그대로 나간다.**
+        //    두 곳을 합친다(같은 폴더면 한 번만): 넓은 쪽이 안전측이고, 이 자리는 무장된
+        //    상황판 편집일 때만 도는 곳이라 비용이 문제되지 않는다.
+        const boardDir = path.dirname(boardTarget.abs);
+        const secrets = cwd === boardDir
+          ? collectSecrets(cwd)
+          : [...collectSecrets(cwd), ...collectSecrets(boardDir)];
         const leaks = secrets.length ? findLeaks(boardNewText(name, ti), secrets) : [];
         // 값은 절대 다시 안 적는다: 걸린 **열쇠 이름만** 붙인다.
         if (leaks.length) return deny("statusboard-secret", false, [...new Set(leaks)].slice(0, 8).join(", "));
@@ -784,21 +839,34 @@ process.stdin.on("end", () => {
     //    시도한다(양보는 미룸이지 취소가 아니다).
     //    ⚠ 위임 갈래에는 `file_path` 가 없다. 삼항이 빠지면 path.resolve 가 TypeError 를
     //    내고 이 절의 try/catch 가 조용히 삼켜, **위임만 하는 세션에서 안내가 영영 안 나간다.**
+    //    🛑 "없다" 판정은 **켠 폴더 한 곳이 아니라** board-root-core.js 가 짓는다. 켠 폴더만
+    //    보면 작업방(`<repo>/.claude/worktrees/<이름>`)이나 하위 폴더에서 켠 세션이 저장소
+    //    뿌리의 상황판을 못 보고 "없으니 만들어라"를 낸다 - 세션 시작 부록은 같은 세션에서
+    //    "있으니 갱신하라"를 이미 낸 뒤다. 그 말을 따르면 작업방 안에 상황판이 한 장 더 생기고
+    //    기계가 채우는 칸이 새 파일로 가, 사용자가 웹으로 보던 원래 상황판이 조용히 멈춘다.
+    //    🛑 갈래가 **둘**이다. 상황판이 위에 있는 세션에는 "없다"가 아니라 **다른 말**이 필요하다:
+    //    그 세션은 §2 를 안 쓴다(posttooluse 의 읽기/쓰기 경계). 아무 말도 안 하면 사용자는 웹에서
+    //    얼어붙은 `마지막 확인` 을 보고 "아무것도 안 돌고 있다"로 읽는다 - 얼어붙은 값은 "낡았다"
+    //    로도 "안 돈다"로도 읽혀서 눈에 보이는 것만으로는 신호가 안 된다. 두 갈래는 서로
+    //    배타라 세션당 한 번 규율(claimBoardNotice)은 그대로다.
     if (!reminderEmitted && !IS_SUBAGENT) {
       try {
-        const cwd = input.cwd || process.cwd();
-        const home = os.homedir();
+        const cwd = path.resolve(input.cwd || process.cwd());
         const abs = ti.file_path ? path.resolve(cwd, ti.file_path) : null;   // 상대경로 오판 방지
-        if (statusboardTrigger(name, abs, ti)
-            && cwd !== home && cwd !== "/" && cwd !== "/home"
-            && !fs.existsSync(path.join(cwd, BOARD_FILE))) {
+        let msg = null;
+        if (statusboardTrigger(name, abs, ti) && !boardRoot.isBoundaryDir(cwd)) {
+          const dir = boardRoot.findBoardDir(cwd);
+          if (dir === null) {
+            msg = "차근 안내: 이 프로젝트에는 작업 상황판(`status.md`)이 없습니다. 뒤에서 돌 일이 생기거나 사용자가 결정할 것이 생기는 일이면 지금 만드는 것이 좋습니다: 파일 하나를 15분 안에 고치고 끝나는 일이면 안 만들어도 됩니다. **상황판을 만들기로 정했으면 파일부터 만들지 말고 `chageun:statusboard` 를 먼저 열어 git 무시 절차부터 밟으세요**(안 그러면 이 평문 보고서가 저장소에 올라갑니다).";
+          } else if (dir !== cwd) {
+            msg = "차근 안내: 이 세션의 작업 상황판은 `" + path.join(dir, boardRoot.FILE) + "` 입니다(켠 폴더가 아니라 몇 단 위입니다). **여기에 새로 만들지 마세요** - 하나 더 만들면 기계는 위 파일에 쓰고 사람 칸은 새 파일에 쌓여, 사용자가 웹에서 보는 상황판에 끝난 일이 영영 안 올라옵니다. 그리고 **이 세션은 그 파일의 §2(뒤에서 도는 것)를 갱신하지 않습니다**: 여러 세션이 같은 칸을 서로 지우지 않게 뿌리 폴더에서 켠 세션만 씁니다. §2 가 멈춰 보이면 고장이 아니라 이 사정입니다.";
+          }
+        }
+        if (msg) {
           const key = boardNoticeKey(input);
           if (key && claimBoardNotice(key)) {
             process.stdout.write(JSON.stringify({
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                additionalContext: "차근 안내: 이 프로젝트에는 작업 상황판(`status.md`)이 없습니다. 뒤에서 돌 일이 생기거나 사용자가 결정할 것이 생기는 일이면 지금 만드는 것이 좋습니다: 파일 하나를 15분 안에 고치고 끝나는 일이면 안 만들어도 됩니다. **상황판을 만들기로 정했으면 파일부터 만들지 말고 `chageun:statusboard` 를 먼저 열어 git 무시 절차부터 밟으세요**(안 그러면 이 평문 보고서가 저장소에 올라갑니다).",
-              },
+              hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: msg },
             }));
             reminderEmitted = true;
           }
@@ -814,15 +882,53 @@ process.stdin.on("end", () => {
     //    그것도 마찰이고, 그 파일은 이 기능과 무관하다.
     //    판정을 두 번 짜지 않는다: 4.8b 의 결과(boardTarget)를 갈라 쓰기만 하고 git 은
     //    안 부른다(내용 신호에서 이미 끝나는 자리라 비용도 그대로 0이다).
-    if (!reminderEmitted && boardTarget && !boardTarget.armed && !boardTarget.exists) {
+    //    🛑 **갈래가 하나 더 있다: 위에 이미 있는데 여기에 또 만드는 편집.** 사용자가 작업방
+    //    안에서 직접 세션을 켜면, 모델이 스킬을 안 연 채 켠 폴더에서 못 찾아 본보기를 그대로
+    //    `Write` 할 수 있다. 본보기에는 표시가 있어 `armed` 로 잡히지만 작업방은 뿌리와 같은
+    //    `info/exclude` 를 공유해 무시 판정이 통과한다. 그 순간부터 `findBoardDir(작업방)` 이
+    //    작업방을 가리켜 **기계가 그 파일에 §2 를 쓰고 사용자가 보는 뿌리 상황판은 조용히
+    //    멈춘다**(덤으로 그 세션이 뿌리 상황판을 고칠 때의 차단 둘도 함께 사라진다).
+    //    그래서 이 갈래는 `armed` 를 안 본다: 표시가 있든 없든 **여기 만들면 안 된다**가 답이다.
+    //    부록에 절대 경로를 싣는 것을 미룬 동안의 임시 방벽이라 훅 문자열로만 둔다.
+    //    🛑 **삼항으로 이어 붙이지 않는다.** 조건 셋을 물음표 하나로 엮었더니 어떤 입력이 어떤
+    //    문구를 받는지 눈으로 셀 수 없었고, 그 자리에서 `already && !armed` 한 갈래가 **무시 절차
+    //    경고를 통째로 잃었다**(3회차 게이트). 그 조합은 `armed` 가 아니라 4.8b 하드 차단도 안
+    //    도는 자리라 안전 안내가 0이 된다: 뿌리 `.gitignore` 가 `/status.md` 로 앵커된 모노레포에서
+    //    `<repo>/packages/api` 를 켜고 손으로 만들면, 그 경로는 무시 대상이 아닌데 아무도 안 말해
+    //    평문 업무 보고가 커밋 이력에 남는다. 네 갈래를 아래 표로 못박는다:
+    //      already && armed    → 이미문구(+무시절차 확인)
+    //      already && !armed   → 이미문구(+무시절차 확인)   (4.8b 가 안 도는 자리 - 여기가 뚫렸던 곳)
+    //      !already && armed   → 조용(4.8b 가 이미 봤다)
+    //      !already && !armed  → 무시절차(먼저 밟으세요)
+    //    `already` 에 무시절차 언급을 **조건 없이** 붙이는 이유: 조건을 하나 더 달면 그 조건이
+    //    다음에 또 한 갈래를 삼킨다. 둘 다 소프트 안내라 붙여도 마찰이 안 는다.
+    //    🛑 **`already` 갈래의 뒷문장은 "먼저 밟으세요"가 아니라 "확인하세요"다.** "여기에 새로
+    //    만들지 말라"는 앞문장과 "절차를 먼저 밟으라"는 뒷문장을 나란히 두면, 읽는 쪽이 "절차
+    //    밟고 나서 여기 만들라"로 읽어 상황판이 두 권이 된다. 게다가 이 갈래에 닿았다는 것 자체가
+    //    대개 git 이 이미 무시하고 있다는 뜻이라 "먼저 밟으세요"는 사실과도 어긋난다(실행 재현
+    //    완료, 4회차 게이트 지적). `!already` 갈래(IGNORE_LINE)는 실제로 아직 안 밟았을 자리라
+    //    그대로 "먼저 밟으세요"를 쓴다.
+    if (!reminderEmitted && boardTarget && !boardTarget.exists) {
       try {
-        process.stdout.write(JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            additionalContext: "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.",
-          },
-        }));
-        reminderEmitted = true;
+        const cwd = path.resolve(input.cwd || process.cwd());
+        // 켠 폴더에 **새로** 만드는 편집인가, 그렇다면 위에 이미 한 장 있는가.
+        const upper = boardTarget.abs === path.join(cwd, BOARD_FILE)
+          ? boardRoot.findBoardDir(cwd) : null;
+        const already = upper !== null && upper !== cwd;
+        const IGNORE_LINE = "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.";
+        const ALREADY_IGNORE_TAIL = "혹시 이미 만들었다면, 그 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 확인하세요.";
+        let msg = null;
+        if (already) {
+          msg = "차근 안내: 이미 `" + path.join(upper, BOARD_FILE) + "` 에 이 프로젝트의 작업 상황판이 있습니다. **여기에 새로 만들지 말고 그 파일을 고치세요.** 하나 더 만들면 기계가 채우는 칸은 새 파일로 가고, 사용자가 웹에서 보던 원래 상황판은 그 자리에서 멈춥니다. " + ALREADY_IGNORE_TAIL;
+        } else if (!boardTarget.armed) {
+          msg = IGNORE_LINE;
+        }
+        if (msg) {
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: msg },
+          }));
+          reminderEmitted = true;
+        }
       } catch (_) { /* 안내 실패는 차단 사유가 아니다 */ }
     }
 
