@@ -289,7 +289,7 @@ test("(아) 각본 파일은 **첫 비플래그 낱말**일 때만 예외다: �
 // 🛑🛑 **5회차: `rm` 인자 판정이 따옴표를 못 봐 안전측 되돌림이 꺼졌다.** 마스킹이 `';'` 를
 //   `' '` 로 만들면 외톨이 `'` 가 남는데, 옛 판은 "자리표 목록에 없는 낱말 = 대상이 보인다"라서
 //   그 조각 하나에 되돌림이 풀렸다. 지금은 **첫 글자가 경로 글자인 것만** 대상으로 본다.
-test("(아) rm 인자의 따옴표 조각·종결자는 대상이 아니다: 되돌림이 안 꺼진다", () => {
+test("(자) rm 인자의 따옴표 조각·종결자는 대상이 아니다: 되돌림이 안 꺼진다", () => {
   assert.equal(bash("find / -exec rm -rf {} ';'"), "rm-recursive", "홑따옴표 종결자");
   assert.equal(bash('find / -exec rm -rf {} ";"'), "rm-recursive", "겹따옴표 종결자");
   assert.equal(bash('find / -exec rm -rf "{}" ";"'), "rm-recursive", "자리표·종결자 둘 다 따옴표");
@@ -312,6 +312,30 @@ test("(아) rm 인자의 따옴표 조각·종결자는 대상이 아니다: 되
   assert.equal(bash("S=/tmp/x && rm -rf $S/bt4 $S/bt5"), null, "변수 경로 여럿");
   // 단 변수만 있고 슬래시가 없으면(= 지울 곳을 여기서 알 수 없다) 안전측으로 되돌아간다.
   assert.equal(bash("rm -rf $TARGET && cd .."), "rm-recursive", "슬래시 없는 맨 변수는 불투명이다");
+});
+
+// 🛑🛑 **6회차: 자르는 쪽(RM_ARGS_END)과 읽는 쪽(RM_PATHISH)이 서로의 전제를 몰랐다.**
+//   `2>/dev/null` 을 붙이면 `>` 에서 잘려 앞의 `2` 만 인자 구간에 남고, 그 한 글자가 "경로 글자로
+//   시작"이라 "대상이 보인다"로 읽혀 **안전측 되돌림이 통째로 안 돌았다.** 저장소 검사 전체에
+//   `2>` 축이 0건이라 조용히 지나갔다. 이 칸이 그 축이다.
+test("(차) 리다이렉션 꼬리는 인자 구간 밖이다: `2>` 가 되돌림을 끄지 않는다", () => {
+  // 6회차가 연 자리: 꼬리를 붙이는 것만으로 위 (자) 칸의 판정이 전부 풀렸다.
+  assert.equal(bash("find / -name '*.log' -exec rm -rf {} + 2>/dev/null"), "rm-recursive");
+  assert.equal(bash("find / -type f | xargs rm -rf 2>/dev/null"), "rm-recursive");
+  assert.equal(bash("cd / && rm -rf * 2>/dev/null"), "rm-recursive");
+  assert.equal(bash("find / -exec rm -rf {} + 1>/dev/null"), "rm-recursive", "fd 번호는 1도 있다");
+  assert.equal(bash("find / -exec rm -rf {} + >/dev/null 2>&1"), "rm-recursive", "꼬리 두 개");
+  assert.equal(bash("find / -exec rm -rf {} ';' 2>/dev/null"), "rm-recursive");
+  assert.equal(isPush("Bash", { command: "find / -exec rm -rf {} + 2>/dev/null" }), false);
+  // 반대 방향: 꼬리가 붙어도 지울 대상이 구체적이면 그대로 통과한다(꼬리만 잘라내는 것이지
+  //   인자를 통째로 안 보는 것이 아니다).
+  assert.equal(bash("rm -rf build 2>/dev/null"), null, "맨 이름 + 꼬리");
+  assert.equal(bash("rm -rf ./build 2>/dev/null"), null, "상대 경로 + 꼬리");
+  assert.equal(bash("rm -rf $S/bt4 2>/dev/null"), null, "변수 경로 + 꼬리");
+  // 🛑 자르는 규칙이 **이미 붙들고 있던 전제**: 줄 이음(`\` + 개행)은 구간의 끝이 아니다.
+  //   `\s*` 가 개행을 먹지만 `\` 는 공백이 아니라 그 앞으로 못 넘어간다. 이 두 줄이 그 자리다.
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  /"), true, "줄 이음 뒤 위험 대상은 여전히 잡는다");
+  assert.equal(rmHitsDangerTarget("rm -rf \\\n  ./build && cd /"), false, "줄 이음 뒤 안전 대상도 그대로");
 });
 
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
