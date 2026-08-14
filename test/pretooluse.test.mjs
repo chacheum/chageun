@@ -147,7 +147,10 @@ test("(마) 파이프 뒤를 경로로 부르면 접는다: `| /bin/sh` 는 맨 
   assert.equal(bash('echo "rm -rf /*" | sudo /bin/sh'), "rm-recursive");
   // 🛑 위 두 줄은 앞머리 건너뛰기 그룹을 **안 잰다**(기본값이 접는 쪽이라 그룹을 지워도 접힌다).
   //   그 그룹이 실제로 하는 일은 **여는 쪽**이다. 그것을 재는 짝은 여기다: 지우면 이 두 줄이 빨개진다.
-  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x | sudo tee /tmp/x' }), false,
+  // ⚠ 여기 sink 로 `tee` 를 쓰지 말 것: `tee` 는 글자를 **파일로 쓴다** = 코드 주석에 스스로
+  //   "알고 받아들인 손실"로 적어 둔 것이다. 그 손실을 정답으로 굳히면, 나중에 그 구멍을 닫을 때
+  //   이 줄이 빨개져 다음 사람이 회귀로 읽고 방금 닫은 구멍을 도로 연다. 파일을 안 쓰는 sink 를 쓴다.
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x | sudo wc -l' }), false,
     "sink 앞에 sudo 가 붙어도 글자를 먹는 것으로 본다");
   assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x | env head -5' }), false);
   assert.equal(bash(`echo "rm -rf /*" | awk '{system($0)}'`), "rm-recursive");
@@ -204,6 +207,15 @@ test("(바) 히어독은 끝말의 따옴표를 본다: 맨 이름이면 본문 
   assert.equal(isPush("Bash", { command: "cat > f <<EOF\n다음 단계: git push 는 사람이 한다\nEOF" }), false);
   // 본문이 곧 코드인 히어독은 목록에 없어 자동으로 안 덮인다(따옴표가 있어도).
   assert.equal(bash("bash <<'EOF'\nrm -rf /*\nEOF"), "rm-recursive");
+  // 🛑 겹따옴표와 히어독이 **한 함수**(expandedRegion)를 쓴다. 그 공유의 전제가 역슬래시 규칙이
+  //   같다는 것이라 여기서 기계로 붙들어 둔다. 겹따옴표 쪽 escape 를 좁히면 이 줄들이 빨개진다.
+  assert.equal(bash("cat > f <<EOF\n\\$(rm -rf /*)\nEOF"), null,
+    "`\\$(` 는 전개를 막는다 = 글자다 = 덮어도 된다");
+  assert.equal(bash("cat > f <<EOF\n\\`rm -rf /*\\`\nEOF"), null, "`\\`` 도 같다");
+  assert.equal(bash("cat > f <<EOF\n\\\\$(rm -rf /*)\nEOF"), "rm-recursive",
+    "역슬래시가 글자가 되면 치환이 살아난다 = 덮으면 안 된다");
+  assert.equal(bash('cat > f <<EOF\n그냥 " 따옴표 " 는 글자다 rm -rf /*\nEOF'), null,
+    "히어독 본문의 `\"` 는 escape 가 아니라 글자다");
 });
 
 test("(바) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
@@ -220,19 +232,37 @@ test("(바) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프
   assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x |& head -5' }), false);
 });
 
-test("(바) 인라인 코드 플래그는 각본 파일이 아니다: `-c` · `-e` · `-r`", () => {
-  // 3회차가 연 자리 ⑤: `-c '…'` 의 낱말을 각본 파일로 읽어 '표준입력은 데이터'로 봤다.
+// 🛑🛑 **4회차가 또 6건을 열었고 그 자리는 3회차에 이미 한 번 고친 줄이다.** 그때 처방이
+//   "위험한 플래그(`-c`·`-e`·`-r`)를 목록에 적기"였는데, 위험한 쪽을 적는 목록은 **목록 밖이
+//   열린다.** 네 판 연속 같은 방향이다. 지금은 근거가 뒤집혀 있다: **각본 파일 모양이 보일 때만**
+//   예외. 그래서 아래 두 축은 **모르는 표기라서 접혀야 하는** 것들이다. 목록을 늘려 고치지 말 것.
+test("(사) 표준입력을 코드로 먹는 형태는 각본 파일이 보일 때만 푼다", () => {
+  // 축 1: **붙여 쓴 짧은 플래그.** `-` 다음이 `n` 이라 4회차 목록은 매칭 자체가 실패했다.
+  assert.equal(bash(`echo "rm -rf /*" | perl -ne 'system($_)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | ruby -ne 'system($_)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | perl -pe 'system($_)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | perl -lane 'system($_)'`), "rm-recursive");
+  assert.equal(isPush("Bash", { command: `echo "git push" | perl -ne 'system($_)'` }), true);
+  // 축 2: **하위명령.** "대시로 시작하지 않는 낱말 = 각본 파일"로 읽으면 하위명령이 자격을 만든다.
+  assert.equal(bash(`echo "rm -rf /*" | deno run -`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | deno eval 'Deno.run(...)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | bun run -`), "rm-recursive");
+  assert.equal(isPush("Bash", { command: `echo "git push" | deno run -` }), true);
+  // 축 3: 목록 밖 실행 플래그. 새 플래그가 생겨도 **자동으로 안전측**이어야 한다.
+  assert.equal(bash(`echo "rm -rf /*" | node -p 'require("child_process").execSync(...)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | python3 -m sh`), "rm-recursive", "모듈 실행도 각본 파일이 아니다");
+  // 축 4: 3회차에 잡은 인라인 코드 플래그도 그대로 막힌다.
   assert.equal(bash(`echo "rm -rf /*" | python3 -c 'import os,sys; os.system(sys.stdin.read())'`), "rm-recursive");
   assert.equal(bash(`echo "rm -rf /*" | node -e 'require("child_process").execSync(...)'`), "rm-recursive");
-  assert.equal(bash(`echo "rm -rf /*" | perl -e 'system(<STDIN>)'`), "rm-recursive");
-  assert.equal(bash(`echo "rm -rf /*" | ruby -e 'system(STDIN.read)'`), "rm-recursive");
   assert.equal(bash(`echo "rm -rf /*" | php -r 'system(fgets(STDIN));'`), "rm-recursive");
-  assert.equal(isPush("Bash", { command: `echo "git push" | python3 -c 'os.system(sys.stdin.read())'` }), true);
-  // 반대 방향: 실측 근거가 있던 두 사례는 이 플래그를 안 써서 그대로 풀린다.
+  assert.equal(bash(`echo "rm -rf /*" | perl -e 'system(<STDIN>)' helper.pl`), "rm-recursive",
+    "각본 파일이 보여도 인라인 코드를 함께 주면 안 푼다");
+  // 반대 방향: 실측 근거가 있던 줄들은 전부 **확장자**로 통과한다.
   assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | node hook.js` }), false);
   assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 probe.py` }), false);
-  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 -u probe.py` }), false,
-    "코드가 아닌 플래그는 예외를 안 막는다");
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 -u probe.py` }), false);
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | node dist/claude/hooks/pretooluse.js` }), false,
+    "경로가 붙은 각본 파일도 같게 본다");
 });
 
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {

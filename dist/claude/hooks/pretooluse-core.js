@@ -260,10 +260,22 @@ const TEXT_CONSUMER_RE = /(?:^|[\s(){}!&|;])(?:echo|printf|cat|grep|egrep|fgrep|
 //   공백이라 **진짜 파이프만** 남는다. 순서를 뒤집지 말 것.
 const PIPE_TEXT_SINKS = /^(?:head|tail|tee|wc|jq|grep|egrep|fgrep|zgrep|sort|uniq|cut|tr|rev|nl|column|less|more|cat|diff|base64|xxd|od|hexdump|md5sum|sha1sum|sha256sum|pbcopy|clip)$/;
 const NON_SHELL_INTERPRETERS = /^(?:python3?|node|deno|bun|perl|ruby|php)$/;
-// 인터프리터에게 **코드를 인자로** 주는 플래그. 이게 보이면 위 (b) 예외를 안 준다: 그 낱말은
-//   각본 파일이 아니라 인라인 코드다(`python3 -c '…os.system(sys.stdin.read())'` 가 그렇게 샜다).
-//   실측 근거가 있던 두 사례(`| node hook.js` · `| python3 probe.py`)는 이 플래그를 안 쓴다.
-const INLINE_CODE_FLAG = /(?:^|\s)--?(?:c|e|E|r|R|eval|command|program|exec)(?=$|[\s'"=])/;
+// 🛑🛑 **여기서 네 판 연속으로 같은 실수를 했다**(4회차에 게이트가 실행으로 적발).
+//   4회차 판은 "**위험한 플래그**(`-c`·`-e`·`-r`)가 없으면 예외를 준다"였다. 위험한 쪽을 적는
+//   목록이라 **목록 밖이 열렸다**: 붙여 쓴 짧은 플래그(`perl -ne`·`ruby -ne`·`perl -pe`)는
+//   `-` 다음이 `n` 이라 매칭 자체가 실패했고, 목록에 없는 실행 플래그(`node -p`)도 안 걸렸고,
+//   하위명령을 쓰는 인터프리터(`deno run -`·`deno eval '…'`)는 **하위명령 낱말 자체가
+//   '각본 파일'** 자격을 만들어 줬다. 여섯 형태 모두 앞에 `echo "rm -rf /*" |` 를 붙이면
+//   전체 삭제가 진짜로 실행된다.
+//
+// 그래서 예외의 근거를 뒤집었다: **"위험한 플래그가 없다"가 아니라 "각본 파일 모양이 보인다".**
+//   모르는 표기(새 플래그·새 하위명령·처음 보는 인터프리터 관용구)는 전부 접히는 쪽으로 떨어진다.
+//   실측 근거가 있던 줄들은 전부 확장자로 통과한다 - `| node hook.js` · `| python3 probe.py` ·
+//   `| python3 -u probe.py` · `| node dist/claude/hooks/pretooluse.js`.
+const SCRIPT_FILE = /^[\w./~-]+\.(?:py|js|mjs|cjs|ts|rb|pl|php|lua)$/;
+// 위 뒤집기가 이미 모르는 것을 다 접으므로 이 목록은 **닫는 쪽으로만** 쓴다(빈칸이 여는 쪽으로
+//   안 떨어진다). 각본 파일이 보이는데 인라인 코드까지 함께 준 형태(`perl -e '…' x.pl`)를 막는다.
+const INLINE_CODE_FLAG = /(?:^|\s)--?(?:c|e|E|r|R|p|n|eval|command|program|print|exec)(?=$|[\s'"=])/;
 // 프로세스 치환(`>(cmd)`·`<(cmd)`). 파이프가 아니라 `|` 판정이 통째로 못 본다.
 const PROC_SUBST = /[<>]\(/;
 // 🛑 첫머리가 `\|&?` 다. `|&`(표준오류까지 넘기는 표기)는 `|` 다음이 `&` 라 **매칭 자체가 실패**했고,
@@ -279,11 +291,11 @@ function pipesIntoInterpreter(s) {
     const base = m[2].replace(/^['"]|['"]$/g, "").split("/").pop();   // 경로로 불러도 같게 본다
     if (PIPE_TEXT_SINKS.test(base)) continue;                        // (a) 글자를 먹는 것이 확실
     if (NON_SHELL_INTERPRETERS.test(base)) {
-      // (b) 각본 파일(플래그가 아니고 `-` 도 아닌 낱말)이 있으면 표준입력은 데이터다.
-      //     단 인라인 코드 플래그가 있으면 그 낱말은 각본이 아니라 코드다 - 예외를 안 준다.
+      // (b) **각본 파일 모양이 보일 때만** 예외를 준다: 그때는 표준입력이 데이터다.
+      //     "대시로 시작하지 않는 낱말"을 각본으로 치면 하위명령(`deno run`)이 자격을 만든다.
       const args = m[3].trim();
-      if (args && !INLINE_CODE_FLAG.test(args) &&
-          args.split(/\s+/).some((t) => t && t !== "-" && !t.startsWith("-"))) continue;
+      const toks = args ? args.split(/\s+/).filter(Boolean) : [];
+      if (toks.some((t) => SCRIPT_FILE.test(t)) && !INLINE_CODE_FLAG.test(args)) continue;
     }
     return true;                                                     // (c) 나머지는 전부 접는다
   }
@@ -339,6 +351,16 @@ function maskQuotedText(s) {
   //   덮어서 그 실행을 지웠다(게이트가 실행으로 적발). 이 판의 불변식은 위 (1) 이다:
   //   **지워도 되는 자리는 셸도 글자로 보는 자리뿐.** 겹따옴표 가지는 지키고 있었고
   //   히어독 가지만 안 지키고 있었다.
+  //
+  // 🛑 **이 공유의 전제: 두 자리의 역슬래시 규칙이 같다.** 지금은 같지만 **뜻은 다르다.**
+  //   겹따옴표 안에서 `\"` 는 escape 고, 히어독 본문에서 `"` 는 그냥 글자다(`\` 도 글자로 남는다).
+  //   그래도 결과가 같은 이유는 **양쪽 다 그 두 글자를 통째로 덮기 때문**이다. 진짜로 중요한 것은
+  //   `\$(` 와 `` \` `` 인데 여기서는 두 자리의 규칙이 **정말로** 같다: 둘 다 전개를 막는다.
+  //   그래서 `j += 2` 로 건너뛰어 치환으로 안 읽는 것이 양쪽 모두 옳다(`\\$(…)` 는 역슬래시가
+  //   글자가 되고 치환이 살아나는데, 그것도 두 글자씩 건너뛰면 자동으로 맞는다).
+  //   ⚠ 나중에 겹따옴표 쪽 escape 를 좁히면 **히어독 판정이 말없이 함께 바뀐다.** 그때는
+  //   이 전제를 다시 확인하고 필요하면 두 자리를 갈라라. 아래 검사가 이 전제를 붙들고 있다:
+  //   `test/pretooluse.test.mjs` 의 "(바) 히어독은 끝말의 따옴표를 본다" 칸 중 `\$(…)`·`\\$(…)` 줄.
   function expandedRegion(from, to, mask, depth, stopAtQuote) {
     let j = from, lit = j;
     while (j < to) {
