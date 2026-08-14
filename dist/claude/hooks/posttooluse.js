@@ -78,6 +78,7 @@ const TAIL_BYTES = 512 * 1024;          // 자리를 못 믿을 때 다시 보�
 const MAX_DELTA = 4 * 1024 * 1024;      // 한 회차에 보는 최대량
 const FP_WINDOW = 64 * 1024;            // 지문 대조용 창
 const OK_CACHE_MS = 5 * 60 * 1000;      // 통과 캐시(차단은 세션 내내)
+const PENDING_TRIES_MAX = 3;            // 미룬 쓰기를 들고 갚기를 시도하는 회차 수(그 회차에 버린다)
 const KEEP_MS = 7 * 24 * 3600 * 1000;
 
 function boardStateDir() {
@@ -242,14 +243,31 @@ function autoBoard(input) {
   //   ⚠ `boardIgnorePasses` 는 git 을 부르는 **부수효과**가 있다. `text == null` 을 먼저 놓고
   //     `||` 로 단락시키는 이 순서를 유지한다(위 `targetIsBoard` 갈래가 먼저 나가는 것도 같은 이유다):
   //     자리를 바꾸면 못 읽는 회차마다 자식 프로세스가 새로 는다.
-  // 🛑 **아래 둘에서는 표시를 내린다.** 이 둘은 위 갈래와 달리 **이번 세션에 안 풀린다**:
-  //    무시 판정이 `blocked` 면 `boardIgnorePasses` 가 다시 재지 않고 세션 내내 그 값으로 굳고,
-  //    상황판을 못 읽는 상태도 대개 그대로 이어진다. 켜 두면 갚을 길이 없는 빚이 되어
-  //    `shouldParse` 의 조기 탈출이 세션 내내 열린 채가 되고, 한 글자도 못 쓰는 프로젝트에서
+  // 🛑 **아래 둘에서는 표시를 곧장 안 버리고 한도까지 들고 있다가 버린다.** 못 갚는 이유가
+  //    둘인데 **수명이 다르기 때문**이다:
+  //      · `blocked`(추적 중이거나 무시가 안 됨) - `boardIgnorePasses` 가 다시 재지 않고
+  //        세션 내내 그 값으로 굳는다. **안 풀린다.**
+  //      · `unknown`(git 2초 타임아웃 · 저장소 밖 · 그 순간 상황판을 못 읽음) - 5분 캐시가
+  //        지나면 **다시 잰다. 일시적이다.**
+  //    곧장 버리면 무거운 기계에서 마지막 일감이 끝난 그 회차에 마침 git 이 2초를 넘긴 것만으로
+  //    §2 가 그 시각에 얼어붙는다 - 바로 위 두 갈래(미룸 표시)가 고치려던 그 증상이다.
+  //    그래서 **갚기를 시도한 회차를 세고 `PENDING_TRIES_MAX` 회차째에 버린다**: `unknown` 은
+  //    그 안에 대개 풀리고(사람이 자리를 비워 회차가 안 도는 사이 5분이 지나면 다음 회차가 바로
+  //    다시 잰다), `blocked` 는 세 번 만에 조용히 닫혀 비용 누수도 안 남는다. 켜 둔 채로 두면
+  //    `shouldParse` 의 조기 탈출이 세션 내내 열린 채가 되어, 한 글자도 못 쓰는 프로젝트에서
   //    도구 호출마다 파싱·비밀값 수집·상황판 읽기 비용만 계속 나간다.
-  //    🛑 내려도 잃는 것이 없다: 표는 조각이 아니라 **장부 전체**로 다시 그리므로(`renderBlock`),
+  //    🛑 버려도 잃는 것이 없다: 표는 조각이 아니라 **장부 전체**로 다시 그리므로(`renderBlock`),
   //       다음 진짜 소식(`agentId:` · `<task-notification>`)이 문을 열 때 이번 변화도 함께 나간다.
-  if (text == null || !boardIgnorePasses(st, boardDir, now)) { st.pendingWrite = false; save(); return; }
+  //    🛑 세는 값은 **쓰기가 나간 회차에 0으로 되돌린다**(아래 끝). 안 그러면 오래 도는 세션에서
+  //       띄엄띄엄 생긴 실패가 쌓여 멀쩡한 경로가 세 번 만에 막힌다.
+  //    ⚠ 옛 장부에는 이 칸이 없다 - 없으면 `Number(undefined) || 0` 으로 0에서 시작한다.
+  if (text == null || !boardIgnorePasses(st, boardDir, now)) {
+    const tries = (Number(st.pendingTries) || 0) + 1;
+    if (st.pendingWrite === true && tries < PENDING_TRIES_MAX) st.pendingTries = tries;
+    else { st.pendingWrite = false; st.pendingTries = 0; }
+    save();
+    return;
+  }
 
   let out = text;
   const s2 = auto.spliceBlock(out, auto.renderBlock(st.tasks, now), "chageun:auto");
@@ -260,6 +278,7 @@ function autoBoard(input) {
   // 알리는 일은 세션 시작 부록이 하고, 여기서는 자리를 짐작해 끼워 넣지 않는다.
   if (out !== text) { try { fs.writeFileSync(board, out); } catch (_) { /* 침묵 */ } }
   st.pendingWrite = false;
+  st.pendingTries = 0;                  // 갚았으면 계수기도 되돌린다(위 🛑)
   save();
 }
 

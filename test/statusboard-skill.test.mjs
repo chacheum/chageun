@@ -46,6 +46,31 @@ test("무시 목록을 어디에 넣는지가 두 앵커로 굳어 있다", () =
   assert.ok(SKILL.includes("`.gitignore` 가 아니다"), "고른 쪽을 못 박는 문장이 없다");
 });
 
+// 🛑 접어 둔 기록의 자리는 **상황판과 같은 취급**을 받는 곳이어야 한다. 상황판은 비밀번호 없는
+//    평문 업무 보고라 저장소 밖(`info/exclude`)에 두는데, 옮겨 둔 기록만 추적되는 폴더로 가면
+//    같은 글이 그 사람 저장소 이력에 그대로 쌓인다. 차근은 공개 플러그인이라 이 저장소가
+//    `docs/` 를 통째로 제외해 둔 것은 **이 저장소만의 예외**이고 남의 프로젝트에는 안 통한다.
+const LEN_SECTION = (() => {
+  const from = SKILL.indexOf("## 길이 관리");
+  const rest = SKILL.indexOf("\n## ", from + 1);
+  return from === -1 ? "" : SKILL.slice(from, rest === -1 ? SKILL.length : rest);
+})();
+
+test("접은 기록의 자리가 상황판과 같이 막히는 곳이다", () => {
+  assert.ok(LEN_SECTION, "길이 관리 절이 통째로 없다");
+  assert.ok(LEN_SECTION.includes("status-archive.md"), "보관 파일 이름이 한 자리에서 안 정해져 있다");
+  assert.ok(LEN_SECTION.includes("처음 만들 때"), "무시 절차를 가리키지 않으면 보관 파일이 그냥 저장소로 간다");
+  assert.ok(LEN_SECTION.includes("check-ignore"), "예외를 허용하려면 '먼저 확인하라'가 붙어야 한다");
+});
+
+// ⚠ 이 칸은 위 칸과 **다른 축**이다: 위는 "맞는 자리를 적었나", 여기는 "틀린 자리를 안 적었나".
+//   폴더 이름 리터럴은 검사 안에서만 조립한다(본문에 그 글자가 없어야 초록이므로).
+test("git 이 추적하는 폴더를 기본 자리로 적지 않는다", () => {
+  const TRACKED_DIR = ["docs", "/"].join("");
+  assert.ok(!LEN_SECTION.includes(TRACKED_DIR),
+    "남의 프로젝트에서는 그 폴더가 추적된다 - 평문 업무 보고가 저장소 이력에 쌓인다");
+});
+
 // 공개 배포물이라 옛 이름과 이 사용자 호칭이 새면 안 된다.
 const OLD_NAME = ["상황판", ".md"].join("");   // 옛 파일 이름(리터럴을 검사 안에서만 조립)
 const HONORIFIC = "사장님";

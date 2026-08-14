@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, renameSync } from "node:fs";
 import { tmpDir } from "./support-tmpdir.mjs";
 
 const require = createRequire(import.meta.url);
@@ -298,6 +298,75 @@ test("갚을 수 있는 빚: 상황판을 건드린 회차 뒤에는 미룸 표�
   const st = stateOf(sc);
   assert.equal(st.pendingWrite, true, "다음 회차에 갚을 수 있는 갈래에서까지 안 켜면 밀린 쓰기가 사라진다");
   assert.equal(core.shouldParse(idleRec(t0 + 2000), st), true, "갚으라고 문이 열려 있어야 한다");
+});
+
+// ── 재시도 한도(못 갚은 회차를 센다) ─────────────────────────────────────────
+//
+// 🛑 바로 위 두 칸은 "빚을 켜는가"를 재고, 아래 두 칸은 **"못 갚았을 때 언제 버리는가"**를 잰다.
+//    못 갚는 이유가 둘인데 수명이 다르다: `blocked`(추적 중·무시 안 됨)는 캐시가 세션 내내
+//    굳어 안 풀리지만, `unknown`(git 2초 타임아웃 · 저장소를 그 순간 못 봄)은 5분 뒤 다시 잰다.
+//    한 회차 실패로 곧장 버리면 무거운 기계에서 git 이 한 번 늦은 것만으로 §2 가 얼어붙는다.
+const cacheFile = (sc) => join(sc.cache, "chageun", "board-tasks", sc.key + ".json");
+
+test("한도 안: 일시적으로 못 갚아도 표시가 살아 있고, 풀리면 그때 나간다", () => {
+  const sc = scene();
+  const t0 = Date.now();
+  // 🛑 **마지막 일감까지 끝낸 뒤** 미룬다. 장부에 도는 것이 남아 있으면 조기 탈출을 그 갈래가
+  //    열어 줘서, 이 칸이 재려는 축(미룸 표시 하나로 문이 열리는가)이 안 잡힌다.
+  appendFileSync(sc.tpath, spawnRec("c1", A1, "늦은 git 뒤 갚는 일감", t0) +
+    notifRec(A1, "completed", 'Agent "늦은 git 뒤 갚는 일감" 끝', t0 + 500));
+  fire(sc, { tool_name: "Read", tool_input: { file_path: sc.board } });
+  assert.equal(stateOf(sc).pendingWrite, true, "먼저 빚이 켜져야 이 칸이 무엇을 재는지가 성립한다");
+
+  // ① 판정을 못 짓는 회차. git 2초 타임아웃과 **같은 갈래**(`unknown`)를 저장소를 잠깐 치워 만든다.
+  renameSync(join(sc.dir, ".git"), join(sc.dir, ".git-away"));
+  appendFileSync(sc.tpath, idleRec(t0 + 1000));
+  fire(sc);
+  const st1 = stateOf(sc);
+  assert.equal(st1.ignoreVerdict, "unknown", "이 칸은 '판정을 못 지음' 갈래를 재는 칸이다");
+  assert.equal(st1.pendingWrite, true, "일시적 실패로 버리면 §2 가 그 시각에 얼어붙는다");
+  assert.equal(st1.pendingTries, 1, "못 갚은 회차를 센다");
+  assert.equal(board(sc), TEMPLATE, "그 회차에는 여전히 한 글자도 안 쓴다");
+
+  // ② 5분 캐시가 지나 다시 재는 회차. 그때 밀린 쓰기가 실제로 나가야 한다.
+  renameSync(join(sc.dir, ".git-away"), join(sc.dir, ".git"));
+  const aged = stateOf(sc);
+  aged.ignoreVerdictAt = Date.now() - 6 * 60 * 1000;
+  writeFileSync(cacheFile(sc), JSON.stringify(aged));
+  appendFileSync(sc.tpath, idleRec(t0 + 2000));
+  fire(sc);
+  assert.match(board(sc), /\| 늦은 git 뒤 갚는 일감 \| 끝남 \|/,
+    "곧장 버리는 구현에서는 이 줄이 영영 안 올라오고 §2 가 옛 시각에 얼어붙는다");
+  const st2 = stateOf(sc);
+  assert.equal(st2.pendingWrite, false, "나갔으면 표시를 내린다");
+  assert.equal(st2.pendingTries, 0, "성공하면 0으로 돌아가야 오래 도는 세션이 세 번 만에 안 막힌다");
+});
+
+test("한도 밖: 세 회차째에는 갚을 길 없는 빚을 버린다", () => {
+  const sc = blockedScene();
+  const t0 = Date.now();
+  appendFileSync(sc.tpath, spawnRec("c1", A1, "막힌 판의 일감", t0) +
+    notifRec(A1, "completed", 'Agent "막힌 판의 일감" 끝', t0 + 500));   // 위 칸과 같은 이유로 끝까지 보낸다
+  fire(sc, { tool_name: "Read", tool_input: { file_path: sc.board } });
+  assert.equal(stateOf(sc).pendingWrite, true, "먼저 빚이 켜져야 이 칸이 무엇을 재는지가 성립한다");
+
+  for (const n of [1, 2]) {
+    appendFileSync(sc.tpath, idleRec(t0 + n * 1000));
+    fire(sc);
+    const st = stateOf(sc);
+    assert.equal(st.ignoreVerdict, "blocked", "이 칸은 '무시가 확인 안 됨' 갈래를 재는 칸이다");
+    assert.equal(st.pendingWrite, true, n + "회차에 이미 버리면 일시적 실패까지 함께 버려진다");
+    assert.equal(st.pendingTries, n);
+  }
+
+  appendFileSync(sc.tpath, idleRec(t0 + 3000));
+  fire(sc);
+  const st = stateOf(sc);
+  assert.notEqual(st.pendingWrite, true, "안 버리면 갚을 길 없는 빚을 세션 내내 들고 있게 된다");
+  assert.equal(st.pendingTries, 0, "버릴 때 계수기도 함께 되돌린다");
+  assert.equal(core.shouldParse(idleRec(t0 + 4000), st), false,
+    "빚 표시가 남으면 도구 호출마다 파싱·비밀값 수집이 세션 내내 계속 돈다");
+  assert.equal(board(sc), TEMPLATE, "무시가 확인 안 된 상황판에는 끝까지 한 글자도 안 쓴다");
 });
 
 // ── 표시가 깨졌거나 없을 때 ──────────────────────────────────────────────────
