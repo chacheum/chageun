@@ -198,11 +198,13 @@ test("변형은 서로 다른 글을 낸다 — 이름만 늘리고 render 가 �
 
 // 훅이 고른 변형이 등록된 이름 안에 있어야 한다. variantOf 가 목록 밖 이름을 내면 render 가
 // 기본 갈래로 떨어져 **매트릭스가 한 번도 안 재 본 글**이 실제로 주입된다.
+// CTXS 는 등록부의 sampleCtx/sampleCtxOff 에서 뽑는다(손으로 사본을 안 늘린다). 단
+// "표식깨짐" 변형(boardMarkersIntact:false)은 어느 등록부 예시에도 없다 — sampleCtx/sampleCtxOff 는
+// applies() 참·거짓만 가르면 되고 boardMarkersIntact 값은 안 가르기 때문이다. 그래서 그 한 칸만 따로 둔다.
 test("variantOf 는 등록된 변형 이름만 낸다", () => {
   const CTXS = [
-    { env: {}, board: false, boardMarkersIntact: true },
-    { env: { CHAGEUN_UNATTENDED: "1" }, board: true, boardMarkersIntact: true },
-    { env: { CHAGEUN_UNATTENDED: "1" }, board: true, boardMarkersIntact: false },
+    ...core.APPENDICES.flatMap((a) => [a.sampleCtx, a.sampleCtxOff]),
+    { env: {}, board: true, boardMarkersIntact: false, boardServer: "x" }, // 표식깨짐 전용
   ];
   for (const a of core.APPENDICES)
     for (const ctx of CTXS)
@@ -214,12 +216,20 @@ test("variantOf 는 등록된 변형 이름만 낸다", () => {
 //    거짓이라 한 번도 안 붙는 부록"이 생겨도 볼 자리가 0곳이었다(D-2). sampleCtx/sampleCtxOff 는
 //    등록부 자신이 들고 있는 값이라, 검사가 기대값을 스스로 지어내는 자기참조가 아니다 —
 //    실제로 applies() 를 두 방향(참·거짓)으로 실행해 결과를 잰다.
+// 🛑 정직 회계: 이 두 검사는 `sampleCtx`/`sampleCtxOff` 를 **손으로 쓴 값**으로 잰다. 그 필드를
+//    activate.js 가 실제로 채우는지는 안 잰다 — 훅이 안 만드는 필드(예: 아무도 안 읽는 env 이름)를
+//    조건이 읽어도 sampleCtx 를 그 조건에 맞춰 나란히 손으로 쓰면 여기서는 계속 초록이다.
+//    그 구멍은 훅 stdout 을 직접 재는 test/activate.test.mjs · test/statusboard-activate.test.mjs 가
+//    막는다. 아래 "칸 이름이 buildCtx 안에 들어간다" 검사도 칸 **이름**만 맞추지, 훅이 그 조건에
+//    맞는 **값**을 실제로 채우는지는 못 잰다.
 test("등록부의 모든 칸에 applies 를 참으로 만드는 예시가 있다 — 없으면 그 부록은 영원히 안 붙어도 못 잡는다", () => {
   for (const a of core.APPENDICES) {
     assert.ok(a.sampleCtx, `부록 "${a.id}" 에 sampleCtx 가 없다 — applies 조건을 참으로 만드는 예시 ctx 를 등록부에 추가해라.`);
     assert.equal(a.applies(a.sampleCtx), true,
-      `부록 "${a.id}" 의 sampleCtx 로 applies() 를 불렀는데 거짓이 나왔다 — ` +
-      "이 조건은 실제로 한 번도 참이 될 수 없을 가능성이 있다(영원히 안 붙는 부록).");
+      `부록 "${a.id}" 의 sampleCtx 로 applies() 를 불렀는데 참이 아니다 — ` +
+      "이 조건은 실제로 한 번도 참이 될 수 없을 가능성이 있다(영원히 안 붙는 부록). " +
+      "또는 applies 가 true/false 가 아닌 값을 냈다(이 검사는 엄격한 boolean 을 요구한다 — " +
+      "훅(activate.js)은 `if (!applies(ctx))` 라 truthy 면 충분하지만, 이 검사는 그보다 엄격하다).");
   }
 });
 
@@ -227,8 +237,28 @@ test("등록부의 모든 칸에 applies 를 거짓으로 만드는 예시도 �
   for (const a of core.APPENDICES) {
     assert.ok(a.sampleCtxOff, `부록 "${a.id}" 에 sampleCtxOff 가 없다 — applies 조건을 거짓으로 만드는 예시 ctx 를 등록부에 추가해라.`);
     assert.equal(a.applies(a.sampleCtxOff), false,
-      `부록 "${a.id}" 의 sampleCtxOff 로 applies() 를 불렀는데 참이 나왔다 — ` +
-      "조건이 거짓을 낼 수 없다면(늘 붙는 부록이라면) 등록부에서 그 사실을 밝히고 이 검사를 그에 맞게 고쳐야 한다.");
+      `부록 "${a.id}" 의 sampleCtxOff 로 applies() 를 불렀는데 거짓이 아니다 — ` +
+      "조건이 거짓을 낼 수 없다면(늘 붙는 부록이라면) 등록부에서 그 사실을 밝히고 이 검사를 그에 맞게 고쳐야 한다. " +
+      "또는 applies 가 true/false 가 아닌 값을 냈다(이 검사는 엄격한 boolean 을 요구한다 — " +
+      "훅(activate.js)은 `if (!applies(ctx))` 라 falsy 면 충분하지만, 이 검사는 그보다 엄격하다).");
+  }
+});
+
+// [medium] 처방: sampleCtx/sampleCtxOff 의 칸 **이름**이 진짜 ctx(buildCtx 결과) 칸 이름 안에
+// 들어가는지 대조한다. 새 부록이 진짜 ctx 에 없는 필드(오타·상상 필드)를 예시에 적으면 여기서 잡는다.
+// 🛑 이 검사가 못 잡는 것: 칸 **이름**만 맞추지, 훅이 그 조건에 맞는 **값**을 실제로 채우는지는
+//    안 잰다(위 정직 회계 참고).
+test("sampleCtx·sampleCtxOff 의 칸 이름이 진짜 ctx(buildCtx) 칸 안에 들어간다", () => {
+  const realKeys = Object.keys(core.buildCtx({ env: {}, board: false, boardMarkersIntact: true, boardServer: "" }));
+  for (const a of core.APPENDICES) {
+    for (const key of Object.keys(a.sampleCtx))
+      assert.ok(realKeys.includes(key),
+        `부록 "${a.id}" 의 sampleCtx 에 진짜 ctx 에 없는 칸 "${key}" 이 있다. ` +
+        `진짜 칸은 ${realKeys.join(", ")} 뿐이다.`);
+    for (const key of Object.keys(a.sampleCtxOff))
+      assert.ok(realKeys.includes(key),
+        `부록 "${a.id}" 의 sampleCtxOff 에 진짜 ctx 에 없는 칸 "${key}" 이 있다. ` +
+        `진짜 칸은 ${realKeys.join(", ")} 뿐이다.`);
   }
 });
 
