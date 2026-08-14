@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { tmpDir } from "./support-tmpdir.mjs";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
-const { resolveRoot, listBoards, slugify, todoCount, md, MAX_BYTES } =
+const { resolveRoot, listBoards, slugify, todoCount, md, inline, MAX_BYTES } =
   await import(join(SRC, "skills", "statusboard", "board-core.mjs"));
 
 const OLD_NAME = ["상황판", ".md"].join("");   // 옛 이름 리터럴은 검사 안에서만 조립한다
@@ -143,4 +143,54 @@ test("md: 경계 표시 네 줄은 화면에 안 나오고 사이 내용은 정�
 test("md: 사람이 쓴 다른 주석은 그대로 남는다", () => {
   const html = md("<!-- 내 메모 -->\n");
   assert.ok(html.includes("내 메모"), "넓게 지우는 구현이면 사람 글이 사라진다");
+});
+
+// D-4: `inline` 이 백틱 코드를 " N " 모양 자리표로 뺐다가 되돌리는데, 원문에 그냥 있던
+// 맨 숫자까지 그 모양과 겹쳐 코드 조각으로 뒤바뀌었다. 자리표는 원문에 나올 수 없는 모양이어야 한다.
+test("inline: 코드 조각 뒤에 맨 숫자가 있으면 숫자가 그대로 남는다 (자리표 충돌)", () => {
+  const html = inline("`foo` 그리고 문장 중간의 숫자 0 은 코드가 아니다");
+  assert.ok(html.includes("<code>foo</code>"), "코드 조각이 사라졌다: " + html);
+  assert.equal((html.match(/<code>/g) || []).length, 1, "코드 태그 개수가 1개가 아니다: " + html);
+  assert.ok(html.includes("숫자 0 은"), "맨 숫자 0 이 조용히 바뀌었다: " + html);
+});
+
+// 안전의 근거는 오직 하나, esc() 가 코드 조각을 빼내기 **전에** 돈다는 순서다.
+// 그 순서가 지켜지면 원문에 자리표를 흉내 낸 `<##0##>` 같은 문자열이 있어도
+// esc() 가 먼저 `<`·`>` 를 이스케이프해 놓아 실제 자리표와 못 섞인다.
+// ⚠ `<##0##>` 는 board-core.mjs 128행 근처의 실제 자리표 모양을 손으로 베낀 사본이다.
+// 그 모양이 바뀌면 이 입력도 함께 바꿔야 한다(안 바꾸면 평범한 글자가 되어 아무것도 안 잰다).
+// 이 입력은 자리표 흉내(`<##0##>`)뿐 아니라 D-4 옛 자리표(공백+숫자+공백)와도 겹치는
+// 맨 숫자(" 0 ")를 함께 담는다: 이 단언은 자리표 **흉내**를 막는 쪽을 잰다. 옛 판을
+// 빨간불로 만드는 것은 맨 숫자 쪽이고, 그 축은 바로 위 16번 검사가 이미 잰다.
+// (자리표 흉내 단언 자체는 옛 판에서도 통과한다 - 옛 판도 이스케이프는 했기 때문이다.)
+test("inline: 자리표를 흉내 낸 원문 글자는 그대로 이스케이프돼 남는다", () => {
+  const html = inline("자리표 흉내 <##0##> 그리고 원래 숫자 0 도 있고 `real`");
+  assert.ok(html.includes("&lt;##0##&gt;"), "흉내 낸 자리표가 글자 그대로 안 남았다: " + html);
+  assert.equal((html.match(/<code>/g) || []).length, 1, "코드 태그가 정확히 1개가 아니다: " + html);
+  assert.ok(html.includes("<code>real</code>"), "진짜 코드 조각이 사라졌다: " + html);
+  assert.ok(html.includes("숫자 0 도"), "맨 숫자 0 이 조용히 바뀌었다: " + html);
+});
+
+test("inline: 코드 없이 맨 숫자만 있으면 코드 태그가 안 생기고 undefined 도 안 샌다", () => {
+  const html = inline("코드 없이 숫자 4 만");
+  assert.equal((html.match(/<code>/g) || []).length, 0, "코드 없는 문장에서 코드 태그가 생겼다: " + html);
+  assert.ok(!html.includes("undefined"), "undefined 가 샌다: " + html);
+  assert.ok(html.includes("코드 없이 숫자 4 만"), "숫자가 조용히 바뀌었다: " + html);
+});
+
+// 상황판은 비밀번호 없이 열리는 페이지이고, §2 는 기계(자동 생성 문단)가 채우는 칸이라
+// 붙여 넣은 오류 메시지·일감 이름에 꺾쇠(`<img`·`<script` 등)가 섞여 들어올 여지가
+// 실제로 있다. `inline` 이 esc(s) 를 먼저 돌린 뒤 코드 조각을 떼어내므로, 백틱 안 내용도
+// 이미 이스케이프된 상태로 `<code>` 안에 다시 들어가야 한다 - 이게 이 함수의 진짜
+// 보안 바닥인데 113행 검사는 백틱 밖만 본다.
+test("inline: 백틱 안의 위험한 태그도 살아나지 않고 글자로만 남는다", () => {
+  const img = inline("`<img src=x onerror=alert(1)>`");
+  assert.ok(img.includes("&lt;img src=x onerror=alert(1)&gt;"), "이스케이프된 글자가 없다: " + img);
+  assert.ok(!/<img/i.test(img), "살아 있는 <img 태그가 남았다: " + img);
+  assert.equal(img, "<code>&lt;img src=x onerror=alert(1)&gt;</code>");
+
+  const script = inline("`<script>bad()</script>`");
+  assert.ok(script.includes("&lt;script&gt;bad()&lt;/script&gt;"), "이스케이프된 글자가 없다: " + script);
+  assert.ok(!/<script/i.test(script), "살아 있는 <script 태그가 남았다: " + script);
+  assert.equal(script, "<code>&lt;script&gt;bad()&lt;/script&gt;</code>");
 });
