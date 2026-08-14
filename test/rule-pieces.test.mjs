@@ -200,11 +200,14 @@ test("변형은 서로 다른 글을 낸다 — 이름만 늘리고 render 가 �
 // 기본 갈래로 떨어져 **매트릭스가 한 번도 안 재 본 글**이 실제로 주입된다.
 // CTXS 는 등록부의 sampleCtx/sampleCtxOff 에서 뽑는다(손으로 사본을 안 늘린다). 단
 // "표식깨짐" 변형(boardMarkersIntact:false)은 어느 등록부 예시에도 없다 — sampleCtx/sampleCtxOff 는
-// applies() 참·거짓만 가르면 되고 boardMarkersIntact 값은 안 가르기 때문이다. 그래서 그 한 칸만 따로 둔다.
+// applies() 참·거짓만 가르면 되고 boardMarkersIntact 값은 안 가르기 때문이다. 그래서 statusboard 의
+// sampleCtx 를 베끼되 그 한 칸만 뒤집는다(등록부에서 파생 — 칸 이름을 손으로 다시 안 적는다:
+// boardMarkersIntact 를 나중에 개명하면서 이 줄만 잊으면 옛 이름이 안 남는다).
 test("variantOf 는 등록된 변형 이름만 낸다", () => {
+  const statusboard = core.APPENDICES.find((a) => a.id === "statusboard");
   const CTXS = [
     ...core.APPENDICES.flatMap((a) => [a.sampleCtx, a.sampleCtxOff]),
-    { env: {}, board: true, boardMarkersIntact: false, boardServer: "x" }, // 표식깨짐 전용
+    { ...statusboard.sampleCtx, boardMarkersIntact: false }, // 표식깨짐 전용
   ];
   for (const a of core.APPENDICES)
     for (const ctx of CTXS)
@@ -271,15 +274,27 @@ test("sampleCtx·sampleCtxOff 의 칸 이름이 진짜 ctx(buildCtx) 칸 안에 
 // 된다(호출부가 안 채운 이름은 그냥 없는 프로퍼티가 되어 조용히 넘어간다). 위 검사는 함수
 // 쪽만 보므로 이 어긋남을 못 잡는다 - 그래서 activate.js 소스 글을 읽어 호출부의 칸 이름을
 // 직접 뽑아 대조한다(이 저장소가 이미 쓰는 방식: 소스 글을 앵커로 삼기).
+// 🛑 `matchAll` 로 **모든** core.buildCtx({...}) 호출을 돈다(`.match` 로 첫 하나만 보면, 나중에
+//    같은 파일에 두 번째 호출이 생기고 거기서 칸 이름을 하나 틀려도 경보 없이 넘어간다).
 test("activate.js 호출부가 넘기는 칸 이름이 buildCtx 의 칸 이름과 같다 - 어긋나면 그 칸이 조용히 undefined 가 된다", () => {
   const activateSrc = readFileSync(join(ROOT, "src", "hooks", "activate.js"), "utf8");
-  const callMatch = activateSrc.match(/core\.buildCtx\(\{([\s\S]*?)\}\)/);
-  assert.ok(callMatch, "activate.js 에서 core.buildCtx({...}) 호출을 못 찾았다 - 자리를 옮겼으면 위 정규식도 같이 고쳐라");
-  const calledKeys = [...callMatch[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]).sort();
+  const callMatches = [...activateSrc.matchAll(/core\.buildCtx\(\{([\s\S]*?)\}\)/g)];
+  assert.ok(callMatches.length > 0, "activate.js 에서 core.buildCtx({...}) 호출을 못 찾았다 - 자리를 옮겼으면 위 정규식도 같이 고쳐라");
   const definedKeys = Object.keys(core.buildCtx({})).sort();
-  assert.deepEqual(calledKeys, definedKeys,
-    `activate.js 호출부가 넘기는 칸(${calledKeys.join(", ")})과 buildCtx 정의의 칸` +
-    `(${definedKeys.join(", ")})이 다르다. 한쪽만 고치면 다른 쪽 칸이 조용히 undefined 가 된다.`);
+  callMatches.forEach((callMatch, i) => {
+    const calledKeys = [...callMatch[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]).sort();
+    // 이 정규식은 줄 앞머리에 `이름:` 이 오는 여러 줄 꼴만 읽는다. calledKeys 가 비면 코드가
+    // 아니라 이 정규식이 그 호출을 못 읽는 것이다 - 아래 deepEqual 이 "칸이 다르다"고 잘못
+    // 짚기 전에 먼저 여기서 원인을 밝힌다.
+    assert.ok(calledKeys.length > 0,
+      `activate.js 의 core.buildCtx 호출 ${i + 1}번째에서 칸 이름을 하나도 못 읽었다. ` +
+      "이 검사는 줄 앞머리에 `이름:` 이 오는 여러 줄 꼴만 읽는다 - 호출을 한 줄로 합쳤거나 " +
+      "짧은 표기(`{ env, board }`)로 바꿨다면, 코드가 아니라 이 검사의 정규식을 고쳐라. " +
+      "(호출부는 여러 줄 `이름:` 꼴을 유지해라.)");
+    assert.deepEqual(calledKeys, definedKeys,
+      `activate.js 의 core.buildCtx 호출 ${i + 1}번째가 넘기는 칸(${calledKeys.join(", ")})과 ` +
+      `buildCtx 정의의 칸(${definedKeys.join(", ")})이 다르다. 한쪽만 고치면 다른 쪽 칸이 조용히 undefined 가 된다.`);
+  });
 });
 
 // ── 자리 참조 가드 ───────────────────────────────────────────────────────────
