@@ -15,10 +15,18 @@ const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/
 //   보존: 브랜치 `rm-region-narrowing-parked` · 계획서 `docs/plans/2026-08-14-rm-argument-region-followup.md`.
 //
 // 지금은 **옛 형태**다: 재귀삭제와 위험 대상을 **따로** 온 명령에서 본다. 안전측(과차단)이고,
-//   알려진 헛막음 3건을 그대로 안고 간다(전부 다음 판이 고칠 것 · 지금 설치본에도 있는 증상):
+//   알려진 헛막음 4건을 그대로 안고 간다(전부 다음 판이 고칠 것 · 지금 설치본에도 있는 증상):
 //     `rm -rf build && cd ..`      - 옆 자리 `cd ..` 가 위험 대상으로 읽힌다
 //     `rm -rf $S/bt4 && cd ..`     - 변수로 조립한 경로도 같다
-//     `rm -rf \\`(개행)`  ./build && cd /` - 줄 이음 뒤 안전한 대상도 같다
+//     rm -rf 뒤에 역슬래시-줄바꿈으로 이어붙인 ./build && cd / - 줄 이음 뒤 안전한 대상도 같다
+//     `cd / && rm -rf ./build`     - 위험 글자가 **앞 세그먼트**에 있어도 같이 걸린다
+//
+//   반대로 **못 잡는 것도 있다**(이 판이 지운 검사 줄이 그 증거 · 지금 설치본도 같이 통과시킨다 ·
+//   새로 생긴 구멍이 아니다): 위험 대상 표기(`RM_DANGER_TARGET`)가 `/` 뒤에 공백·줄끝·별표만
+//   인정해서 `;` 처럼 다른 글자가 오면 안 걸린다.
+//     `if true; then rm -rf /; fi`      - 셸 제어문 안에 있어도 그대로 실행된다
+//     `for f in a b; do rm -rf /; done` - 반복문 안도 같다
+//     `rm -rf . && ls`                  - `.` 뒤에 공백이 아니라 ` &&` 가 와서 못 잡는다
 //   ⚠ **여기를 좁히려면 계획서를 먼저 읽어라.** 인자 구간을 자르는 순간 자르는 쪽과 읽는 쪽
 //   두 자리가 생기고, 네 번 다 그 사이가 벌어졌다. 한 줄짜리 수정으로 될 자리가 아니다.
 function rmHitsDangerTarget(cmd) {
@@ -167,8 +175,8 @@ function isDeploy(cmd) {
 //       안쪽만 보고 덮어 버려 진짜 실행이 샌다.
 //   (4) **모르겠으면 원문**(fail-closed). 따옴표 짝이 안 맞거나 히어독 끝을 못 찾거나 통째로 셸에
 //       먹이는 형태(`echo "…" | bash`)면 마스킹을 아예 안 한다.
-// 길이는 반드시 보존한다(덜어낸 자리는 같은 수의 공백). 이 함수 자신이 인덱스로 구간을 오가고,
-//   호출자가 원문 자리를 되짚을 수 있어야 한다. 아래 검사가 이 불변식을 붙들고 있다.
+// 길이는 반드시 보존한다(덜어낸 자리는 같은 수의 공백). 이 함수 자신이 인덱스로 오가고,
+//   다음 판이 인자 구간을 다시 자를 때 필요하다(위 🅿 절). 아래 검사가 이 불변식을 붙들고 있다.
 //
 // 남는 구멍(정직):
 //   - 글자를 파일에 적어 두고 나중에 그 파일을 돌리는 형태(`echo "git push" > f; bash f`)는 못 잡는다.
@@ -1891,4 +1899,6 @@ const REASONS_UNATTENDED = {
 };
 function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 모드 차단: park하고 사람 복귀를 기다립니다."; }
 
+// `rmHitsDangerTarget` export: 지금은 이 파일 안(위 545행 부근)에서만 쓴다. 밖에서 부르는 데는
+//   아직 없다 - 다음 판(인자 구간 좁히기)이 다시 쓴다. 다음 판 대비로 export를 남겨 둔다.
 module.exports = { executableText, rmHitsDangerTarget, statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };

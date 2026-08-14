@@ -47,6 +47,7 @@ test("(가) 글자로 인용된 위험 명령은 통과한다: 커밋 메시지�
   assert.equal(bash('git commit -m "골든 절차: rm -rf test/golden/claude 로 지우고 다시 만든다"'), null);
   // 🛑 아래 둘은 **마스킹이 없으면 통과할 수 없다**(위험 타깃이 인용된 rm 바로 옆에 붙어 있다).
   //   위치 좁힘만으로는 안 되는 자리라, 이 줄이 빠지면 마스킹을 통째로 걷어내도 검사가 초록이다.
+  //   (이 축은 뺐다 · 위 🅿 절)
   assert.equal(bash('git commit -m "위험 예시: rm -rf / 는 되돌릴 수 없다"'), null);
   assert.equal(bash("cat > note.md <<'EOF'\n주석 예시: bash(\"rm -fr /*\") 를 주석 시작으로 읽으면 안 된다\nEOF"), null);
   // 실측 그대로: 훅을 검토하던 에이전트가 **자기 검색어**에 막혔다.
@@ -105,7 +106,7 @@ test("(다) 목록 밖이면 안 덮는다: 전체 경로 표기 · 모르는 �
   assert.equal(bash(`myfunc "rm -rf /*"`), "rm-recursive", "사용자가 만든 함수도 모르는 도구다");
   assert.equal(isPush("Bash", { command: `awk 'BEGIN{system("git push")}'` }), true);
   assert.equal(isPush("Bash", { command: 'myfunc "git push origin main"' }), true);
-  // 축 3: 대상을 파이프·find 로 넘겨 rm 자리에 인자가 안 보이는 형태.
+  // 축 3: 대상을 파이프·find 로 넘겨 rm 자리에 인자가 안 보이는 형태. (이 축은 뺐다 · 위 🅿 절)
   assert.equal(bash("find / -name '*.log' | xargs rm -rf"), "rm-recursive");
   assert.equal(bash("find / -print0 | xargs -0 rm -rf"), "rm-recursive");
   assert.equal(bash("ls / | xargs rm -rf"), "rm-recursive");
@@ -202,7 +203,7 @@ test("(바) 히어독은 끝말의 따옴표를 본다: 맨 이름이면 본문 
     "히어독 본문의 `\"` 는 escape 가 아니라 글자다");
 });
 
-test("(바) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
+test("(자) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
   // 3회차가 연 자리 ③④: `|&` 는 `|` 다음이 `&` 라 매칭 자체가 실패해 '파이프 없음'으로 떨어졌다.
   assert.equal(bash('echo "rm -rf /*" |& bash'), "rm-recursive");
   assert.equal(bash('echo "rm -rf /*" |& /bin/sh'), "rm-recursive");
@@ -271,7 +272,7 @@ test("(아) 각본 파일은 **첫 비플래그 낱말**일 때만 예외다: �
 });
 
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
-  const same = (cmd) => assert.equal(executableText(cmd).length, cmd.length, "길이가 바뀌면 호출자의 인덱스 계산이 어긋난다");
+  const same = (cmd) => assert.equal(executableText(cmd).length, cmd.length, "길이가 바뀌면 다음 판의 인자 구간 자르기가 어긋난다");
   same('git commit -m "rm -rf /"');
   same("git commit -F - <<'MSG'\n본문\nMSG\nls");
   same("echo `x`");
