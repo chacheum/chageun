@@ -185,7 +185,9 @@ function autoBoard(input) {
   const chunk = got.text;
   if (chunk) { st.offset = got.next; st.offsetFingerprint = auto.fingerprintOf(chunk); }
 
-  // 조기 탈출: 장부에 도는 것이 없고 조각에 두 낱말이 없으면 **JSON 을 한 줄도 안 판다**.
+  // 조기 탈출: 장부에 도는 것도 미뤄 둔 쓰기도 없고 조각에 두 낱말이 없으면 **JSON 을 한 줄도
+  //   안 판다**. 🛑 판정 자체는 `shouldParse` 한 자리에 둔다: 여기에 갈래를 하나 더 적으면
+  //   같은 판단이 두 벌이 되고, 통로가 늘 때 한쪽만 고쳐진다.
   if (!auto.shouldParse(chunk, st)) { save(); return; }
 
   const now = Date.now();

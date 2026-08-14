@@ -116,10 +116,17 @@ function fingerprintOf(chunk) {
  * 조기 탈출 판정. 거짓이면 JSON 파싱을 **한 줄도 안 한다**.
  * 🛑 장부에 아직 안 끝난 일감이 있으면 참이다: 시간만 흘러도 "도는 중"이 "모름"으로
  *    뒤집히므로(12시간) 그 회차에 표를 다시 그려야 한다.
+ * 🛑 **미뤄 둔 쓰기가 있어도 참이다.** 미룬 회차는 장부만 적고 파일을 안 건드리는데, 그 빚을
+ *    갚는 자리가 이 문 **뒤**에 있다. 조각에 온 새 소식으로만 문을 열면, 마지막 일감이 끝난
+ *    회차에 미뤘을 때 갚을 기회가 영영 안 온다(끝났으니 바로 위 갈래도 함께 닫힌다).
+ *    그러면 §2 가 마지막으로 쓴 시각에 얼어붙어 **끝난 일을 계속 "도는 중"으로 보여 준다** -
+ *    자리를 비웠다 돌아온 사람이 정반대로 읽는, 상황판이 막으려던 바로 그 결과다.
+ *    이 갈래는 스스로 닫힌다: 쓰기가 나가면 부르는 쪽이 그 표시를 내린다.
  */
 function shouldParse(chunk, ledger) {
   const s = String(chunk || "");
   if (s.indexOf("agentId:") !== -1 || s.indexOf("<task-notification>") !== -1) return true;
+  if (ledger && ledger.pendingWrite === true) return true;
   const tasks = (ledger && ledger.tasks) || ledger || {};
   for (const k of Object.keys(tasks)) {
     const t = tasks[k];

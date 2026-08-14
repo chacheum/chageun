@@ -283,6 +283,10 @@ test("비용: 조기 탈출 판정을 검사가 직접 부른다", () => {
   assert.equal(core.shouldParse("<task-notification>", { tasks: {} }), true);
   assert.equal(core.shouldParse("무관한 조각", { tasks: { x: { status: "" } } }), true, "도는 것이 있으면 시간만 흘러도 표가 바뀐다");
   assert.equal(core.shouldParse("무관한 조각", { tasks: { x: { status: "completed" } } }), false);
+  assert.equal(core.shouldParse("", { tasks: { x: { status: "completed" } }, pendingWrite: true }), true,
+    "밀린 쓰기가 있으면 새 소식이 없어도 문이 열린다(안 열면 그 쓰기가 영영 안 나간다)");
+  assert.equal(core.shouldParse("", { tasks: { x: { status: "completed" } }, pendingWrite: false }), false,
+    "밀린 쓰기를 내린 뒤에는 도로 닫힌다");
 });
 
 test("비용: 트랜스크립트를 통째로 안 읽는다", () => {

@@ -63,6 +63,19 @@ function spawnRec(callId, agentId, desc, at) {
   rec({ type: "user", uuid: "r-" + agentId, timestamp: ts, message: { role: "user", content: [
     { type: "tool_result", tool_use_id: callId, content: "agentId: " + agentId }] } });
 }
+function notifRec(taskId, status, summary, at) {
+  const ts = new Date(at).toISOString();
+  const text = "<task-notification>\n<task-id>" + taskId + "</task-id>\n" +
+    "<status>" + status + "</status>\n<summary>" + summary + "</summary>\n" +
+    "<result>보고 전문입니다</result>\n</task-notification>";
+  return rec({ type: "user", uuid: "n-" + taskId, timestamp: ts, message: { role: "user", content: [{ type: "text", text }] } });
+}
+// 에이전트 소식이 **한 글자도 없는** 회차. 사람이 자리를 비운 뒤 흐르는 것이 이 모양이다.
+function idleRec(at) {
+  const ts = new Date(at).toISOString();
+  return rec({ type: "assistant", uuid: "u-idle-" + at, timestamp: ts, message: { role: "assistant", content: [
+    { type: "tool_use", id: "call-idle-" + at, name: "Bash", input: { command: "ls" } }] } });
+}
 const A1 = "aac7930e76fa2c5e9", A2 = "b1d4f9012ab34cd56", A3 = "c9e0117af22b3d445";
 
 // 사람 칸 한 글자 고치기(기계 블록 **밖**을 건드린다).
@@ -205,6 +218,35 @@ test("읽은 직후 회차는 미루고, 다음 회차에 밀린 쓰기가 나�
   fire(sc);
   assert.match(board(sc), /읽은 뒤 일감/, "pendingWrite 가 없으면 밀린 쓰기가 조용히 사라진다");
   assert.equal(stateOf(sc).pendingWrite, false);
+});
+
+// 🛑 **바로 위 검사의 나머지 반쪽이다.** 위는 일감이 **아직 도는** 채로 미루므로, 다음 회차의
+//    문을 `장부에 상태 없는 일감` 갈래가 열어 준다. 여기서는 **마지막 일감까지 끝난 뒤** 미루게
+//    만든다: 그 갈래가 닫혀 있어, 밀린 쓰기 자체를 알아보는 갈래가 없으면 영영 안 나간다.
+//    실측(2026-08-14)이 이 모양이었다: 20:13 에 마지막 알림이 오고 그 다음 도구가 상황판
+//    `Read` 라 미뤄졌는데, 그 뒤로 새 소식이 없어 §2 가 20:08 에 얼어붙었다.
+test("마지막 일감까지 끝난 뒤 미룬 쓰기도 다음 회차에 나간다", () => {
+  const sc = scene();
+  const t0 = Date.now();
+  appendFileSync(sc.tpath, spawnRec("c1", A1, "혼자 돌던 일감", t0));
+  fire(sc);
+  assert.match(board(sc), /## 2\. 지금 뒤에서 도는 것: 1건/, "먼저 도는 것으로 한 번 찍힌다");
+
+  // ① 마지막 알림 + 그 회차의 대상이 상황판(실측 순서 그대로) → 설계대로 미룬다
+  appendFileSync(sc.tpath, notifRec(A1, "completed", 'Agent "혼자 돌던 일감" 끝', t0 + 1000));
+  fire(sc, { tool_name: "Read", tool_input: { file_path: sc.board } });
+  const st1 = stateOf(sc);
+  assert.equal(st1.tasks[A1].status, "completed", "장부는 정확히 적힌다");
+  assert.equal(st1.pendingWrite, true, "쓰기가 미뤄진 것을 기억한다");
+  assert.match(board(sc), /## 2\. 지금 뒤에서 도는 것: 1건/, "이 회차에는 아직 파일이 옛날 그대로다");
+
+  // ② 새 에이전트 소식이 하나도 없는 다음 회차 - 그래도 밀린 쓰기는 나가야 한다
+  appendFileSync(sc.tpath, idleRec(t0 + 2000));
+  fire(sc);
+  assert.match(board(sc), /## 2\. 지금 뒤에서 도는 것: 0건/,
+    "끝난 일을 계속 '도는 중'으로 보여 주면 자리를 비웠다 온 사장님이 정반대로 읽는다");
+  assert.match(board(sc), /\| 혼자 돌던 일감 \| 끝남 \|/, "표의 그 줄도 끝난 것으로 바뀐다");
+  assert.equal(stateOf(sc).pendingWrite, false, "나갔으면 표시를 내려야 다음 회차가 헛돌지 않는다");
 });
 
 // ── 표시가 깨졌거나 없을 때 ──────────────────────────────────────────────────
