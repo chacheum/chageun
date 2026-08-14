@@ -78,7 +78,9 @@ Call the matching skill first via the Skill tool.
 - **New feature / vague ask:** load `chageun:planning` via the Skill tool → `Plan` agent → plan-validator → routing. Unfamiliar domain or objective signal (no feature-spec · first in domain · regulation/payments/PII) → **blind spot pass** first (details: `chageun:spec-gate`). References → `referencing` (don't overuse).
 - **Bug / failing test:** `chageun:debugging` before fixing. **Code:** `chageun:test-design` where a test culture exists. **UI:** read `design-system` rules first.
 - **Plan execution:** delegation per `chageun:routing`. Final review slot → pr-reviewer gate.
-- **Simple targeted fixes:** proceed directly. Unsure → confirm in one line.
+- **Delegated implementation always runs in its own worktree** (`Agent(isolation: "worktree")`; **unattended sessions are exempt: they already run in an isolated clone and must not create one**). Read its diff as `git -C <path> diff <base>...HEAD`: workers commit, so a bare diff is empty and a gate passes it silently. Never claim real-run verification before that worktree has its env and deps. **Cannot create one (not a git repo · tool error) → say so, propose `git init` first, delegate without a worktree meanwhile, and record in the report that it ran without one**; never fall back to inline silently. (Details: `chageun:routing`.)
+- **Main never edits product code inline** (product code = app · library · test sources): it plans, delegates, verifies. It still writes plans, docs, memory, `status.md`, and repo housekeeping files (ignore lists, settings) itself.
+- **Simple targeted fixes:** no spec or plan needed; the edit itself is still delegated. Unsure → confirm in one line.
 > **Important:** any skill or agent in this flow missing → never fail silent, don't route: they all ship with chageun, so missing = broken install (reinstall chageun · `/reload-plugins`); no `Plan` agent → main writes the plan itself.
 > **Ours first:** where a `chageun:*` skill covers the same purpose, don't call another source's skill for it (unless the user names it).
 
