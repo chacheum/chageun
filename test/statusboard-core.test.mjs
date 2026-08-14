@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { tmpDir } from "./support-tmpdir.mjs";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
-const { resolveRoot, listBoards, slugify, todoCount, md, MAX_BYTES } =
+const { resolveRoot, listBoards, slugify, todoCount, md, inline, MAX_BYTES } =
   await import(join(SRC, "skills", "statusboard", "board-core.mjs"));
 
 const OLD_NAME = ["상황판", ".md"].join("");   // 옛 이름 리터럴은 검사 안에서만 조립한다
@@ -143,4 +143,13 @@ test("md: 경계 표시 네 줄은 화면에 안 나오고 사이 내용은 정�
 test("md: 사람이 쓴 다른 주석은 그대로 남는다", () => {
   const html = md("<!-- 내 메모 -->\n");
   assert.ok(html.includes("내 메모"), "넓게 지우는 구현이면 사람 글이 사라진다");
+});
+
+// D-4: `inline` 이 백틱 코드를 " N " 모양 자리표로 뺐다가 되돌리는데, 원문에 그냥 있던
+// 맨 숫자까지 그 모양과 겹쳐 코드 조각으로 뒤바뀌었다. 자리표는 원문에 나올 수 없는 모양이어야 한다.
+test("inline: 코드 조각 뒤에 맨 숫자가 있으면 숫자가 그대로 남는다 (자리표 충돌)", () => {
+  const html = inline("`foo` 그리고 문장 중간의 숫자 0 은 코드가 아니다");
+  assert.ok(html.includes("<code>foo</code>"), "코드 조각이 사라졌다: " + html);
+  assert.ok(html.includes(">0<") === false, "맨 숫자가 코드 태그로 감싸졌다: " + html);
+  assert.ok(html.includes("숫자 0 은"), "맨 숫자 0 이 조용히 바뀌었다: " + html);
 });
