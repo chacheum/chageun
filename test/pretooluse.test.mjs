@@ -145,6 +145,11 @@ test("(마) 파이프 뒤를 경로로 부르면 접는다: `| /bin/sh` 는 맨 
   assert.equal(bash('echo "rm -rf /*" | busybox sh'), "rm-recursive");
   assert.equal(bash('echo "rm -rf /*" | VAR=1 /bin/bash'), "rm-recursive", "앞머리 환경변수로 못 푼다");
   assert.equal(bash('echo "rm -rf /*" | sudo /bin/sh'), "rm-recursive");
+  // 🛑 위 두 줄은 앞머리 건너뛰기 그룹을 **안 잰다**(기본값이 접는 쪽이라 그룹을 지워도 접힌다).
+  //   그 그룹이 실제로 하는 일은 **여는 쪽**이다. 그것을 재는 짝은 여기다: 지우면 이 두 줄이 빨개진다.
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x | sudo tee /tmp/x' }), false,
+    "sink 앞에 sudo 가 붙어도 글자를 먹는 것으로 본다");
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x | env head -5' }), false);
   assert.equal(bash(`echo "rm -rf /*" | awk '{system($0)}'`), "rm-recursive");
   assert.equal(bash('echo "rm -rf /*" | python3 -'), "rm-recursive", "각본 파일 없이 받으면 셸과 같다");
   assert.equal(isPush("Bash", { command: 'echo "git push" | /bin/sh' }), true);
@@ -175,6 +180,59 @@ test("(마) find 자리표는 인자로 안 친다: `{} +` · `\"{}\"` 도 대�
   assert.equal(bash("cd / && rm -rf ./build"), null, "앞 세그먼트의 `/` 를 이 rm 의 대상으로 읽지 않는다");
   assert.equal(bash("find / -name '*.log' -exec rm -rf ./tmp//x {} +"), null,
     "경로로 보이는 토큰이 있으면 그 구간만 본다");
+});
+
+// 🛑🛑 **3회차가 또 5건을 열었다.** 히어독 검사 4개가 **전부 따옴표 있는 형태**여서 못 잡았다.
+//   따옴표 없는 축이 한 줄도 없었다. 이 칸이 그 축이다.
+//   bash 규칙: `<<'EOF'`·`<<"EOF"` 는 본문이 안 전개되지만 **`<<EOF`(맨 이름)는 본문에
+//   명령치환이 그대로 걸린다** = 파일이 만들어지기 전에 진짜로 실행된다.
+test("(바) 히어독은 끝말의 따옴표를 본다: 맨 이름이면 본문 안 치환이 진짜 실행이다", () => {
+  // 3회차가 연 자리 ①②: 맨 이름 히어독 본문을 통째로 덮어 그 실행을 지웠다.
+  assert.equal(bash("cat > f <<EOF\n$(rm -rf /*)\nEOF"), "rm-recursive");
+  assert.equal(bash("cat > f <<EOF\n`rm -rf /*`\nEOF"), "rm-recursive", "백틱도 같은 자리다");
+  assert.equal(bash("git commit -F - <<EOF\n$(git push --force origin main)\nEOF"), "force-push");
+  assert.equal(bash("cat > f <<-EOF\n$(rm -rf /*)\nEOF"), "rm-recursive", "`<<-` 도 맨 이름이다");
+  assert.equal(bash("cat > f <<EOF\n앞 글자 $(rm -rf /*) 뒤 글자\nEOF"), "rm-recursive");
+  assert.equal(isPush("Bash", { command: "cat > f <<EOF\n$(git push origin main)\nEOF" }), true);
+  // 반대 방향(이 판의 목적): **따옴표 있는** 히어독 본문은 진짜 글자라 그대로 통과한다.
+  assert.equal(bash("cat > f <<'EOF'\n$(rm -rf /*)\nEOF"), null, "홑따옴표 끝말은 전개가 없다");
+  assert.equal(bash('cat > f <<"EOF"\n$(rm -rf /*)\nEOF'), null, "겹따옴표 끝말도 전개가 없다");
+  assert.equal(bash("git commit -F - <<'MSG'\n주의: rm -rf /* 는 되돌릴 수 없다\nMSG"), null);
+  assert.equal(isPush("Bash", { command: "git commit -F - <<'MSG'\n- git push --dry-run\nMSG" }), false);
+  // 맨 이름이어도 **치환이 없으면** 글자일 뿐이라 그대로 통과한다(과차단으로 안 떨어뜨린다).
+  assert.equal(bash("cat > f <<EOF\n주의: rm -rf /* 는 되돌릴 수 없다\nEOF"), null);
+  assert.equal(isPush("Bash", { command: "cat > f <<EOF\n다음 단계: git push 는 사람이 한다\nEOF" }), false);
+  // 본문이 곧 코드인 히어독은 목록에 없어 자동으로 안 덮인다(따옴표가 있어도).
+  assert.equal(bash("bash <<'EOF'\nrm -rf /*\nEOF"), "rm-recursive");
+});
+
+test("(바) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
+  // 3회차가 연 자리 ③④: `|&` 는 `|` 다음이 `&` 라 매칭 자체가 실패해 '파이프 없음'으로 떨어졌다.
+  assert.equal(bash('echo "rm -rf /*" |& bash'), "rm-recursive");
+  assert.equal(bash('echo "rm -rf /*" |& /bin/sh'), "rm-recursive");
+  assert.equal(isPush("Bash", { command: 'echo "git push" |& bash' }), true);
+  // 프로세스 치환은 파이프 표기가 아니라 아예 안 걸렸다.
+  assert.equal(bash('echo "rm -rf /*" > >(bash)'), "rm-recursive");
+  assert.equal(bash('bash <(echo "rm -rf /*")'), "rm-recursive");
+  assert.equal(isPush("Bash", { command: 'echo "git push" > >(bash)' }), true);
+  // 반대 방향: `|&` 로 sink 에 넘기는 것은 그대로 풀린다(이 한 글자는 새 헛막음을 안 만든다).
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x |& tee log' }), false);
+  assert.equal(isPush("Bash", { command: 'git grep -n "git push" -- x |& head -5' }), false);
+});
+
+test("(바) 인라인 코드 플래그는 각본 파일이 아니다: `-c` · `-e` · `-r`", () => {
+  // 3회차가 연 자리 ⑤: `-c '…'` 의 낱말을 각본 파일로 읽어 '표준입력은 데이터'로 봤다.
+  assert.equal(bash(`echo "rm -rf /*" | python3 -c 'import os,sys; os.system(sys.stdin.read())'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | node -e 'require("child_process").execSync(...)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | perl -e 'system(<STDIN>)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | ruby -e 'system(STDIN.read)'`), "rm-recursive");
+  assert.equal(bash(`echo "rm -rf /*" | php -r 'system(fgets(STDIN));'`), "rm-recursive");
+  assert.equal(isPush("Bash", { command: `echo "git push" | python3 -c 'os.system(sys.stdin.read())'` }), true);
+  // 반대 방향: 실측 근거가 있던 두 사례는 이 플래그를 안 써서 그대로 풀린다.
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | node hook.js` }), false);
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 probe.py` }), false);
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 -u probe.py` }), false,
+    "코드가 아닌 플래그는 예외를 안 막는다");
 });
 
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {

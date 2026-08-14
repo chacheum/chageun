@@ -241,7 +241,17 @@ const TEXT_CONSUMER_RE = /(?:^|[\s(){}!&|;])(?:echo|printf|cat|grep|egrep|fgrep|
 //       🛑 셸(`sh`·`bash`·`zsh`·`ksh`·`dash`)은 이 예외를 **안 준다**: `bash -s -- x` 처럼 각본이
 //       붙은 것처럼 보여도 표준입력이 코드다. 셸은 언제나 접는다.
 //   (c) 그 밖의 **모든** 파이프 대상은 접는다 - 모르는 도구·사용자 각본·`/bin/sh`·`awk` 전부.
-// 앞머리 환경변수·sudo·env 는 건너뛴다: 그게 없으면 `| VAR=1 bash` 한 줄로 이 백스톱이 풀린다.
+// 앞머리 환경변수·sudo·env 는 건너뛴다. ⚠ 이 그룹이 하는 일은 **여는 쪽**이다(4회차 정정):
+//   `| sudo tee /etc/x` · `| env head -5` 처럼 sink 앞에 앞머리가 붙은 것을 알아보게 해 준다.
+//   3회차 주석은 "그게 없으면 `| VAR=1 bash` 로 백스톱이 풀린다"라고 적었는데 **지금은 사실이
+//   아니다**: 기본값이 (c) 라 `VAR=1` 은 sink 목록에 없어 어차피 접힌다. 통째로 지워도 위험은
+//   그대로 막히고 정상 두 줄만 과차단된다(실행으로 확인).
+//
+// 남는 손실(정직 · 4회차 게이트 전수 확인):
+//   - `tee`·`sort -o`·`cat > f` 는 **글자를 파일로 쓴다.** `| sudo tee /etc/cron.hourly/x` 는
+//     위 '남는 구멍'의 `echo … > f; bash f` 와 같은 계열이다(그쪽 주석엔 리다이렉션만 적혀 있다).
+//   - `less`·`more` 는 대화형 탈출구(`!명령`)가 있다. 훅이 도는 자리는 대화형이 아니라 위험은 낮다.
+//   - basename 으로 대조하므로 `./head` 같은 **사용자 각본도 sink 로 인정된다.** 설계의 대가다.
 //
 // 🛑 **이 판정은 마스킹을 끝낸 글에 건다**(`maskQuotedText` 맨 끝). 원문에 걸면 **따옴표 안의 `|`**
 //   까지 파이프로 읽는다: 기본값이 "접는다"라 그 순간 정상 작업이 통째로 안 풀린다.
@@ -250,16 +260,30 @@ const TEXT_CONSUMER_RE = /(?:^|[\s(){}!&|;])(?:echo|printf|cat|grep|egrep|fgrep|
 //   공백이라 **진짜 파이프만** 남는다. 순서를 뒤집지 말 것.
 const PIPE_TEXT_SINKS = /^(?:head|tail|tee|wc|jq|grep|egrep|fgrep|zgrep|sort|uniq|cut|tr|rev|nl|column|less|more|cat|diff|base64|xxd|od|hexdump|md5sum|sha1sum|sha256sum|pbcopy|clip)$/;
 const NON_SHELL_INTERPRETERS = /^(?:python3?|node|deno|bun|perl|ruby|php)$/;
-const PIPE_TARGET = /\|\s*((?:(?:\w+=\S*|sudo|env|command|nohup|exec)\s+)*)([^\s|;&<>\n]+)([^|;&\n]*)/g;
+// 인터프리터에게 **코드를 인자로** 주는 플래그. 이게 보이면 위 (b) 예외를 안 준다: 그 낱말은
+//   각본 파일이 아니라 인라인 코드다(`python3 -c '…os.system(sys.stdin.read())'` 가 그렇게 샜다).
+//   실측 근거가 있던 두 사례(`| node hook.js` · `| python3 probe.py`)는 이 플래그를 안 쓴다.
+const INLINE_CODE_FLAG = /(?:^|\s)--?(?:c|e|E|r|R|eval|command|program|exec)(?=$|[\s'"=])/;
+// 프로세스 치환(`>(cmd)`·`<(cmd)`). 파이프가 아니라 `|` 판정이 통째로 못 본다.
+const PROC_SUBST = /[<>]\(/;
+// 🛑 첫머리가 `\|&?` 다. `|&`(표준오류까지 넘기는 표기)는 `|` 다음이 `&` 라 **매칭 자체가 실패**했고,
+//   매칭이 없으면 아래 함수가 false(= 안 접는다 = 여는 쪽)를 냈다. 함수의 기본값은 접는 쪽으로
+//   뒤집어 놓고 **알아보는 단계의 기본값이 아직 여는 쪽**이었다(4회차 적발, 1·2회차와 같은 방향).
+//   이 한 글자는 새 헛막음을 안 만든다: `cmd |& tee log` 는 `tee` 가 sink 라 그대로 풀린다.
+const PIPE_TARGET = /\|&?\s*((?:(?:\w+=\S*|sudo|env|command|nohup|exec)\s+)*)([^\s|;&<>\n]+)([^|;&\n]*)/g;
 function pipesIntoInterpreter(s) {
+  const str = String(s);
+  if (PROC_SUBST.test(str)) return true;   // `> >(bash)` 는 파이프 표기가 아니라 아예 안 걸렸다
   PIPE_TARGET.lastIndex = 0;   // 위 RM_RECURSIVE_G 와 같은 이유
-  for (const m of String(s).matchAll(PIPE_TARGET)) {
+  for (const m of str.matchAll(PIPE_TARGET)) {
     const base = m[2].replace(/^['"]|['"]$/g, "").split("/").pop();   // 경로로 불러도 같게 본다
     if (PIPE_TEXT_SINKS.test(base)) continue;                        // (a) 글자를 먹는 것이 확실
     if (NON_SHELL_INTERPRETERS.test(base)) {
       // (b) 각본 파일(플래그가 아니고 `-` 도 아닌 낱말)이 있으면 표준입력은 데이터다.
+      //     단 인라인 코드 플래그가 있으면 그 낱말은 각본이 아니라 코드다 - 예외를 안 준다.
       const args = m[3].trim();
-      if (args && args.split(/\s+/).some((t) => t && t !== "-" && !t.startsWith("-"))) continue;
+      if (args && !INLINE_CODE_FLAG.test(args) &&
+          args.split(/\s+/).some((t) => t && t !== "-" && !t.startsWith("-"))) continue;
     }
     return true;                                                     // (c) 나머지는 전부 접는다
   }
@@ -301,15 +325,26 @@ function maskQuotedText(s) {
     return -1;
   }
 
-  // 겹따옴표 구간. 글자 부분만 덮고, 명령치환(`$( … )`·백틱)은 **실행되는 자리라 다시 훑는다**.
-  //   `git commit -m "$(rm -rf /)"` 를 통째로 인용으로 읽으면 진짜 실행이 통과한다.
+  // **전개가 걸리는 구간**을 훑는다. 글자 부분만 덮고, 명령치환(`$( … )`·백틱)은
+  //   **실행되는 자리라 남겨 두고 다시 훑는다**. `git commit -m "$(rm -rf /)"` 를 통째로
+  //   인용으로 읽으면 진짜 실행이 통과한다.
   //   `mask` 는 바깥에서 계산해 넘긴다: 안쪽이 스스로 자격을 만들어 내면 안 된다(위 (3)).
-  function doubleQuote(open, to, mask, depth) {
-    let j = open + 1, lit = j;
+  //
+  // 🛑 **이 함수를 쓰는 자리가 둘이다**(3회차까지는 겹따옴표 하나였다):
+  //   (1) 겹따옴표 안 - `stopAtQuote` 참. 닫는 `"` 에서 멈추고 그 자리를 돌려준다.
+  //   (2) **끝말에 따옴표가 없는 히어독 본문** - `stopAtQuote` 거짓. `to` 까지 간다.
+  //   bash 규칙: `<<'EOF'`·`<<"EOF"` 는 본문이 전개되지 않지만 **`<<EOF`(맨 이름)는 본문에
+  //   파라미터 전개·명령치환·산술전개가 그대로 걸린다.** 즉 본문 안 `$(rm -rf /*)` 는 파일이
+  //   만들어지기 **전에** 진짜로 실행된다. 3회차는 히어독이면 끝말을 안 보고 본문을 통째로
+  //   덮어서 그 실행을 지웠다(게이트가 실행으로 적발). 이 판의 불변식은 위 (1) 이다:
+  //   **지워도 되는 자리는 셸도 글자로 보는 자리뿐.** 겹따옴표 가지는 지키고 있었고
+  //   히어독 가지만 안 지키고 있었다.
+  function expandedRegion(from, to, mask, depth, stopAtQuote) {
+    let j = from, lit = j;
     while (j < to) {
       const c = s[j];
       if (c === "\\") { j += 2; continue; }
-      if (c === '"') { if (mask) blank(lit, j); return j; }
+      if (stopAtQuote && c === '"') { if (mask) blank(lit, j); return j; }
       if ((c === "$" && s[j + 1] === "(") || c === "`") {
         if (mask) blank(lit, j);
         let close;
@@ -321,8 +356,11 @@ function maskQuotedText(s) {
       }
       j++;
     }
-    return -1;
+    if (stopAtQuote) return -1;          // 닫는 따옴표를 못 찾았다 = 못 읽음
+    if (mask) blank(lit, to);            // 히어독: 마지막 글자 구간까지 덮고 끝
+    return to;
   }
+  const doubleQuote = (open, to, mask, depth) => expandedRegion(open + 1, to, mask, depth, true);
 
   // 코드 구간 [from, to) 를 훑는다. 명령 판정(plain)은 이 구간 안에서만 센다.
   // `allow` = **바깥이 글자를 먹는 자리였나**. 거짓이면 이 구간에서는 아무것도 안 덮는다:
@@ -361,7 +399,16 @@ function maskQuotedText(s) {
         const bodyEnd = bodyStart + 1 + rel.index;
         // ⚠ `cat > f <<EOF` 처럼 **글자를 먹는** 히어독만 덜어낸다. `bash <<EOF` · `python3 - <<PY` 는
         //   본문이 곧 코드라 그대로 둔다(목록에 없으니 자동으로 그렇게 떨어진다).
-        if (maskHere()) blank(bodyStart + 1, bodyEnd);
+        // 🛑 그리고 **끝말의 따옴표 여부를 본다**(4회차에 여기서 진짜 위험 2건이 샜다).
+        //   `m[3]` 은 맨 이름(`<<EOF`)일 때만 채워진다 = 본문에 전개가 걸린다 = 통째로 못 덮는다.
+        //   따옴표로 감싼 끝말(`<<'EOF'`·`<<"EOF"`)만 본문이 진짜 글자다.
+        if (maskHere()) {
+          if (m[3] != null) {
+            if (expandedRegion(bodyStart + 1, bodyEnd, true, depth, false) === -1) { ok = false; return; }
+          } else {
+            blank(bodyStart + 1, bodyEnd);
+          }
+        }
         i = bodyEnd + rel[0].length; plain += " "; continue;
       }
       if (ch === "'") {
