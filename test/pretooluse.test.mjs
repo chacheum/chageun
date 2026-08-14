@@ -172,17 +172,28 @@ test("(마) 파이프 뒤를 경로로 부르면 접는다: `| /bin/sh` 는 맨 
     "따옴표 안의 `|` 는 파이프가 아니다");
 });
 
-test("(마) find 자리표는 인자로 안 친다: `{} +` · `\"{}\"` 도 대상이 안 보이는 것이다", () => {
+// 라벨이 `(마)`·`(바)` 로 겹쳐 있었다(떼어낸 가지에서 그대로 따라온 것). 위 칸들이 코드 주석에서
+//   이름으로 불리고 있어 그쪽은 그대로 두고, 겹친 뒤쪽 둘에만 안 쓰던 글자를 준다.
+test("(파) find 자리표는 인자로 안 친다: `{} +` · `\"{}\"` 도 대상이 안 보이는 것이다", () => {
   // 2회차가 연 자리 ③④: `+` 나 `"{}"` 를 못 알아봐 '인자가 보인다'로 판단하고 짧은 구간만 봤다.
   assert.equal(bash("find / -name '*.log' -exec rm -rf {} +"), "rm-recursive", "`{} +` 는 요즘 권장 표기다");
   assert.equal(bash('find / -exec rm -rf "{}" \\;'), "rm-recursive");
   assert.equal(bash("find / -exec rm -rf '{}' \\;"), "rm-recursive");
   assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive", "맨 자리표 대조군");
   assert.equal(bash("find / -name x -exec rm -rf {} +"), "rm-recursive");
-  // 반대 방향: 구체적인 경로가 하나라도 보이면 그 rm 의 인자 구간만 본다(과차단 방지).
+  // 🛑🛑 **이름 한 자리가 모르는 자리까지 덮으면 안 된다**(7회차 검수가 실행으로 잡음).
+  //   `{}` 는 뿌리 아래 **모든 파일**로 펼쳐지는데, 앞의 `./tmp//x` 하나 때문에 되돌림이 꺼져
+  //   통과했다. 앞 판의 검사표는 이 통과를 **의도로 못 박아 놨다**(그래서 조용히 지나갔다).
+  //   되돌림 조건이 "이름이 있다"에서 "**모르는 자리가 하나도 없고** 이름이 있다"로 좁혀졌다.
+  assert.equal(bash("find / -name '*.log' -exec rm -rf ./tmp//x {} +"), "rm-recursive",
+    "이름이 보여도 같은 구간에 모르는 자리가 있으면 온 명령으로 되돌린다");
+  // 반대 방향: 모르는 자리가 없으면 그 rm 의 인자 구간만 본다(과차단 방지).
   assert.equal(bash("cd / && rm -rf ./build"), null, "앞 세그먼트의 `/` 를 이 rm 의 대상으로 읽지 않는다");
-  assert.equal(bash("find / -name '*.log' -exec rm -rf ./tmp//x {} +"), null,
-    "경로로 보이는 토큰이 있으면 그 구간만 본다");
+  assert.equal(bash("find /tmp -name '*.log' -exec rm -rf ./tmp//x +"), null,
+    "자리표가 없으면 이름만 남아 그 구간으로 끝난다");
+  // 🛑 플래그는 "모르는 자리"가 아니다. 모름으로 세면 이 줄이 늘 되돌아가 과차단이 난다.
+  assert.equal(bash("cd / && rm -rf --one-file-system ./build"), null, "플래그는 대상 자리가 아니다");
+  assert.equal(bash("cd / && rm -rf -- ./build"), null, "`--` 도 같다");
 });
 
 // 🛑🛑 **3회차가 또 5건을 열었다.** 히어독 검사 4개가 **전부 따옴표 있는 형태**여서 못 잡았다.
@@ -218,7 +229,7 @@ test("(바) 히어독은 끝말의 따옴표를 본다: 맨 이름이면 본문 
     "히어독 본문의 `\"` 는 escape 가 아니라 글자다");
 });
 
-test("(바) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
+test("(하) 파이프를 알아보는 단계도 닫히는 쪽이다: `|&` · 프로세스 치환", () => {
   // 3회차가 연 자리 ③④: `|&` 는 `|` 다음이 `&` 라 매칭 자체가 실패해 '파이프 없음'으로 떨어졌다.
   assert.equal(bash('echo "rm -rf /*" |& bash'), "rm-recursive");
   assert.equal(bash('echo "rm -rf /*" |& /bin/sh'), "rm-recursive");
@@ -344,9 +355,40 @@ test("(차) 리다이렉션 꼬리는 인자 구간 밖이다: `2>` 가 되돌�
   assert.equal(bash('rm -rf "a|b" ~'), "rm-recursive", "따옴표 안의 `|`");
   assert.equal(bash('rm -rf "a>b" /'), "rm-recursive", "따옴표 안의 `>`");
   assert.equal(bash('rm -rf "a\nb" /'), "rm-recursive", "따옴표 안의 개행");
-  // 반대 방향: 짝이 맞으면 그대로 자리로 읽는다(못 읽었다고 통째로 되돌리지 않는다).
+  // 🛑🛑 같은 이음매의 **다른 두 갈래**(7회차 검수가 실행으로 잡음). 따옴표 짝만 보던 판은
+  //   이 셋을 놓쳤고, 셋 다 옛 판은 막던 것이다.
+  //   (2) 리다이렉션은 인자 **가운데**에도 온다. 자른 뒤에도 여전히 인자가 이어진다.
+  assert.equal(bash("rm -rf ./tmp >/dev/null *"), "rm-recursive", "리다이렉션 뒤에도 인자가 이어진다");
+  assert.equal(bash("rm -rf ./tmp >/dev/null /"), "rm-recursive");
+  assert.equal(bash("rm -rf ./tmp 2>/dev/null /"), "rm-recursive", "fd 번호가 붙어도 같다");
+  //   (3) 자른 글자 앞이 역슬래시면 그것은 연산자가 아니라 글자다.
+  assert.equal(bash("rm -rf ./tmp \\; /"), "rm-recursive", "역슬래시 종결자 뒤에도 인자가 이어진다");
+  assert.equal(bash("rm -rf ./tmp \\& /"), "rm-recursive");
+  // 반대 방향: 못 읽었어도 **온 명령에 위험이 없으면** 안 막는다(되돌림이지 무조건 차단이 아니다).
   assert.equal(bash('rm -rf "my dir"'), null, "짝 맞는 따옴표 안의 공백은 그냥 이름이다");
   assert.equal(bash('rm -rf "x&" ./build'), null, "못 읽어도 온 명령에 위험이 없으면 안 막는다");
+  assert.equal(bash("rm -rf ./tmp >/dev/null"), null, "꼬리만 붙은 정상 삭제");
+  assert.equal(bash("rm -rf build 2>/dev/null && echo ok"), null);
+});
+
+// 🛑 **7회차가 만든 새 헛막음**(검수가 실행으로 잡음). 이름 판정이 ASCII 글자만 보던 탓에
+//   한글·이모지 폴더가 "이름이 아니다"로 떨어져 `.`·`..` 만 남은 꼴이 되고 꼭대기로 읽혀 막혔다.
+//   **옛 판은 안 막던 것이라 순수한 손해였다.** 이 판의 목적 자체가 헛막음을 푸는 것이다.
+test("(거) 비ASCII 폴더 이름도 평범한 이름이다: 한글·이모지가 막히면 안 된다", () => {
+  assert.equal(bash("rm -rf ./빌드결과"), null, "한글 폴더");
+  assert.equal(bash("rm -rf ./빌드📦결과"), null, "이름에 이모지가 섞인 폴더");
+  assert.equal(bash("rm -rf ../빌드"), null, "한글 상위 폴더");
+  assert.equal(bash("rm -rf ./📦"), null, "이름이 이모지뿐이어도 이름이다");
+  assert.equal(bash("rm -rf ./документы"), null, "키릴");
+  assert.equal(bash("rm -rf ./資料"), null, "한자");
+  assert.equal(bash("rm -rf 빌드 && cd .."), null, "옆자리 `cd ..` 와 함께여도 같다");
+  assert.equal(bash("rm -rf /tmp/빌드"), null, "대조군: 절대경로 한글");
+  assert.equal(bash("rm -rf ./build"), null, "대조군: 영문 상대경로");
+  // 🛑 반대 방향: 비ASCII 를 더한 것이지 **구조 글자를 이름으로 바꾼 것이 아니다.**
+  //   자리표·종결자는 전부 ASCII 라 그대로 "모름"에 남아야 한다. 빠지면 되돌림이 꺼진다.
+  assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive", "자리표는 여전히 모름이다");
+  assert.equal(bash("find / -exec rm -rf {} +"), "rm-recursive", "종결자도 같다");
+  assert.equal(bash("rm -rf 빌드 /"), "rm-recursive", "한글 이름 옆의 뿌리는 그대로 잡는다");
 });
 
 // 🛑🛑 **7회차가 반드시 먼저 닫아야 했던 두 자리**(계획서 표 · 6회차 판에서 실측으로 열려 있었다).
@@ -380,6 +422,9 @@ test("(카) 위험 대상은 자리로 본다: 인자가 여럿이어도 · 뒤�
   assert.equal(bash("rm -rf ./*.log"), null);
   assert.equal(bash("rm -rf /tmp/*.log"), null, "이름 붙은 폴더 아래 글로브");
   assert.equal(bash("rm -rf ~/projects/*.bak"), null);
+  // 🛑 `atRoot` 를 끄는 한 줄이 없으면 이 줄이 빨개진다: 앞자리가 변수라 뿌리 바로 밑이 아닌데도
+  //   `*.log` 를 "뿌리 밑 글로브"로 읽는다. 그 한 줄만 죽어도 안 잡히던 자리라 칸으로 박아 둔다.
+  assert.equal(bash("rm -rf /$X/*.log"), null, "변수 한 자리를 지나면 뿌리 바로 밑이 아니다");
   assert.equal(bash("rm -rf dist/*"), null, "이름 붙은 폴더 아래 전체");
   assert.equal(bash("rm -rf build 2 > /dev/null"), null, "꼬리 앞 숫자만으로 막지 않는다");
   assert.equal(bash("rm -rf ../build"), null, "상위의 이름 붙은 폴더");
