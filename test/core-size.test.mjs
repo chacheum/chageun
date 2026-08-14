@@ -40,9 +40,9 @@ function injectedBytes() {
 //    합계 하나로 재면 "항상 드는 비용"이 소리 없이 커지는 것을 그 축이 못 본다. 그래서 파일별로도 핀다.
 //    아래 FILE_CEILINGS 의 합 = CEILING_BYTES 라는 단언이 두 장부가 따로 놀지 못하게 묶는다.
 const FILE_CEILINGS = {
-  "operating-rules.md": 22019,     // v0.68.0 작업방 위임 두 줄 + 재리뷰 2회 반영 실측(헤드룸 0 · 사유는 아래 장부 맨 끝)
-  "unattended-appendix.md": 5912,  // v0.67.0 T7-가 실측(헤드룸 0 · v0.68.0 에서 무변경)
-  "statusboard-appendix.md": 698,  // v0.65.0 실측(등록부에 처음 오름 · T7·v0.68.0 에서 무변경)
+  "operating-rules.md": 22019,     // v0.69.0 작업방 위임 두 줄 + 재리뷰 2회 반영 실측(헤드룸 0 · 사유는 아래 장부 맨 끝)
+  "unattended-appendix.md": 5912,  // v0.67.0 T7-가 실측(헤드룸 0 · v0.69.0 에서 무변경)
+  "statusboard-appendix.md": 698,  // v0.65.0 실측(등록부에 처음 오름 · T7·v0.69.0 에서 무변경)
 };
 
 // Claude 상시 주입 = operating-rules.md 단독. batch6 다이어트 + batch7 영어화 기준으로 하향.
@@ -337,7 +337,7 @@ const FILE_CEILINGS = {
 //     안 본다**(사람이 읽는 기록이라 조용히 틀린 채 남는다).
 //   발동률 근거: 해당 없다. 규칙을 스킬로 옮기지 않았다(글자만 바꿨다).
 //   다음 델타는 27288 기준으로 계산한다.
-// 2026-08-14 +1341 (27288 → 28629) (v0.68.0 작업방 위임). **순증이고 회수는 0이다.**
+// 2026-08-14 +1341 (27288 → 28629) (v0.69.0 작업방 위임). **순증이고 회수는 0이다.**
 //   파일별: operating-rules.md 20678 → 22019 (+1341) · unattended-appendix.md 5912 무변경 ·
 //     statusboard-appendix.md 698 무변경.
 //   한 항목에 세 커밋이 들어 있다(초안 +919 → pr-reviewer REQUEST CHANGES 반영 +355 →

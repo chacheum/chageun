@@ -5,7 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-// 작업방 위임 규칙(v0.68.0)의 그물.
+// 작업방 위임 규칙(v0.69.0)의 그물.
 //
 // 🛑 읽는 대상을 **`src/` 로 못박는다.** 같은 문자열이 `dist/` 와 `test/golden/` 에도 있어서,
 //    범위를 안 좁히면 "빌드가 돌았나"를 재는 검사가 되어 버린다(원본이 비어도 옛 빌드 산출물이
