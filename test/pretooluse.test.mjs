@@ -31,7 +31,7 @@ test("rm 재귀삭제: 루트/홈/현재트리 차단 · 하위 경로 허용", 
   assert.equal(bash("rm file.txt"), null);
 });
 
-// ── 하는 것과 설명하는 것을 가른다(v0.67.x · 실기록 재생으로 잡은 오차단 2건) ─────────────
+// ── 하는 것과 설명하는 것을 가른다(실기록 재생으로 잡은 오차단 2건) ─────────────
 //
 // 🛑 **이 두 검사는 반드시 짝으로 읽는다.** 아래 "(가) 글자는 통과"만 있으면 완화가 구멍인지
 //   알 수 없고, "(나) 실행은 차단"만 있으면 완화가 실제로 됐는지 알 수 없다. 이 저장소는
@@ -256,13 +256,52 @@ test("(사) 표준입력을 코드로 먹는 형태는 각본 파일이 보일 �
   assert.equal(bash(`echo "rm -rf /*" | node -e 'require("child_process").execSync(...)'`), "rm-recursive");
   assert.equal(bash(`echo "rm -rf /*" | php -r 'system(fgets(STDIN));'`), "rm-recursive");
   assert.equal(bash(`echo "rm -rf /*" | perl -e 'system(<STDIN>)' helper.pl`), "rm-recursive",
-    "각본 파일이 보여도 인라인 코드를 함께 주면 안 푼다");
+    "각본 파일이 뒤에 보여도 첫 낱말이 `-e` 라 첫 자리에서 접힌다");
   // 반대 방향: 실측 근거가 있던 줄들은 전부 **확장자**로 통과한다.
   assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | node hook.js` }), false);
   assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 probe.py` }), false);
   assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 -u probe.py` }), false);
   assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | node dist/claude/hooks/pretooluse.js` }), false,
     "경로가 붙은 각본 파일도 같게 본다");
+});
+
+// 🛑🛑 **5회차: 4회차 처방을 "각본 파일이 *어딘가* 있으면"으로 구현해 또 열렸다.** 판정이
+//   `toks.some(각본) && !인라인코드목록` 이라는 **곱셈**이라 뒤 목록의 빈칸이 곧 통과 사유였다.
+//   지금은 **첫 번째 비플래그 낱말**만 본다. 아래 축은 전부 "각본 파일이 뒤에는 있지만
+//   앞에 표준입력을 코드로 먹는 것이 있다"라서 접혀야 하는 형태다.
+test("(아) 각본 파일은 **첫 비플래그 낱말**일 때만 예외다: 뒤에 있는 것은 자격이 아니다", () => {
+  // 5회차가 연 자리: 넷 다 앞에 `echo "rm -rf /*" |` 를 붙이면 전체 삭제가 진짜 실행된다.
+  assert.equal(bash(`echo "rm -rf /*" | python3 - x.py`), "rm-recursive", "`-` 는 표준입력을 코드로 읽는다");
+  assert.equal(bash(`echo "rm -rf /*" | python3 -i x.py`), "rm-recursive", "대화형은 표준입력이 코드다");
+  assert.equal(bash(`echo "rm -rf /*" | python3 -m pdb x.py`), "rm-recursive", "모듈이 표준입력을 먹는다");
+  assert.equal(bash(`echo "rm -rf /*" | deno run - x.ts`), "rm-recursive", "하위명령 + 표준입력");
+  assert.equal(isPush("Bash", { command: `echo "git push" | python3 -m pdb x.py` }), true);
+  // 앞머리 플래그 화이트리스트는 **실측 근거가 있는 것만** 든다. 모르는 플래그는 첫 자리에서 접힌다.
+  assert.equal(bash(`echo "rm -rf /*" | python3 -X faulthandler x.py`), "rm-recursive", "모르는 플래그는 접힌다");
+  // 반대 방향: `-u` 는 실측 코퍼스에 있던 줄이라 통과해야 한다(버퍼링만 끈다).
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | python3 -u probe.py` }), false);
+  // 🛑 4회차 목록(`INLINE_CODE_FLAG`)이 `-p` 를 인라인 코드로 잡아 **정상 줄을 막았다**. 그 목록을
+  //   지운 자리다: 각본 파일이 첫 낱말이면 뒤에 무슨 플래그가 붙든 표준입력은 데이터다.
+  assert.equal(isPush("Bash", { command: `printf '%s' '{"cmd":"git push"}' | node hook.js -p 8080` }), false,
+    "각본이 첫 낱말이면 뒤 플래그는 상관없다");
+});
+
+// 🛑🛑 **5회차: `rm` 인자 판정이 따옴표를 못 봐 안전측 되돌림이 꺼졌다.** 마스킹이 `';'` 를
+//   `' '` 로 만들면 외톨이 `'` 가 남는데, 옛 판은 "자리표 목록에 없는 낱말 = 대상이 보인다"라서
+//   그 조각 하나에 되돌림이 풀렸다. 지금은 **첫 글자가 경로 글자인 것만** 대상으로 본다.
+test("(아) rm 인자의 따옴표 조각·종결자는 대상이 아니다: 되돌림이 안 꺼진다", () => {
+  assert.equal(bash("find / -exec rm -rf {} ';'"), "rm-recursive", "홑따옴표 종결자");
+  assert.equal(bash('find / -exec rm -rf {} ";"'), "rm-recursive", "겹따옴표 종결자");
+  assert.equal(bash('find / -exec rm -rf "{}" ";"'), "rm-recursive", "자리표·종결자 둘 다 따옴표");
+  assert.equal(bash("find / -exec rm -rf {} \\+"), "rm-recursive", "이스케이프한 `+`");
+  assert.equal(bash('rm -rf ";" /*'), "rm-recursive", "인자 안에 낀 따옴표 조각");
+  assert.equal(bash("find / -exec rm -rf {} \\;"), "rm-recursive", "대조군: 이스케이프 종결자");
+  assert.equal(bash("find / -exec rm -rf {} +"), "rm-recursive", "대조군: 맨 `+`");
+  // 반대 방향(이 판정의 값이 걸린 자리): **맨 이름 폴더는 그냥 상대 경로다.** 이것을 "대상이 아니다"로
+  //   읽으면 온 명령 검사로 되돌아가 옆 자리 글자에 막힌다 = 이 판이 고친 실측 오차단이 되돌아온다.
+  assert.equal(bash("rm -rf build && cd .."), null, "맨 이름도 지울 대상이다");
+  assert.equal(bash("rm -rf png && mkdir -p png"), null);
+  assert.equal(bash("rm -rf node_modules && cd .."), null);
 });
 
 test("실행 구간 마스킹: 길이를 보존하고, 못 읽으면 원문을 쓴다(fail-closed)", () => {
@@ -1259,7 +1298,7 @@ test("isPush: git push 변형 감지 · 비push는 침묵 · 부분문자열 한
   assert.equal(p("git --git-dir=/x push"), true);
   assert.equal(p("cd a && git push"), true);
   assert.equal(p("git commit -m 'will push later'"), false, "bare push는 오탐 아님");
-  // v0.67.x: 옛 판은 여기서 true 였다("알려진 한계: 따옴표 미해석 — SKIP env로 해소").
+  // 마스킹 전 옛 판은 여기서 true 였다("알려진 한계: 따옴표 미해석 — SKIP env로 해소").
   //   그 한계가 실제로 물었고 SKIP env 는 회복 경로가 아니었다(서브에이전트는 못 켠다).
   assert.equal(p('git commit -m "docs: how to git push"'), false, "커밋 메시지 안 글자는 실행이 아니다");
   assert.equal(p("git log"), false);

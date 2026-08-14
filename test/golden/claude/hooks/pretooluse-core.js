@@ -9,7 +9,7 @@ const FORCE_PUSH = /\bgit\b(?:\s+-c\s+\S+|\s+-C\s+\S+|\s+--git-dir=\S+|\s+--work
 // rm 재귀+강제(-rf·-fr·-r -f·--recursive --force)가 루트/홈/현재트리 등 위험 타깃을 지울 때.
 const RM_RECURSIVE = /\brm\s+(?:-[a-zA-Z]*\b\s*){0,3}(?:-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|--recursive|--force)\b/;
 const RM_DANGER_TARGET = /(?:\s|^)(?:\/(?:\s|$|\*)|~\/?\s*$|~\/\s*\*|\$HOME\b|\/\*|\.\.(?:\s|$|\/(?:\s|$|\*|\.))|\.\s*$|\*\s*$)/;
-// 위험 타깃은 **그 `rm` 자신의 인자 구간**에서만 본다(v0.67.x).
+// 위험 타깃은 **그 `rm` 자신의 인자 구간**에서만 본다(아래 `실행 구간 마스킹` 절과 한 묶음이다).
 //
 // 🛑 **실측 9건 전부 오차단이었다**(2026-08-13, 실기록 2,137파일 471,445줄 전수 재생).
 //   옛 판은 `RM_RECURSIVE.test(cmd) && RM_DANGER_TARGET.test(cmd)` 로 **둘을 따로** 온 명령에 걸었다.
@@ -38,12 +38,28 @@ const RM_ARGS_END = /[|;&<>]|(?<!\\)\n/;
 //   `find / -exec rm -rf "{}" \;` (따옴표 씌운 자리표).
 // 그래서 조건을 뒤집었다: **경로로 보이는 토큰이 하나도 없으면 불투명**이다. 자리표·플래그·구분자·
 //   처음 보는 표기가 전부 안전측으로 떨어지고, 새 표기가 생겨도 자동으로 막힌다.
-const RM_ARG_PLACEHOLDER = /^(?:["']?\{\}["']?|\+|%|;|\\;?|--)$/;
+//
+// 🛑🛑 **5회차: 그 뒤집기를 자리표 *목록*으로 구현해서 방향이 도로 돌아갔다**(게이트가 실행으로 적발).
+//   "플래그도 자리표도 아닌 낱말이 하나라도 있으면 대상이 보인다"라는 형태라, 목록에 없는 글자
+//   조각이 하나만 남아도 "대상이 보인다"로 떨어져 **안전측 되돌림이 꺼졌다**. 실제로 뚫린 것:
+//     `find / -exec rm -rf {} ';'`  - 따옴표 마스킹이 `';'` 를 `' '` 로 만들어 외톨이 `'` 두 개가 남는다
+//     `find / -exec rm -rf {} \+`   - `\+` 가 목록의 `\\;?` 에도 `\+` 에도 안 맞는다
+//     `rm -rf ";" /*`               - 같은 이유로 남은 `"` 조각
+//   목록을 늘려 고치지 않는다(다섯 회차 연속 같은 실수의 원인이 목록이다). 판정을 **경로 문법**으로
+//   갈아치운다: **첫 글자가 경로 글자**(낱말 문자·`.`·`~`·`/`)인 것만 "지울 대상"으로 본다.
+//   자리표(`{}`)·종결자(`+`·`;`·`\;`)·따옴표 조각(`'`·`"`)은 **전부 구두점으로 시작**하므로 한꺼번에
+//   불투명(= 온 명령 검사 = 안전측)으로 떨어진다. 새 종결자 표기가 생겨도 같은 이유로 자동으로 막힌다.
+//
+// ⚠ **"슬래시를 품었거나 확장자로 끝나는 것"으로 좁히면 안 된다**(5회차 처방의 첫 형태 · 실행으로 기각).
+//   그러면 `build`·`png`·`node_modules` 같은 **맨 이름 폴더**가 "대상이 아니다"로 떨어져 온 명령 검사로
+//   되돌아가고, 이 판이 고치려던 실측 오차단이 그대로 돌아온다(`rm -rf build && cd ..` 가 옆 자리
+//   `cd ..` 때문에 막혔다 · 아래 검사 두 줄이 그 자리를 붙들고 있다). 맨 이름은 그냥 상대 경로다.
+const RM_PATHISH = /^[\w./~]/;
 function rmArgsOpaque(args) {
   for (const t of String(args).trim().split(/\s+/)) {
     if (!t) continue;
     if (t.startsWith("-")) continue;              // 플래그 · `--`
-    if (RM_ARG_PLACEHOLDER.test(t)) continue;     // find 자리표 · 종결자
+    if (!RM_PATHISH.test(t)) continue;            // 경로 문법이 아니면 지울 대상이 아니다
     return false;                                 // 경로로 보이는 토큰이 하나라도 있으면 대상이 보인다
   }
   return true;
@@ -176,7 +192,7 @@ function isDeploy(cmd) {
   return false;
 }
 
-// ── 실행 구간 마스킹(v0.67.x) ────────────────────────────────────────────────
+// ── 실행 구간 마스킹 ─────────────────────────────────────────────────────────
 // **하는 것과 설명하는 것을 가른다.** 훅은 셸 문자열을 통으로 훑어 왔고, 그래서 커밋 메시지 본문·
 //   검색어(grep 인자)·훅 자기 시험용 JSON 안에 **글자로 인용된** 명령을 진짜 실행으로 읽었다.
 //   실측(2026-08-13 · 실기록 2,137파일 전수 재생): 서브에이전트 push 차단 9건 중 7건이 이 모양이었다
@@ -272,10 +288,29 @@ const NON_SHELL_INTERPRETERS = /^(?:python3?|node|deno|bun|perl|ruby|php)$/;
 //   모르는 표기(새 플래그·새 하위명령·처음 보는 인터프리터 관용구)는 전부 접히는 쪽으로 떨어진다.
 //   실측 근거가 있던 줄들은 전부 확장자로 통과한다 - `| node hook.js` · `| python3 probe.py` ·
 //   `| python3 -u probe.py` · `| node dist/claude/hooks/pretooluse.js`.
-const SCRIPT_FILE = /^[\w./~-]+\.(?:py|js|mjs|cjs|ts|rb|pl|php|lua)$/;
-// 위 뒤집기가 이미 모르는 것을 다 접으므로 이 목록은 **닫는 쪽으로만** 쓴다(빈칸이 여는 쪽으로
-//   안 떨어진다). 각본 파일이 보이는데 인라인 코드까지 함께 준 형태(`perl -e '…' x.pl`)를 막는다.
-const INLINE_CODE_FLAG = /(?:^|\s)--?(?:c|e|E|r|R|p|n|eval|command|program|print|exec)(?=$|[\s'"=])/;
+//
+// 🛑🛑 **5회차: 그 뒤집기를 "각본 파일이 *어딘가* 있으면" 으로 구현해서 또 열렸다**(게이트가
+//   실행으로 적발). 판정이 `toks.some(SCRIPT_FILE) && !INLINE_CODE_FLAG.test(args)` 라는 **곱셈**이라,
+//   뒤 항의 목록이 못 잡으면 `!거짓 = 참`이 되어 **빈칸이 곧 통과 사유**였다. 실제로 뚫린 것 넷:
+//     `| python3 - x.py`      - 표준입력을 코드로 읽는 `-` 뒤에 각본이 있다
+//     `| python3 -i x.py`     - 대화형이라 표준입력이 코드다
+//     `| python3 -m pdb x.py` - 모듈이 표준입력을 코드로 먹는다
+//     `| deno run - x.ts`     - 하위명령 + 표준입력
+//   넷 다 `echo "rm -rf /*" |` 를 앞에 붙이면 전체 삭제가 진짜로 실행된다.
+//
+// 그래서 **자리로** 판정한다: 앞머리 플래그를 건너뛴 뒤 **첫 번째 비플래그 낱말**이 각본 파일일
+//   때만 예외를 준다. 그러면 `-`·`-i`·`-m`·`run` 이 전부 첫 낱말에서 접힌다. 곱셈이 사라져
+//   `INLINE_CODE_FLAG` 목록도 필요 없다: `perl -e '…' helper.pl` 은 `-e` 가 아래 화이트리스트
+//   밖이라 첫 낱말에서 접힌다(실행으로 확인).
+//
+// 🛑 **`SCRIPT_FILE` 은 여는 목록이다. 늘리면 안전이 열린다. 헛막음은 여기 말고 자리 판정으로 푼다.**
+//   첫 글자에서 `-` 를 뺐다: 안 빼면 `-x.py` 같은 낱말이 각본 파일 자격을 얻는다.
+const SCRIPT_FILE = /^[\w./~][\w./~-]*\.(?:py|js|mjs|cjs|ts|rb|pl|php)$/;
+// 🛑 **이것도 여는 목록이다. 실측 근거가 있는 것만 넣는다** - "흔하니까"로 넣으면 그 자리가 구멍이다.
+//   `-u`: 실측 코퍼스의 `| python3 -u probe.py`(버퍼링만 끄는 플래그라 표준입력을 코드로 안 읽는다).
+//   ⚠ `-m` 은 **일부러 안 넣었다**: 넣으면 `| python3 -m json.tool` 헛막음 한 칸은 풀리지만
+//   `| python3 -m pdb x.py`(위 실측 구멍)가 같이 열린다. 그 한 칸은 감수하는 맞바꿈이다.
+const SAFE_INTERP_FLAG = /^-u$/;
 // 프로세스 치환(`>(cmd)`·`<(cmd)`). 파이프가 아니라 `|` 판정이 통째로 못 본다.
 const PROC_SUBST = /[<>]\(/;
 // 🛑 첫머리가 `\|&?` 다. `|&`(표준오류까지 넘기는 표기)는 `|` 다음이 `&` 라 **매칭 자체가 실패**했고,
@@ -291,11 +326,13 @@ function pipesIntoInterpreter(s) {
     const base = m[2].replace(/^['"]|['"]$/g, "").split("/").pop();   // 경로로 불러도 같게 본다
     if (PIPE_TEXT_SINKS.test(base)) continue;                        // (a) 글자를 먹는 것이 확실
     if (NON_SHELL_INTERPRETERS.test(base)) {
-      // (b) **각본 파일 모양이 보일 때만** 예외를 준다: 그때는 표준입력이 데이터다.
-      //     "대시로 시작하지 않는 낱말"을 각본으로 치면 하위명령(`deno run`)이 자격을 만든다.
+      // (b) **첫 번째 비플래그 낱말이 각본 파일일 때만** 예외를 준다: 그때는 표준입력이 데이터다.
+      //     "각본 파일이 어딘가 있으면"으로 보면 `- x.py`·`-m pdb x.py` 가 자격을 만든다(5회차 구멍).
       const args = m[3].trim();
       const toks = args ? args.split(/\s+/).filter(Boolean) : [];
-      if (toks.some((t) => SCRIPT_FILE.test(t)) && !INLINE_CODE_FLAG.test(args)) continue;
+      let i = 0;
+      while (i < toks.length && SAFE_INTERP_FLAG.test(toks[i])) i++;
+      if (i < toks.length && SCRIPT_FILE.test(toks[i])) continue;
     }
     return true;                                                     // (c) 나머지는 전부 접는다
   }
@@ -964,7 +1001,7 @@ function finishedImplementerHere(o, agentTypeById) {
 
 // P3: git push 감지(게이트 생략 검사용) - git 다음이 플래그류뿐일 때만 push 서브커맨드로 인정
 // (bare "push" 문자열 오탐 방지: 무인 ANY_PUSH(과차단 허용)보다 좁게).
-// v0.67.x: **인용된 글자는 이제 안 잡는다** - 판정 전에 `executableText` 로 따옴표 안과 인용 히어독
+// **인용된 글자는 이제 안 잡는다** - 판정 전에 `executableText` 로 따옴표 안과 인용 히어독
 //   본문을 덜어낸다. 옛 주석이 "알려진 한계(SKIP env로 해소)"라 적어 둔 그 한계가 실제로 물었다:
 //   실측 서브에이전트 push 차단 9건 중 7건이 실행이 아니라 **글자**였고, 그중 하나는 이 훅을
 //   검토하던 에이전트의 `git … grep -n "u-push\|git push" -- …` 였다(자기 검색어에 자기가 막힘).
@@ -1861,7 +1898,7 @@ function unattendedBlock(toolName, toolInput, opts) {
     const envRemote = envTargetsRemoteDb(cmd);
     for (const seg of cmd.split(/&&|\|\||[;|\n]/)) {
       if (NESTED_AGENT.test(seg)) return "u-nested";
-      // ⚠ 여기 `seg` 는 **원문**이다(v0.67.x 마스킹을 일부러 안 걸었다). 그래서 커밋 메시지 안에
+      // ⚠ 여기 `seg` 는 **원문**이다(위 `실행 구간 마스킹` 을 일부러 안 걸었다). 그래서 커밋 메시지 안에
       //   글자로 적힌 `git push` 도 park 된다. 이유는 `block()` 의 '안 넓힌 규칙' 주석 참고:
       //   무인은 실측 코퍼스가 없어 헛막음 건수를 못 재서, 여는 쪽으로 손대지 않았다.
       if (ANY_PUSH.test(seg)) return "u-push";
