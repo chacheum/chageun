@@ -33,9 +33,19 @@ const A_LINE_PARTS = [
   // 견줄 기준. 일꾼이 커밋까지 하므로 맨 `diff` 는 빈 결과이고, 그때 게이트는 실패가 아니라
   //   통과로 끝난다. 이 조각이 빠지면 게이트가 조용히 합격 도장을 찍는다.
   "git -C <path> diff <base>...HEAD",
-  // 작업방을 못 만드는 판의 갈래(성공 기준 3-2). 없으면 비-git 프로젝트에서 A줄이 위임을 막고
-  //   B줄이 인라인을 막아 코드 작업이 통째로 선다.
-  "Cannot create one (not a git repo · tool error)",
+  // 커밋 안 한 것을 보는 짝. `bare diff is empty` 만 있으면 "맨 diff 는 볼 필요 없다"로 굳어,
+  //   일꾼이 BLOCKED 로 멈춰 커밋을 못 한 판을 "아직 아무것도 안 했군요"로 읽는다.
+  "uncommitted work still shows in `status`",
+  // 🛑 이 판이 "왜 스킬이 아니라 코어인가"를 답하며 든 **유일한 근거**다. 그런데 앵커가 없어서,
+  //   다음 개정이 A줄을 줄이면서 이 한 문장만 빼도 전 검사가 초록이었다(재리뷰 medium).
+  "before that worktree has its env and deps",
+  // 🛑 합쳐 넣기(재리뷰 high). 이 조각이 없으면 방 안에서 고치고 diff 까지 확인해 놓고
+  //   "고쳤습니다"로 끝나는데 **사용자의 파일은 그대로다.** 라우팅 스킬이 안 열린 턴에도
+  //   도착해야 막히므로 코어에 둔다.
+  "Nothing counts as done until main merges that branch back into the main line",
+  // 방을 못 만드는 두 원인은 처방이 다르다. 하나로 묶으면 도구 오류에도 `git init` 을 권한다.
+  "not a git repo: propose `git init` first",
+  "tool error: report that and delegate without a worktree",
 ];
 const B_LINE_PARTS = [
   "**Main never edits product code inline**",
@@ -82,8 +92,12 @@ const ROUTING_WORKTREE_PARTS = [
   "git -C <작업방> status --porcelain",
   // 무인 예외(코어 A줄과 같은 말). 한쪽만 고치면 갈라진다.
   "무인 세션은 방을 만들지 않는다",
-  // 작업방을 못 만드는 판의 갈래(성공 기준 3-2).
-  "작업방을 못 만드는 판(git 저장소가 아님 · 도구 오류)",
+  // 작업방을 못 만드는 판의 갈래(성공 기준 3-2). 원인 둘은 **처방이 다르다**(재리뷰 low):
+  //   도구 오류에 `git init` 은 답이 아니고, 모노레포 하위 폴더의 `git init` 은 중첩 `.git` 을
+  //   만들어 그 하위 트리를 부모 추적에서 조용히 떼어낸다. 그래서 갈래마다 따로 앵커한다.
+  "작업방을 못 만드는 판은 원인이 둘이고 처방이 다르다",
+  "모노레포 하위 폴더에서는 제안하지 않는다",
+  "도구 오류면 `git init` 은 답이 아니다",
   // `.env` 는 cp 로만. Read/Write 로 옮기면 가려진 글자가 그대로 적혀 파일이 조용히 망가지고,
   //   그 파일로 띄운 서버의 "구동 검증 통과"가 거짓 초록이 된다.
   "`cp` 로만 옮긴다",
@@ -99,13 +113,35 @@ const ROUTING_WORKTREE_PARTS = [
   // 지우기는 remove 로만, --force 금지.
   "`git worktree remove`",
   "**`--force` 는 쓰지 않는다.**",
-  // 방 경로가 git 무시 대상인지 확인. 안 하면 본 폴더의 git status·Grep 에 방 사본이 섞인다.
-  "git 무시 대상인지 한 번 확인한다",
+  // 방 경로가 git 무시 대상인지 확인. 안 하면 본 폴더의 git status·Grep 에 방 사본이 섞이고
+  //   `git add -A` 가 빈 칸 하나를 커밋에 넣는다. **순서**가 핵심이라 그 조각까지 잰다:
+  //   방부터 만들면 오염이 이미 일어난 뒤다.
+  "확인 전에는 방을 만들지 않는다",
+  // 🛑 합쳐 넣기(재리뷰 high). 라우팅 층의 짝이다. 이 항이 없으면 아홉 단계가 전부 방 안에서
+  //   끝나고 사용자의 파일에는 아무것도 안 닿는다. 정리 절차 9항 (가)·(나)가 "합치기가 이미
+  //   일어났다"를 전제하는데, 그 합치기를 누가 언제 하라는 문장이 어디에도 없었다.
+  "메인이 작업방 가지를 본 가지로 합친다",
+  "git -C <본 폴더> merge <작업방 가지>",
+  '합치기 전에는 "고쳤습니다"로 끝내지 않는다',
+  // 합치는 주체. 일꾼·게이트가 합치면 검토 없이 본 가지가 바뀐다.
+  "합치는 것은 메인이다",
+  // 🛑 이 판이 코어에 둔 근거의 라우팅 짝(재리뷰 medium). 앵커가 없어 어떤 검사도 안 쟀다.
+  "구동 검증도 작업방에서 한다",
 ];
 
 test("라우팅 스킬에 작업방 절차의 핵심 구절이 살아 있다", () => {
   for (const s of ROUTING_WORKTREE_PARTS)
     assert.ok(ROUTING.includes(s), `routing/SKILL.md 에 누락: ${s}`);
+});
+
+// 🛑 라우팅은 **위임 직전**에 열리고 구동 검증은 여러 턴 뒤다. 그 시점에 실제로 열리는 것은
+//    run-verify 인데 거기엔 폴더 이야기가 한 글자도 없었다(재리뷰 low). 경고가 라우팅에만 있으면
+//    정작 띄우는 순간에는 아무도 안 읽는다 - 그러면 본 폴더에서 **아직 안 고친 코드**를 검증하고
+//    초록을 받는다. 합치기 전이라 본 폴더에는 옛 코드가 있다는 것이 이 사고의 전부다.
+test("run-verify 가 '위임으로 고친 것이면 그 작업방에서 띄운다'를 갖고 있다", () => {
+  const runVerify = readFileSync(join(SRC, "skills", "run-verify", "SKILL.md"), "utf8");
+  for (const s of ["위임으로 고친 것이면 그 작업방에서 띄운다", "아직 안 고친 코드"])
+    assert.ok(runVerify.includes(s), `run-verify/SKILL.md 에 누락: ${s}`);
 });
 
 // ── 4. 짝 두 자리를 **양방향으로** 잰다 ───────────────────────────────────────
