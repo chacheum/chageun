@@ -274,30 +274,65 @@ test("상황판이 위에 있는 세션은 절대 경로와 §2 를 안 쓴다�
   assert.ok(!/상황판\(`status.md`\)이 없습니다/.test(r.out), "있는데 없다고 말했다");
 });
 
+// 🛑 **4.5b 의 세션 1회 슬롯을 일부러 먼저 태운다.** 4.5c 를 재는 칸인데, 앞 갈래(4.5b)가
+//    안 울려서 4.5c 만 남는 것을 "4.5c 를 쟀다"로 착각하면 안 된다. 이 무대는 리눅스
+//    `os.tmpdir()` = `/tmp/…` 라 `statusboardTrigger` 의 스크래치 면제에 걸려 4.5b 가 통째로
+//    침묵한다. macOS 기여자의 `$TMPDIR`(`/var/folders/…`)은 그 면제에 **안 걸려**(제품 주석이
+//    스스로 적어 둔 사실) 4.5b 가 먼저 울고 슬롯을 써서, 그 기계에서만 이 칸이 뒤집힌다.
+//    같은 세션·같은 캐시로 위임 호출을 한 번 보내 슬롯을 태우면 어느 기계에서나 4.5c 만 남는다.
+function burnNoticeSlot(cwd, sid, env, cache) {
+  const r = runHook("pretooluse.js", delegate(cwd, sid), { ...env, XDG_CACHE_HOME: cache });
+  assert.equal(r.code, 0, "슬롯 태우기가 차단이 됐다");
+  // 🛑 **태웠는지 확인한다.** 조용히 안 태워지면 밀폐가 안 서고, 이 칸은 다시 "앞 갈래가
+  //    안 울려서 초록"으로 돌아간다 - 고치려던 그 상태다.
+  assert.match(r.out, /차근 안내/, "4.5b 가 안 울어 슬롯이 안 태워졌다 - 이 칸의 밀폐가 무효다");
+  const again = runHook("pretooluse.js", delegate(cwd, sid), { ...env, XDG_CACHE_HOME: cache });
+  assert.ok(!/차근 안내/.test(again.out), "슬롯이 세션당 1회로 안 굳었다");
+  return cache;
+}
+
 test("위에 있는데 여기에 또 만들려 하면 그 자리에서 알린다(본보기 표시가 있어도)", () => {
   // 🛑 본보기에는 `chageun:auto` 가 있어 `armed` 로 잡히고, 작업방은 뿌리와 같은 무시 규칙을
   //    공유해 차단이 통과한다. 그 순간부터 기계가 작업방 파일에 쓰고 뿌리 상황판은 멈춘다.
   const s = scene("br-dup-", { board: true });
+  const cache = burnNoticeSlot(s.nested, "br-dup1", s.env, tmpDir("br-cache12-"));
   const r = runHook("pretooluse.js", {
     tool_name: "Write", cwd: s.nested, session_id: "br-dup1",
     tool_input: { file_path: join(s.nested, FILE), content: TEMPLATE },
-  }, { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache12-") });
+  }, { ...s.env, XDG_CACHE_HOME: cache });
   assert.equal(r.code, 0, "차단이 아니라 안내다");
   assert.match(r.out, /이미/, "이미 위에 있다는 말이 없다");
   assert.ok(r.out.includes(join(s.proj, FILE)), "어디에 있는지 절대 경로를 안 준다");
 });
 
-test("위에 없으면 새로 만드는 편집 안내는 옛 모양 그대로", () => {
-  // 표시 없는 새 파일 → 무시 절차 안내 · 표시 있는 새 파일 → 조용(옛 조건).
-  const s = scene("br-new-");
-  const mk = (content, sid) => runHook("pretooluse.js", {
-    tool_name: "Write", cwd: s.proj, session_id: sid,
-    tool_input: { file_path: join(s.proj, FILE), content },
-  }, { ...s.env, XDG_CACHE_HOME: tmpDir("br-cache13-") });
-  assert.match(mk("# 손으로 만든 판\n", "br-new1").out, /무시 절차/, "표시 없는 새 파일 안내가 사라졌다");
-  const armed = mk(TEMPLATE, "br-new2").out;
-  assert.ok(!/이미/.test(armed), "위에 아무것도 없는데 '이미 있다'고 했다");
-});
+// 새로 만드는 편집의 **네 갈래**를 한 자리에서 센다. 삼항으로 이어 붙였다가 `already && !armed`
+// 한 갈래가 무시 절차 경고를 통째로 잃었던 자리다(3회차 게이트). 문구는 갈래마다 **고유한
+// 조각**으로 잰다: "무시 절차" 라는 낱말은 4.5b 의 "없습니다" 안내에도 들어 있어, 그것으로
+// 재면 4.5c 를 통째로 지워도 초록이 된다.
+const IGNORE_FRAG = "저장소에 올라갈 수 있습니다";
+const ALREADY_FRAG = "이미";
+
+for (const [name, above, content, wantAlready, wantIgnore] of [
+  ["already && armed", true, "TEMPLATE", true, true],
+  ["already && !armed", true, "손글씨", true, true],
+  ["!already && armed", false, "TEMPLATE", false, false],
+  ["!already && !armed", false, "손글씨", false, true],
+]) {
+  test(`새로 만드는 편집 ${name}: 받을 것을 받는다`, () => {
+    const s = scene("br-4-", above ? { board: true } : {});
+    const cwd = above ? s.nested : s.proj;
+    const sid = "br-4-" + name.replace(/[^a-z]/g, "");
+    const cache = burnNoticeSlot(cwd, sid, s.env, tmpDir("br-cache4x-"));
+    const r = runHook("pretooluse.js", {
+      tool_name: "Write", cwd, session_id: sid,
+      tool_input: { file_path: join(cwd, FILE), content: content === "TEMPLATE" ? TEMPLATE : "# 손으로 만든 판\n" },
+    }, { ...s.env, XDG_CACHE_HOME: cache });
+    assert.equal(r.code, 0, "안내는 차단이 아니다");
+    assert.equal(r.out.includes(ALREADY_FRAG), wantAlready, `'이미 위에 있다' 갈래가 ${wantAlready ? "빠졌다" : "잘못 나갔다"}`);
+    assert.equal(r.out.includes(IGNORE_FRAG), wantIgnore,
+      `무시 절차 경고가 ${wantIgnore ? "빠졌다 - 이 조합은 4.8b 하드 차단도 안 돌아 안전 안내가 0이 된다" : "잘못 나갔다"}`);
+  });
+}
 
 test("행동층: 홈의 상황판으로는 훅 셋이 **다 같이** 없다고 본다", () => {
   const s = scene("br-j-", { homeBoard: true });

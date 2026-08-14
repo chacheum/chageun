@@ -890,6 +890,18 @@ process.stdin.on("end", () => {
     //    멈춘다**(덤으로 그 세션이 뿌리 상황판을 고칠 때의 차단 둘도 함께 사라진다).
     //    그래서 이 갈래는 `armed` 를 안 본다: 표시가 있든 없든 **여기 만들면 안 된다**가 답이다.
     //    부록에 절대 경로를 싣는 것을 미룬 동안의 임시 방벽이라 훅 문자열로만 둔다.
+    //    🛑 **삼항으로 이어 붙이지 않는다.** 조건 셋을 물음표 하나로 엮었더니 어떤 입력이 어떤
+    //    문구를 받는지 눈으로 셀 수 없었고, 그 자리에서 `already && !armed` 한 갈래가 **무시 절차
+    //    경고를 통째로 잃었다**(3회차 게이트). 그 조합은 `armed` 가 아니라 4.8b 하드 차단도 안
+    //    도는 자리라 안전 안내가 0이 된다: 뿌리 `.gitignore` 가 `/status.md` 로 앵커된 모노레포에서
+    //    `<repo>/packages/api` 를 켜고 손으로 만들면, 그 경로는 무시 대상이 아닌데 아무도 안 말해
+    //    평문 업무 보고가 커밋 이력에 남는다. 네 갈래를 아래 표로 못박는다:
+    //      already && armed    → 이미문구 + 무시절차
+    //      already && !armed   → 이미문구 + 무시절차   (4.8b 가 안 도는 자리 - 여기가 뚫렸던 곳)
+    //      !already && armed   → 조용(4.8b 가 이미 봤다)
+    //      !already && !armed  → 무시절차
+    //    `already` 에 무시절차를 **조건 없이** 붙이는 이유: 조건을 하나 더 달면 그 조건이 다음에
+    //    또 한 갈래를 삼킨다. 둘 다 소프트 안내라 붙여도 마찰이 안 는다.
     if (!reminderEmitted && boardTarget && !boardTarget.exists) {
       try {
         const cwd = path.resolve(input.cwd || process.cwd());
@@ -897,10 +909,13 @@ process.stdin.on("end", () => {
         const upper = boardTarget.abs === path.join(cwd, BOARD_FILE)
           ? boardRoot.findBoardDir(cwd) : null;
         const already = upper !== null && upper !== cwd;
-        const msg = already
-          ? "차근 안내: 이미 `" + path.join(upper, BOARD_FILE) + "` 에 이 프로젝트의 작업 상황판이 있습니다. **여기에 새로 만들지 말고 그 파일을 고치세요.** 하나 더 만들면 기계가 채우는 칸은 새 파일로 가고, 사용자가 웹에서 보던 원래 상황판은 그 자리에서 멈춥니다."
-          : (boardTarget.armed ? null   // 표시가 있고 위에도 없으면 옛 조건 그대로 조용하다
-            : "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.");
+        const IGNORE_LINE = "차근 안내: 이 파일은 저장소에 올라갈 수 있습니다 - `chageun:statusboard` 의 무시 절차를 먼저 밟으세요.";
+        let msg = null;
+        if (already) {
+          msg = "차근 안내: 이미 `" + path.join(upper, BOARD_FILE) + "` 에 이 프로젝트의 작업 상황판이 있습니다. **여기에 새로 만들지 말고 그 파일을 고치세요.** 하나 더 만들면 기계가 채우는 칸은 새 파일로 가고, 사용자가 웹에서 보던 원래 상황판은 그 자리에서 멈춥니다. " + IGNORE_LINE;
+        } else if (!boardTarget.armed) {
+          msg = IGNORE_LINE;
+        }
         if (msg) {
           process.stdout.write(JSON.stringify({
             hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: msg },
