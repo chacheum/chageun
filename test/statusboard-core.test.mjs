@@ -150,6 +150,27 @@ test("md: 사람이 쓴 다른 주석은 그대로 남는다", () => {
 test("inline: 코드 조각 뒤에 맨 숫자가 있으면 숫자가 그대로 남는다 (자리표 충돌)", () => {
   const html = inline("`foo` 그리고 문장 중간의 숫자 0 은 코드가 아니다");
   assert.ok(html.includes("<code>foo</code>"), "코드 조각이 사라졌다: " + html);
-  assert.ok(html.includes(">0<") === false, "맨 숫자가 코드 태그로 감싸졌다: " + html);
+  assert.equal((html.match(/<code>/g) || []).length, 1, "코드 태그 개수가 1개가 아니다: " + html);
   assert.ok(html.includes("숫자 0 은"), "맨 숫자 0 이 조용히 바뀌었다: " + html);
+});
+
+// 안전의 근거는 오직 하나, esc() 가 코드 조각을 빼내기 **전에** 돈다는 순서다.
+// 그 순서가 지켜지면 원문에 자리표를 흉내 낸 `<##0##>` 같은 문자열이 있어도
+// esc() 가 먼저 `<`·`>` 를 이스케이프해 놓아 실제 자리표와 못 섞인다.
+// 이 입력은 자리표 흉내(`<##0##>`)뿐 아니라 D-4 옛 자리표(공백+숫자+공백)와도 겹치는
+// 맨 숫자(" 0 ")를 함께 담는다: 옛 판으로 되돌리면 그 맨 숫자가 진짜 코드로 뒤바뀌어
+// <code> 가 2개로 늘고 "숫자 0 도"가 깨진다 - 이 단언이 순서 안전성을 실제로 잰다.
+test("inline: 자리표를 흉내 낸 원문 글자는 그대로 이스케이프돼 남는다", () => {
+  const html = inline("자리표 흉내 <##0##> 그리고 원래 숫자 0 도 있고 `real`");
+  assert.ok(html.includes("&lt;##0##&gt;"), "흉내 낸 자리표가 글자 그대로 안 남았다: " + html);
+  assert.equal((html.match(/<code>/g) || []).length, 1, "코드 태그가 정확히 1개가 아니다: " + html);
+  assert.ok(html.includes("<code>real</code>"), "진짜 코드 조각이 사라졌다: " + html);
+  assert.ok(html.includes("숫자 0 도"), "맨 숫자 0 이 조용히 바뀌었다: " + html);
+});
+
+test("inline: 코드 없이 맨 숫자만 있으면 코드 태그가 안 생기고 undefined 도 안 샌다", () => {
+  const html = inline("코드 없이 숫자 4 만");
+  assert.equal((html.match(/<code>/g) || []).length, 0, "코드 없는 문장에서 코드 태그가 생겼다: " + html);
+  assert.ok(!html.includes("undefined"), "undefined 가 샌다: " + html);
+  assert.ok(html.includes("코드 없이 숫자 4 만"), "숫자가 조용히 바뀌었다: " + html);
 });
