@@ -17,6 +17,22 @@ const { redact } = require("./secret-scan-core.js");
 
 // 🛑 닫힌 낱말 목록. **목록 밖은 전부 "모름"** 이다: 새 값이 생겨도 지어내지 않는다.
 const ENDED = { completed: "끝남", failed: "멈춤", killed: "멈춤", stopped: "멈춤" };
+/**
+ * 일감 레코드가 **띄움**인가. 🛑 **띄움만 좁게 알아보고 그 밖은 전부 끝남으로 넘긴다.**
+ * 뒤집어 "끝남을 닫힌 목록으로" 읽으면, 목록 밖 값이 온 일감은 상태가 **빈 채로** 남아
+ * §2 에서 "도는 중"으로 세어지고 12시간을 버틴다 - 이 파일이 막으려던 유령이 옆자리에서
+ * 되살아난다. 같은 파일의 형제 경로(`collectNotif`)는 이미 어떤 값이든 그대로 적어
+ * `stateOf` 가 "모름"으로 떨어뜨린다: **같은 판정에 처분이 둘이면 안 된다.** 값을 그대로
+ * 넘기므로 틀린 "끝남"도 안 생긴다("모름"은 끝남이 아니다).
+ * 🛑 앞에서 기다린 일감에는 **뒤따라올 알림이 없다.** 뒤에서 띄운 것은 나중에 알림이 와서
+ *    고쳐지지만, 앞단은 그 레코드가 유일한 기회다.
+ * 🛑 **칸 두 개를 함께 본다.** 하나만 남기면 그쪽 칸이 빠진 레코드가 반대로 뒤집힌다.
+ *    실측(이 저장소 트랜스크립트 31개 · 2026-08-17)에서 `agentId` 를 든 띄움 284건은 둘 다
+ *    갖고 있었고, `async_launched` 인데 `isAsync` 가 없는 레코드 2건은 **`agentId` 대신
+ *    `taskId` 를 써서** 이 갈래에 아예 안 들어왔다(각본 띄우기). 그러니 이 `||` 는 지금
+ *    무엇을 고치는 것이 아니라 **뒷문을 미리 막는 쪽**이다.
+ */
+const isLaunch = (status, tur) => status === "async_launched" || !!(tur && tur.isAsync === true);
 const STALE_MS = 12 * 3600 * 1000;      // 띄움만 보고 이만큼 지나면 "도는 중"이라 안 한다
 const MAX_TASKS = 50;                    // 장부 상한(오래된 것부터 버린다)
 const MAX_ROWS = 20;                     // 표 상한
@@ -67,13 +83,12 @@ function collectNotif(text, at, out) {
  *    **글자만 2건**(둘 다 위 유령) · **칸만 9건**(글자가 놓친 진짜 일감 - 전부 앞에서 기다린
  *    것이고, 보고 본문에 그 낱말이 우연히 없었을 뿐이다). 좁히면서 동시에 넓어진다.
  *
- * 🛑 **띄움과 끝남은 `status` 로 가른다. `agentId` 가 있다고 끝난 것이 아니다.**
- *    뒤에서 띄운 것은 **뜰 때도** 같은 칸에 `agentId` 를 실어 온다(`async_launched` · 실측 283건).
+ * 🛑 **띄움과 끝남은 "띄움이냐 아니냐"로 가른다. `agentId` 가 있다고 끝난 것이 아니다.**
+ *    뒤에서 띄운 것은 **뜰 때도** 같은 칸에 `agentId` 를 실어 온다(`async_launched` · 실측 284건).
  *    "칸이 있으면 끝남"으로 읽으면 뒤에서 도는 일감이 **뜨자마자 끝난 것으로 뒤집힌다** - 지금의
  *    틀린 "도는 중"보다 나쁘다(사장님이 안 끝난 일을 끝났다고 믿는다). 앞에서 기다린 것만 결과가
- *    그 자리에서 돌아오고, 그 레코드의 `status` 가 닫힌 목록(`ENDED`)에 든다(실측 54건 전부
- *    `completed`). 목록 밖 값은 **끝남으로 안 읽는다**: "도는 중"으로 남았다가 12시간 뒤 "모름"이
- *    된다(틀리는 방향을 한쪽으로 고정한다).
+ *    그 자리에서 돌아온다(실측 55건 전부 `completed`). 가르는 자리는 `isLaunch` 한 곳이고,
+ *    **띄움이 아닌 값은 목록 밖이라도 끝남에 적되 값을 그대로 넘긴다**(그쪽 🛑).
  * @returns {{spawns: Array, ends: Array}}
  */
 function parseDelta(chunk) {
@@ -101,9 +116,13 @@ function parseDelta(chunk) {
       // 앞에서 기다린 것은 **뜬 기록이 따로 없다.** 띄움도 함께 적어야 장부에 줄이 생긴다
       // (부르는 쪽은 장부에 없는 끝남으로 줄을 만들지 않는다 - `posttooluse.js` 의 🛑). 표에
       // 나가는 시각은 `끝` 쪽 하나뿐이라(`rowsOf` 가 `endedAt` 을 먼저 쓴다) 없는 시각을 지어내지 않는다.
-      spawns.push({ agentId, name: names.get(key) || "", at });
+      // 이름표 2순위는 **레코드 자신이 든 것**이다. 조각이 갈리면 호출 줄이 지난 회차로 넘어가
+      // `names` 가 비는데, 띄움 레코드는 `description` 을 자기 안에 싣고 온다(실측 284/284).
+      // ⚠ **앞에서 기다린 레코드에는 그 칸이 없다**(실측 55건 중 0건) - 그쪽은 `names` 가 유일한
+      //    길이라 여기서 더 해 줄 것이 없다. 이 값도 부르는 쪽에서 `safeName` 을 지나 가려진다.
+      spawns.push({ agentId, name: names.get(key) || String(tur.description || ""), at });
       const st = String(tur.status || "");
-      if (ENDED[st]) ends.push({ taskId: agentId, status: st, quoted: "", at });
+      if (!isLaunch(st, tur)) ends.push({ taskId: agentId, status: st, quoted: "", at });
     }
     if (typeof content === "string") { collectNotif(content, at, ends); continue; }
     if (!Array.isArray(content)) continue;
@@ -199,30 +218,46 @@ function stateOf(task, now) {
   return "도는 중";
 }
 
+/**
+ * 장부 전체를 줄로 만들고, **"도는 중"으로 먼저 채운 뒤** 남는 자리에 나머지를 넣어 자른다.
+ *
+ * 🛑 **자르기가 §2 의 존재 이유부터 자르지 않게 하는 순서다.** 정렬 열쇠(`endedAt || spawnedAt`)는
+ *    끝난 것에 **끝난 시각**(최신)을, 도는 것에 **띄운 시각**(과거)을 준다. 그래서 한 줄로 세워
+ *    자르면 상한에서 **먼저 밀려 나가는 것이 지금 도는 것**이다: 두 시간째 도는 일꾼 하나가
+ *    그 사이 스무 번 오간 검토에 밀려 표에서 사라지고, 자리를 비웠다 돌아온 사람이 다 끝난 줄
+ *    알고 창을 닫는다 - 이 칠판이 막으려던 바로 그 결과다.
+ * 🛑 **개수는 자르기 전 장부 전체로 센다.** 자른 결과에서 세면 위 상황에서 제목이 "0건"이 된다.
+ * 🛑 묶음 **안**의 차례는 그대로 최신 먼저다(`at` 내림차순). 바뀌는 것은 묶음 순서뿐이라
+ *    표가 보기에 뒤죽박죽이 되지 않는다.
+ * @returns {{rows: Array, running: number}} `running` 은 **장부 전체**의 "도는 중" 수
+ */
 function rowsOf(tasks, now) {
-  const out = [];
+  const all = [];
   for (const id of Object.keys(tasks || {})) {
     const t = tasks[id];
     if (!t) continue;
-    out.push({
+    all.push({
       name: t.name || "(이름 없음)",
       state: stateOf(t, now),
       at: Number(t.endedAt) || Number(t.spawnedAt) || 0,
       ended: !!t.endedAt,
     });
   }
-  out.sort((a, b) => b.at - a.at);
-  return out.slice(0, MAX_ROWS);
+  all.sort((a, b) => b.at - a.at);
+  const running = all.filter((r) => r.state === "도는 중");
+  const rest = all.filter((r) => r.state !== "도는 중");
+  return { rows: running.concat(rest).slice(0, MAX_ROWS), running: running.length };
 }
 
 /**
- * 두 표시 사이에 들어갈 §2 블록. 🛑 제목의 `N건` 은 표의 "도는 중" 줄 수로 **기계가 다시
- * 쓴다**: 경계가 제목까지 감싸는 이유가 그 둘이 구조적으로 못 어긋나게 하려는 것이다.
+ * 두 표시 사이에 들어갈 §2 블록. 🛑 제목의 `N건` 은 **장부 전체**의 "도는 중" 수를 기계가
+ * 다시 쓴다(표의 줄 수가 아니다 - `rowsOf` 의 🛑). 표는 `MAX_ROWS` 에서 잘리므로 도는 것이
+ * 그보다 많으면 숫자가 표보다 클 수 있는데, **어긋나는 방향이 한쪽으로 고정된다**: 안 보이는
+ * 것이 있다는 사실은 숫자가 알려 주고, 없는 일을 있다고 말하지는 않는다.
  * 🛑 시각은 **절대 표기만**. "3분 전"은 갱신이 멎으면 거짓말을 계속한다.
  */
 function renderBlock(tasks, now) {
-  const rows = rowsOf(tasks, now);
-  const running = rows.filter((r) => r.state === "도는 중").length;
+  const { rows, running } = rowsOf(tasks, now);
   const head = "## 2. 지금 뒤에서 도는 것: " + running + "건";
   const stamp = "> 마지막 확인 " + fmtAbs(now);
   if (!rows.length) return head + "\n\n없습니다.\n\n" + stamp;

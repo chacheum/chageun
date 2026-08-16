@@ -192,6 +192,52 @@ test("개수 일치: 제목의 N건 = 표의 '도는 중' 줄 수", () => {
   assert.equal((t.match(/\| 끝남 \|/g) || []).length, 1);
 });
 
+// ── 표 상한 ──────────────────────────────────────────────────────────────────
+//
+// 🛑 **상한이 §2 의 존재 이유부터 자르던 자리다.** 정렬 열쇠(`endedAt || spawnedAt`)가 끝난
+//    것에는 끝난 시각(최신)을, 도는 것에는 띄운 시각(과거)을 주므로, 한 줄로 세워 자르면
+//    **먼저 밀려 나가는 것이 지금 도는 것**이다. 아래 셋은 그 자리를 세 방향에서 잰다.
+const dataRows = (t) => t.split("\n").filter((l) => l.startsWith("| ") && !l.startsWith("| 일감 "));
+const rowNames = (t) => dataRows(t).map((l) => l.slice(2).split(" | ")[0]);
+
+// ⚠ 이름은 **일부러 부숴 본 결과**에 맞춰 적었다. 두 고침이 겹치는 자리가 있어서(도는 것을
+//    먼저 채우면 그 줄이 표 안에 있으니 자른 뒤에 세도 숫자가 맞는다) 아래 첫 칸만으로는
+//    "자르기 전에 센다"를 못 잰다. 그 축은 **도는 것이 상한보다 많은** 둘째 칸이 혼자 잰다.
+test("상한: 끝난 것이 스물다섯 오가도 도는 것이 표에서 안 밀려난다", () => {
+  const now = Date.now();
+  // 두 시간째 도는 일꾼 하나 + 그 사이 오간 끝난 검토 스물다섯.
+  const tasks = { live: { name: "두 시간째 도는 일꾼", spawnedAt: now - 2 * HOUR, status: "" } };
+  for (let i = 0; i < 25; i++) {
+    tasks["done" + i] = { name: "끝난 검토 " + i, spawnedAt: now - HOUR, status: "completed", endedAt: now - i * 1000 };
+  }
+  const t = core.renderBlock(tasks, now);
+  assert.match(t, /## 2\. 지금 뒤에서 도는 것: 1건/, "자른 결과에서 세면 '0건'이 되어 다 끝난 줄 안다");
+  assert.ok(rowNames(t).includes("두 시간째 도는 일꾼"), "§2 가 보여 주려던 그 한 줄이 먼저 잘리면 안 된다");
+  assert.equal(dataRows(t).length, core.MAX_ROWS, "상한 자체는 그대로다");
+});
+
+test("상한: 도는 것이 상한보다 많으면 제목은 자르기 전 장부 전체로 센다", () => {
+  const now = Date.now();
+  const tasks = {};
+  for (let i = 0; i < 25; i++) tasks["r" + i] = { name: "일꾼 " + i, spawnedAt: now - HOUR, status: "" };
+  const t = core.renderBlock(tasks, now);
+  assert.match(t, /## 2\. 지금 뒤에서 도는 것: 25건/, "안 보이는 것이 있다는 사실은 숫자가 알려 준다");
+  assert.equal(dataRows(t).length, core.MAX_ROWS);
+  assert.equal(dataRows(t).filter((l) => l.includes("| 도는 중 |")).length, core.MAX_ROWS, "자리는 도는 것이 다 쓴다");
+});
+
+test("상한: 도는 것을 먼저 채우되 묶음 안 차례는 최신 먼저 그대로", () => {
+  const now = Date.now();
+  const t = core.renderBlock({
+    r1: { name: "도는 것 옛것", spawnedAt: now - 3 * HOUR, status: "" },
+    r2: { name: "도는 것 새것", spawnedAt: now - 1 * HOUR, status: "" },
+    e1: { name: "끝난 것 옛것", spawnedAt: now - 4 * HOUR, status: "completed", endedAt: now - 40 * 60 * 1000 },
+    e2: { name: "끝난 것 새것", spawnedAt: now - 4 * HOUR, status: "completed", endedAt: now - 10 * 60 * 1000 },
+  }, now);
+  assert.deepEqual(rowNames(t), ["도는 것 새것", "도는 것 옛것", "끝난 것 새것", "끝난 것 옛것"],
+    "묶음은 도는 것 먼저, 묶음 안은 최신 먼저");
+});
+
 // ── 누출 ─────────────────────────────────────────────────────────────────────
 
 test("누출: 보고 전문·열쇠·경로가 파일에 안 간다", () => {
@@ -336,17 +382,64 @@ test("뒤에서 뜬 것은 끝남이 아니다", () => {
   assert.match(t, /## 2\. 지금 뒤에서 도는 것: 1건/);
 });
 
-test("앞에서 기다린 것도 상태는 닫힌 목록으로 읽는다", () => {
+test("띄움이 아니면 전부 끝남에 적고 값은 그대로 넘긴다", () => {
   const now = Date.now();
-  const endsOf = (st) => core.parseDelta(doneRec("call_1", A1, "일감", now, st)).ends.length;
-  assert.equal(endsOf("failed"), 1, "멈춘 것도 끝난 것이다");
-  assert.equal(endsOf("async_launched"), 0, "띄움은 목록에 없다");
-  assert.equal(endsOf("weird"), 0, "새 값이 생겨도 끝남을 지어내지 않는다");
-  assert.equal(endsOf(""), 0);
+  const endsOf = (st) => core.parseDelta(doneRec("call_1", A1, "일감", now, st)).ends;
+  assert.equal(endsOf("failed").length, 1, "멈춘 것도 끝난 것이다");
+  assert.equal(endsOf("async_launched").length, 0, "띄움은 끝남이 아니다");
+  // 🛑 **여기가 뒤집혔던 자리다.** 목록 밖이라고 아무것도 안 적으면 그 일감은 상태가 **빈 채**
+  //    남아 §2 에서 "도는 중"으로 세어지고 12시간을 버틴다. 값을 지어내지 않으면서 유령도 안
+  //    만드는 길은 하나뿐이다: **끝남에 적되 값을 그대로 넘겨** `stateOf` 가 "모름"으로 떨어뜨린다.
+  assert.deepEqual(endsOf("weird").map((e) => e.status), ["weird"], "새 값이 생겨도 값은 안 지어낸다");
+  assert.deepEqual(endsOf("cancelled").map((e) => e.status), ["cancelled"]);
+  assert.deepEqual(endsOf("").map((e) => e.status), [""]);
 
   const sc = scene({ transcript: doneRec("call_1", A1, "멈춘 검토", now, "failed") });
   fire(sc);
   assert.match(board(sc), /\| 멈춘 검토 \| 멈춤 \|/);
+});
+
+test("모르는 상태값은 '도는 중'으로 굳지 않고 '모름'으로 떨어진다", () => {
+  const now = Date.now();
+  const sc = scene({ transcript: doneRec("call_1", A1, "취소된 검토", now, "cancelled") });
+  fire(sc);
+  const t = board(sc);
+  assert.match(t, /\| 취소된 검토 \| 모름 \|/, "지어내지 않으면서 유령도 안 만든다");
+  assert.match(t, /## 2\. 지금 뒤에서 도는 것: 0건/, "12시간 굳는 유령 '도는 중'이 생기면 안 된다");
+});
+
+test("띄움은 칸 두 개로 알아본다: 한쪽이 없어도 띄움이다", () => {
+  const now = Date.now(), ts = new Date(now).toISOString();
+  // 🛑 실측에서 `async_launched` 인데 `isAsync` 가 없는 레코드가 나왔다(2026-08-17 · 2건 · 각본
+  //    띄우기). 그 2건은 `agentId` 대신 `taskId` 를 써서 이 갈래에 안 들어오지만, 칸 하나만 보는
+  //    구현은 그런 모양이 하나만 들어와도 **뜬 일감을 끝난 것으로 뒤집는다** - 가장 나쁜 방향이다.
+  const launchRec = (callId, agentId, desc, tur) =>
+    callRec(callId, agentId, desc, ts) +
+    rec({ type: "user", uuid: "r-" + agentId, timestamp: ts, message: { role: "user", content: [
+      { type: "tool_result", tool_use_id: callId, content: "Async agent launched successfully." },
+    ] }, toolUseResult: { agentId, description: desc, ...tur } });
+
+  const noFlag = launchRec("call_1", A1, "깃발 없는 띄움", { status: "async_launched" });
+  assert.ok(!noFlag.includes("isAsync"), "🛑 그 칸이 실제로 빠져 있어야 이 칸이 무엇을 잰다");
+  assert.deepEqual(core.parseDelta(noFlag).ends, [], "status 만으로도 띄움을 알아본다");
+
+  const oddStatus = launchRec("call_2", A2, "낯선 상태 띄움", { status: "launched_v2", isAsync: true });
+  assert.deepEqual(core.parseDelta(oddStatus).ends, [], "isAsync 만으로도 띄움을 알아본다");
+});
+
+test("조각이 갈려도 띄움 레코드가 자기 안에 든 이름표를 쓴다", () => {
+  const now = Date.now();
+  const full = spawnRec("call_1", A1, "쪼개진 일감", now);
+  // 조각이 **결과 줄에서 시작한다**: 이름표를 실은 호출 줄은 지난 회차에 이미 지나갔다.
+  const tail = full.slice(full.indexOf("\n") + 1);
+  assert.ok(!tail.includes('"type":"tool_use"'), "🛑 호출 줄이 남아 있으면 이 칸이 아무것도 안 잰다");
+  assert.ok(!tail.includes('"id":"call_1"'), "이름표를 실은 블록이 통째로 빠졌는지 함께 못박는다");
+  assert.equal(core.parseDelta(tail).spawns[0].name, "쪼개진 일감");
+
+  const sc = scene({ transcript: tail });
+  fire(sc);
+  assert.match(board(sc), /쪼개진 일감/);
+  assert.ok(!board(sc).includes("(이름 없음)"), "장부에 이름이 비면 안 된다");
 });
 
 // ── 우회 금지 · 캐시 ─────────────────────────────────────────────────────────
