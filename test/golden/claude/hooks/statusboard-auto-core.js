@@ -36,12 +36,6 @@ function fmtHM(ms) {
 }
 
 // ── 조각 파싱 ────────────────────────────────────────────────────────────────
-function resultText(b) {
-  const c = b && b.content;
-  if (typeof c === "string") return c;
-  if (Array.isArray(c)) return c.map((x) => (x && x.type === "text" ? String(x.text || "") : "")).join("\n");
-  return "";
-}
 // 알림 하나에서 셋만 뽑는다. 🛑 `<result>` 앞에서 자르고 그 뒤는 쳐다보지 않는다.
 function collectNotif(text, at, out) {
   const s = String(text || "");
@@ -62,6 +56,24 @@ function collectNotif(text, at, out) {
  * 트랜스크립트 **조각**(늘어난 부분)에서 띄움과 끝남만 뽑는다.
  * 🛑 조각은 **반쪽 줄에서 시작할 수 있다**: `{` 로 시작하지 않는 줄은 버린다.
  * 짝은 `agentId` ↔ `<task-id>` 로만 짓는다(`<tool-use-id>` 는 실측 66.3%라 안 쓴다).
+ *
+ * 🛑 **일감 레코드는 런타임이 실은 칸(`toolUseResult.agentId`)으로만 알아본다. 글자로 안 찾는다.**
+ *    옛 판은 도구 결과 **본문**에서 `agentId:` 를 찾았는데, 그 글자는 아무 도구나 낼 수 있다:
+ *    이 파일을 `grep` 한 Bash 출력이 자기 소스 줄(`spawns.push({ agentId: m[1]`)을 되비쳐
+ *    **`m` 이라는 유령 일감**을 §2 에 올렸고, 이름표는 그 Bash 호출의 설명이었다(실측 2세션 ·
+ *    2026-08-12 · 2026-08-16). 차근 코드를 들여다볼 때마다 상황판이 오염된다는 뜻이다.
+ *    같은 판정을 구조화된 칸으로 짓는 형제가 이미 있다(`pretooluse-core.js` 의 `hasPrReviewer`).
+ *    실측 대조(이 저장소 트랜스크립트 31개 · 2026-08-17): 글자와 칸이 함께 잡은 것 328건 ·
+ *    **글자만 2건**(둘 다 위 유령) · **칸만 9건**(글자가 놓친 진짜 일감 - 전부 앞에서 기다린
+ *    것이고, 보고 본문에 그 낱말이 우연히 없었을 뿐이다). 좁히면서 동시에 넓어진다.
+ *
+ * 🛑 **띄움과 끝남은 `status` 로 가른다. `agentId` 가 있다고 끝난 것이 아니다.**
+ *    뒤에서 띄운 것은 **뜰 때도** 같은 칸에 `agentId` 를 실어 온다(`async_launched` · 실측 283건).
+ *    "칸이 있으면 끝남"으로 읽으면 뒤에서 도는 일감이 **뜨자마자 끝난 것으로 뒤집힌다** - 지금의
+ *    틀린 "도는 중"보다 나쁘다(사장님이 안 끝난 일을 끝났다고 믿는다). 앞에서 기다린 것만 결과가
+ *    그 자리에서 돌아오고, 그 레코드의 `status` 가 닫힌 목록(`ENDED`)에 든다(실측 54건 전부
+ *    `completed`). 목록 밖 값은 **끝남으로 안 읽는다**: "도는 중"으로 남았다가 12시간 뒤 "모름"이
+ *    된다(틀리는 방향을 한쪽으로 고정한다).
  * @returns {{spawns: Array, ends: Array}}
  */
 function parseDelta(chunk) {
@@ -74,6 +86,25 @@ function parseDelta(chunk) {
     const at = Date.parse((o && o.timestamp) || "") || 0;
     const msg = (o && o.message) || o;
     const content = msg && msg.content;
+    // 일감 레코드. 칸은 `message` 안이 아니라 **레코드 맨 바깥**에 실려서, 결과 본문이 글이든
+    // 배열이든 상관없이 여기서 한 번에 본다(아래 두 갈래보다 먼저 두는 이유).
+    const tur = o && o.toolUseResult;
+    if (tur && typeof tur === "object" && tur.agentId) {
+      const agentId = String(tur.agentId);
+      // 이름표는 이 결과가 답한 **그 호출**의 것만 쓴다. 결과 블록이 정확히 하나일 때만 짝을
+      // 짓는다: 모호하면 이름 없이 둔다(형제 `hasPrReviewer` 의 1:1 조인과 같은 규율).
+      let key = "";
+      if (Array.isArray(content)) {
+        const rs = content.filter((b) => b && b.type === "tool_result" && b.tool_use_id);
+        if (rs.length === 1) key = String(rs[0].tool_use_id);
+      }
+      // 앞에서 기다린 것은 **뜬 기록이 따로 없다.** 띄움도 함께 적어야 장부에 줄이 생긴다
+      // (부르는 쪽은 장부에 없는 끝남으로 줄을 만들지 않는다 - `posttooluse.js` 의 🛑). 표에
+      // 나가는 시각은 `끝` 쪽 하나뿐이라(`rowsOf` 가 `endedAt` 을 먼저 쓴다) 없는 시각을 지어내지 않는다.
+      spawns.push({ agentId, name: names.get(key) || "", at });
+      const st = String(tur.status || "");
+      if (ENDED[st]) ends.push({ taskId: agentId, status: st, quoted: "", at });
+    }
     if (typeof content === "string") { collectNotif(content, at, ends); continue; }
     if (!Array.isArray(content)) continue;
     for (const b of content) {
@@ -81,15 +112,9 @@ function parseDelta(chunk) {
       if (b.type === "tool_use" && b.input && typeof b.input.description === "string") {
         // 🛑 **위임 도구 이름으로 안 거른다.** 새 정규식을 적지 않는다(같은 판에서 F-29 가
         //    "위임 도구는 그 두 이름이 아니다"를 사실로 만들었고, 사본을 만들면 통로가 늘 때
-        //    한쪽만 고쳐진다). 이름표를 아무 도구에서나 모아 두고, **`agentId:` 를 돌려준
+        //    한쪽만 고쳐진다). 이름표를 아무 도구에서나 모아 두고, **`agentId` 칸을 실어 돌아온
         //    호출의 것만** 골라 쓴다: 짝짓기는 그 열쇠가 하므로 이 쪽은 넓어도 안전하다.
         names.set(String(b.id || ""), b.input.description);
-      } else if (b.type === "tool_result") {
-        const m = /agentId:\s*([A-Za-z0-9]+)/.exec(resultText(b));
-        if (m) {
-          const key = String(b.tool_use_id || "");
-          spawns.push({ agentId: m[1], name: names.get(key) || "", at });
-        }
       } else if (b.type === "text") {
         collectNotif(b.text, at, ends);
       }
@@ -134,7 +159,12 @@ function fingerprintOf(chunk) {
  */
 function shouldParse(chunk, ledger) {
   const s = String(chunk || "");
-  if (s.indexOf("agentId:") !== -1 || s.indexOf("<task-notification>") !== -1) return true;
+  // 🛑 **찾는 글자도 칸 이름이다**(`"agentId"` = JSON 에 그 칸이 적힌 모양). 도구 결과 **본문**의
+  //    `agentId:` 로 문을 열던 옛 판은, 그 낱말을 낸 평범한 출력마다 최대 4MB 조각을 통째로
+  //    파싱하고 비밀값까지 걷었다. `parseDelta` 가 이제 본문을 아예 안 보므로 그 문을 열어 둘
+  //    이유가 없다. 두 자리는 **같은 근거로 함께** 움직인다: 여기만 좁히면 진짜 소식을 놓치고,
+  //    저기만 좁히면 헛비용이 남는다.
+  if (s.indexOf("\"agentId\"") !== -1 || s.indexOf("<task-notification>") !== -1) return true;
   if (ledger && ledger.pendingWrite === true) return true;
   const tasks = (ledger && ledger.tasks) || ledger || {};
   for (const k of Object.keys(tasks)) {

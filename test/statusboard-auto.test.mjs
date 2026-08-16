@@ -58,15 +58,63 @@ const stateOfScene = (sc) => JSON.parse(readFileSync(join(sc.cache, "chageun", "
 const board = (sc) => readFileSync(sc.board, "utf8");
 
 // ── 트랜스크립트 조각 만들기(실측 모양 그대로) ────────────────────────────────
+//
+// 🛑 **세 모양은 손으로 지어낸 것이 아니라 실측 전수 대조에서 나왔다**(2026-08-17 · 이 저장소
+//    트랜스크립트 31개 · `toolUseResult.agentId` 를 든 레코드 337건). 칸 구성이 정확히 둘로
+//    갈렸고 예외가 없었다:
+//      · 뒤에서 띄움 283건 - `status:"async_launched"` · `isAsync` · `description` · `outputFile`
+//      · 앞에서 기다린 결과 54건 - `status:"completed"` · `agentType` · `content`(보고 전문)
+//    **둘을 가르는 칸은 `status` 하나뿐이다.** 글자(`agentId:`)로는 안 갈린다 - 띄움 안내문에도
+//    그 글자가 있어서, 그것으로 끝남을 읽으면 뒤에서 도는 일감이 뜨자마자 끝난 것으로 뒤집힌다.
+//    ⚠ 칸을 여기서 빼면 검사가 옛 구현(글자 찾기)도 통과시킨다. 실물에 있는 칸은 그대로 싣는다.
 const rec = (o) => JSON.stringify(o) + "\n";
-function spawnRec(callId, agentId, desc, at) {
-  const ts = new Date(at).toISOString();
+function callRec(callId, agentId, desc, ts) {
   return rec({ type: "assistant", uuid: "u-" + agentId, timestamp: ts, message: { role: "assistant", content: [
     { type: "tool_use", id: callId, name: "Task", input: { description: desc, subagent_type: "code-implementer", prompt: "비밀 지시문" } },
-  ] } }) +
-  rec({ type: "user", uuid: "r-" + agentId, timestamp: ts, message: { role: "user", content: [
-    { type: "tool_result", tool_use_id: callId, content: "agentId: " + agentId + " (use SendMessage with to: '" + agentId + "')" },
   ] } });
+}
+// 뒤에서 띄움. 🛑 안내문의 `agentId: …` 글자를 **그대로 둔다**: 이 글자만 보고 끝남을 읽는
+//    구현을 잡는 것이 아래 "뒤에서 뜬 것은 끝남이 아니다" 칸이다.
+function spawnRec(callId, agentId, desc, at) {
+  const ts = new Date(at).toISOString();
+  return callRec(callId, agentId, desc, ts) +
+  rec({ type: "user", uuid: "r-" + agentId, timestamp: ts, message: { role: "user", content: [
+    { type: "tool_result", tool_use_id: callId, content:
+      "Async agent launched successfully. (This tool result is internal metadata.)\n" +
+      "agentId: " + agentId + " (use SendMessage with to: '" + agentId + "')" },
+  ] }, toolUseResult: {
+    agentId, description: desc, status: "async_launched", isAsync: true, canReadOutputFile: true,
+    outputFile: "/home/someone/.cache/claude-tmp/tasks/" + agentId + ".output",
+    prompt: "비밀 지시문", resolvedModel: "claude-opus-5",
+  } });
+}
+// 앞에서 기다린 것. 뜬 기록이 **따로 없고** 결과가 그 자리에서 돌아온다.
+function doneRec(callId, agentId, desc, at, status, body) {
+  const ts = new Date(at).toISOString();
+  return callRec(callId, agentId, desc, ts) +
+  rec({ type: "user", uuid: "d-" + agentId, timestamp: ts, message: { role: "user", content: [
+    { type: "tool_result", tool_use_id: callId, content: body || "# 검토 결과\n보고 전문입니다" },
+  ] }, toolUseResult: {
+    // ⚠ `||` 로 기본값을 주지 않는다: 빈 상태를 재려는 칸이 조용히 `completed` 를 재게 된다.
+    agentId, agentType: "chageun:pr-reviewer", status: status === undefined ? "completed" : status,
+    content: [{ type: "text", text: body || "# 검토 결과\n보고 전문입니다" }],
+    prompt: "비밀 지시문", resolvedModel: "claude-opus-5",
+    totalDurationMs: 421000, totalTokens: 137000, totalToolUseCount: 12, usage: {}, toolStats: {},
+  } });
+}
+// 평범한 도구 결과. 🛑 **일감이 아니다.** 실측(2026-08-12 · 2026-08-16 두 세션)에서 이 모양이
+//    유령 일감을 만들었다: 이 저장소를 `grep` 한 Bash 출력에 소스 줄 `spawns.push({ agentId: m[1]`
+//    이 섞여 들어 `m` 이라는 일감이 §2 에 떴고, 이름표는 그 Bash 호출의 설명이었다.
+function bashGhostRec(callId, desc, at) {
+  const ts = new Date(at).toISOString();
+  const stdout = "88:        const m = /agentId:\\s*([A-Za-z0-9]+)/.exec(resultText(b));\n" +
+    "91:          spawns.push({ agentId: m[1], name: names.get(key) || \"\", at });";
+  return rec({ type: "assistant", uuid: "u-ghost-" + callId, timestamp: ts, message: { role: "assistant", content: [
+    { type: "tool_use", id: callId, name: "Bash", input: { description: desc, command: "grep -n agentId src/hooks/statusboard-auto-core.js" } },
+  ] } }) +
+  rec({ type: "user", uuid: "r-ghost-" + callId, timestamp: ts, message: { role: "user", content: [
+    { type: "tool_result", tool_use_id: callId, content: stdout, is_error: false },
+  ] }, toolUseResult: { stdout, stderr: "", interrupted: false, isImage: false, noOutputExpected: false } });
 }
 function notifRec(taskId, status, summary, at, result) {
   const ts = new Date(at).toISOString();
@@ -235,6 +283,72 @@ test("상태: 목록 밖 알림도 배선에서 모름으로 적힌다", () => {
   assert.match(board(sc), /: 0건/, "모름은 도는 중으로 안 센다");
 });
 
+// ── 무엇이 일감인가 · 뜬 것과 끝난 것 ────────────────────────────────────────
+//
+// 🛑 이 절의 세 칸은 **한 함수(`parseDelta`)의 같은 판정**을 세 방향에서 잰다. 축을 나눠 적는
+//    이유는, 한 방향만 재면 반대쪽으로 틀린 구현이 초록으로 통과하기 때문이다:
+//      ① 아무 도구나 일감이 되면 안 된다   ② 앞에서 기다린 것은 끝나야 한다
+//      ③ 뒤에서 뜬 것은 끝나면 안 된다(②를 글자로 고치면 여기가 뒤집힌다)
+
+test("유령 금지: agentId 글자가 든 평범한 도구 결과는 일감이 아니다", () => {
+  const now = Date.now();
+  // ① 순수 함수로 곧장. 칸이 없는 레코드는 한 건도 안 나와야 한다.
+  const ghost = bashGhostRec("call_g", "차근이 스폰을 어떻게 잡는지 확인", now);
+  assert.equal(core.parseDelta(ghost).spawns.length, 0, "결과 본문의 글자는 일감이 아니다");
+  assert.ok(ghost.includes("agentId:"), "🛑 미끼가 실제로 들어 있어야 이 칸이 무엇을 잰다");
+
+  // ② 배선. 진짜 일감을 하나 같이 넣어 **조기 탈출이 아니라 파싱이 걸러냈음**을 못박는다
+  //    (유령만 넣으면 비용 문지기가 닫아 버려, parseDelta 를 안 고쳐도 초록이 된다).
+  const sc = scene({ transcript: spawnRec("call_1", A1, "진짜 일감", now) + ghost });
+  fire(sc);
+  const t = board(sc);
+  assert.match(t, /진짜 일감/);
+  assert.ok(!t.includes("차근이 스폰을 어떻게 잡는지 확인"), "Bash 설명이 일감 이름으로 오르면 안 된다");
+  assert.match(t, /## 2\. 지금 뒤에서 도는 것: 1건/, "유령이 세어지면 안 된다");
+  assert.deepEqual(Object.keys(stateOfScene(sc).tasks), [A1], "장부에도 유령이 남으면 안 된다");
+});
+
+test("앞에서 기다린 것은 끝남으로 잡힌다", () => {
+  const now = Date.now();
+  const d = core.parseDelta(doneRec("call_1", A1, "앞에서 기다린 검토", now));
+  assert.equal(d.spawns.length, 1, "뜬 기록이 따로 없으니 줄도 여기서 생겨야 한다");
+  assert.deepEqual(d.ends.map((e) => [e.taskId, e.status]), [[A1, "completed"]]);
+
+  const sc = scene({ transcript: doneRec("call_1", A1, "앞에서 기다린 검토", now) });
+  fire(sc);
+  const t = board(sc);
+  assert.match(t, /\| 앞에서 기다린 검토 \| 끝남 \|/, "다 끝난 일을 '도는 중'으로 보여 주면 안 된다");
+  assert.match(t, /## 2\. 지금 뒤에서 도는 것: 0건/);
+});
+
+test("뒤에서 뜬 것은 끝남이 아니다", () => {
+  const now = Date.now();
+  // 🛑 **이 칸이 바로 위 칸의 반대쪽 벽이다.** 뒤에서 띄운 결과에도 `agentId` 가 실려 오므로,
+  //    끝남을 칸의 유무로 읽으면 여기서 뒤집힌다: 틀린 "끝남"은 틀린 "도는 중"보다 나쁘다.
+  const d = core.parseDelta(spawnRec("call_1", A1, "뒤에서 도는 일감", now));
+  assert.equal(d.spawns.length, 1);
+  assert.deepEqual(d.ends, [], "띄움 레코드로 끝남을 만들면 안 된다");
+
+  const sc = scene({ transcript: spawnRec("call_1", A1, "뒤에서 도는 일감", now) });
+  fire(sc);
+  const t = board(sc);
+  assert.match(t, /\| 뒤에서 도는 일감 \| 도는 중 \|/);
+  assert.match(t, /## 2\. 지금 뒤에서 도는 것: 1건/);
+});
+
+test("앞에서 기다린 것도 상태는 닫힌 목록으로 읽는다", () => {
+  const now = Date.now();
+  const endsOf = (st) => core.parseDelta(doneRec("call_1", A1, "일감", now, st)).ends.length;
+  assert.equal(endsOf("failed"), 1, "멈춘 것도 끝난 것이다");
+  assert.equal(endsOf("async_launched"), 0, "띄움은 목록에 없다");
+  assert.equal(endsOf("weird"), 0, "새 값이 생겨도 끝남을 지어내지 않는다");
+  assert.equal(endsOf(""), 0);
+
+  const sc = scene({ transcript: doneRec("call_1", A1, "멈춘 검토", now, "failed") });
+  fire(sc);
+  assert.match(board(sc), /\| 멈춘 검토 \| 멈춤 \|/);
+});
+
 // ── 우회 금지 · 캐시 ─────────────────────────────────────────────────────────
 
 test("우회 금지: 무시가 확인 안 된 상황판에는 한 글자도 안 쓴다", () => {
@@ -279,8 +393,14 @@ test("캐시 비대칭: 통과는 5분 · 차단은 세션 내내", () => {
 
 test("비용: 조기 탈출 판정을 검사가 직접 부른다", () => {
   assert.equal(core.shouldParse("아무 말 없는 도구 출력", { tasks: {} }), false);
-  assert.equal(core.shouldParse("... agentId: abc ...", { tasks: {} }), true);
+  assert.equal(core.shouldParse('... "agentId":"abc" ...', { tasks: {} }), true, "칸이 온 조각은 열어야 한다");
   assert.equal(core.shouldParse("<task-notification>", { tasks: {} }), true);
+  // 🛑 문지기가 찾는 글자도 **칸 이름**이다. 본문의 `agentId:` 로 열면, 그 낱말을 낸 평범한
+  //    출력마다 최대 4MB 조각을 통째로 파싱하고 비밀값까지 걷는다 - 그러고도 건지는 것이 없다
+  //    (`parseDelta` 가 본문을 아예 안 본다).
+  assert.equal(core.shouldParse("... agentId: abc ...", { tasks: {} }), false, "본문 글자로는 안 연다");
+  assert.equal(core.shouldParse(bashGhostRec("c", "차근 코드 훑어보기", Date.now()), { tasks: {} }), false,
+    "차근 코드를 grep 할 때마다 파싱 비용이 나가면 안 된다");
   assert.equal(core.shouldParse("무관한 조각", { tasks: { x: { status: "" } } }), true, "도는 것이 있으면 시간만 흘러도 표가 바뀐다");
   assert.equal(core.shouldParse("무관한 조각", { tasks: { x: { status: "completed" } } }), false);
   assert.equal(core.shouldParse("", { tasks: { x: { status: "completed" } }, pendingWrite: true }), true,

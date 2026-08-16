@@ -218,7 +218,10 @@ function spawnRec(callId, agentId, desc, at) {
   ] } }) +
   rec({ type: "user", uuid: "r-" + agentId, timestamp: ts, message: { role: "user", content: [
     { type: "tool_result", tool_use_id: callId, content: "agentId: " + agentId + " (use SendMessage with to: '" + agentId + "')" },
-  ] } });
+  ] },
+    // 🛑 일감 판정은 결과 본문의 글자가 아니라 이 칸으로 짓는다(`statusboard-auto-core.js` 의
+    //    `parseDelta`). 빼면 아래 행동층 칸들이 "일감이 하나도 없는 회차"를 재게 된다.
+    toolUseResult: { agentId, description: desc, status: "async_launched", isAsync: true } });
 }
 
 function runHook(file, input, env) {

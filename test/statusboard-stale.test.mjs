@@ -67,12 +67,17 @@ const board = (sc) => readFileSync(sc.board, "utf8");
 const headLine = (sc) => (board(sc).split("\n").find((l) => l.indexOf("사람이 쓰는 칸") !== -1) || "");
 
 const rec = (o) => JSON.stringify(o) + "\n";
+// 🛑 **`toolUseResult` 를 뺀 채로 두지 않는다.** 일감 판정은 결과 본문의 글자가 아니라 이 칸으로
+//    짓는다(`statusboard-auto-core.js` 의 `parseDelta`). 칸이 없으면 여기 장면들이 통째로
+//    "일감이 하나도 없는 회차"가 되어, 미룸·재시도를 재려던 칸들이 아무것도 안 재게 된다.
+//    모양의 근거는 `statusboard-auto.test.mjs` 의 같은 자리 주석(실측 전수 대조)에 있다.
 function spawnRec(callId, agentId, desc, at) {
   const ts = new Date(at || Date.now()).toISOString();
   return rec({ type: "assistant", uuid: "u-" + agentId, timestamp: ts, message: { role: "assistant", content: [
     { type: "tool_use", id: callId, name: "Task", input: { description: desc, subagent_type: "code-implementer" } }] } }) +
   rec({ type: "user", uuid: "r-" + agentId, timestamp: ts, message: { role: "user", content: [
-    { type: "tool_result", tool_use_id: callId, content: "agentId: " + agentId }] } });
+    { type: "tool_result", tool_use_id: callId, content: "agentId: " + agentId }] },
+    toolUseResult: { agentId, description: desc, status: "async_launched", isAsync: true } });
 }
 function notifRec(taskId, status, summary, at) {
   const ts = new Date(at).toISOString();
