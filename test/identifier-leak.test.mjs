@@ -98,21 +98,33 @@ const OPAQUE_ALLOW = new Map();
 
 test("배포되는 JSON 에 긴 무작위 식별자가 없다(견본에 실환경 값을 적어 두는 것 방지)", () => {
   const hits = [];
+  let parsedCount = 0;
   for (const rel of trackedFiles()) {
     if (!rel.endsWith(".json") || !SCAN_ROOTS.test(rel)) continue;
     if (OPAQUE_ALLOW.has(rel)) continue;
     let parsed;
     try { parsed = JSON.parse(readFileSync(join(ROOT, rel), "utf8")); } catch (_) { continue; }
+    parsedCount++;
     for (const where of opaqueIdPaths(parsed)) hits.push(`${rel}: ${where}`);
   }
+  // 🛑 이 칸은 항상 0건이라, 검사 범위(SCAN_ROOTS)가 폴더 이름을 박고 있다 — 폴더가 옮겨지거나
+  //   이름이 바뀌면 파일을 0개 읽고도 계속 초록이 된다. 그래서 실제로 읽은(파싱에 성공한)
+  //   파일 수에 바닥을 둔다(실측 12개, 여유를 두어 8). hits 단언보다 먼저 둬야 둘 다 실패할 때
+  //   "아무것도 안 읽었다"는 근본 원인이 먼저 보인다.
+  assert.ok(parsedCount >= 8,
+    `이 검사가 실제로 읽은(JSON.parse 성공한) 파일이 ${parsedCount}개뿐이다 - SCAN_ROOTS 범위가 좁아졌거나 ` +
+    "죽었을 수 있다(폴더 이름이 바뀌면 0개를 읽고도 계속 초록이 되는 것을 막는 칸).");
   assert.deepEqual(hits, [],
     "배포되는 JSON 에 20자 이상 연속된 소문자·숫자 식별자가 있다. 견본이면 값을 지우고 자리표시로 바꿔라.\n" +
     "(위반한 값은 여기 안 적는다 — 아래는 파일과 그 값이 있는 칸 이름뿐이다.)\n" + hits.join("\n"));
 });
 
 // 🛑 위 칸은 지금 **걸릴 것이 0건**이라, 정규식이 깨져도 계속 초록이다. 살아 있는 양성 표본을 둔다.
-//   리터럴로 20자 토막을 적으면 이 파일 자신이 자기 스캔에 걸리므로 **런타임에 조립**한다
-//   (같은 이유로 위 금지어 목록도 조각으로 나눠 적는다 — 이 파일 맨 위 주석 참고).
+//   런타임에 조립하는 이유는 "리터럴을 적으면 이 파일 자신이 자기 스캔에 걸려서"가 아니다 —
+//   위 JSON 검사는 `.json` 파일만 읽고 이 파일은 `.mjs` 라 지금은 안 걸린다. 진짜 이유는 둘이다:
+//   (1) 이 파일 맨 위(19~23행)가 정한 규칙과 같은 모양을 지킨다(금지 식별자를 리터럴로 안 적는다).
+//   (2) 나중에 검사 범위가 `.json` 밖으로 넓어지면 그때 리터럴이 바로 자기 스캔에 걸린다 —
+//   지금 안 걸린다는 것이 앞으로도 안 걸린다는 뜻은 아니다.
 test("긴 식별자 판정이 살아 있다(런타임 조립 표본으로 확인)", () => {
   const twenty = "abcde".repeat(4);                 // 20자 순수 소문자 — 실제로 샌 값과 같은 모양
   assert.equal(twenty.length, 20, "표본이 문턱과 같은 길이여야 이 칸이 문턱을 잰다");

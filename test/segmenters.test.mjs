@@ -39,6 +39,21 @@ test("§1 분할기: 따옴표 안의 구분자는 경계가 아니고, `&&`·`|
   assert.deepEqual(shellSegments("a & b"), ["a & b"], "대조: 옛 분할은 홑 `&` 를 경계로 안 센다");
 });
 
+test("§1 blockingSegments: 앞부분이 옛 분할 순서 그대로다(합집합 안 순서가 뜻을 갖는다)", () => {
+  // 옛 분할과 따옴표 분할의 결과가 서로 다른 입력을 쓴다 - 같은 결과가 나오는 입력으로 재면
+  // concat 순서를 뒤집어도 통과해서 아무것도 못 잠근다.
+  const s = "a & b";
+  const old = shellSegments(s), quoted = quotedSegments(s);
+  assert.notDeepEqual(old, quoted, "이 표본은 옛 분할과 따옴표 분할이 달라야 순서를 실제로 잰다");
+  const union = blockingSegments(s);
+  assert.deepEqual(union.slice(0, old.length), old,
+    "blockingSegments 의 앞부분은 shellSegments(옛 분할)와 정확히 같아야 한다 - " +
+    "무인 루프는 합집합에서 **첫 매치의 사유**를 돌려주므로, 순서가 바뀌면 막히는 대상은 같아도 " +
+    "사용자가 읽는 안내 문구가 달라진다.");
+  assert.deepEqual(union.slice(old.length), quoted,
+    "blockingSegments 의 뒷부분은 quotedSegments 와 정확히 같아야 한다(합집합=이어붙임 계약 전체를 잠근다).");
+});
+
 test("§1 폴백: 짝 안 맞는 따옴표는 **축마다 다른 갈래**를 탄다", () => {
   const s = 'echo "; git commit -m x"; echo don\'t';   // 홑따옴표가 하나 남는다
   // 막는 축: 조각이 줄면 안 되므로 [원문, ...옛 분할]
@@ -104,8 +119,11 @@ test("§2 워치독(isGitCommit): **반대 방향** — 조각이 늘면 안 된
     "합집합은 이 가짜 진전을 센다 — 그래서 워치독은 합집합을 쓰지 않는다");
   // ⚠ **더 세는 자리가 하나 생겼다(정직 고지 · 실측 전후 비교에서 나옴).** 옛 판은 홑 `&` 를
   //   경계로 안 세서 이걸 진전으로 **안** 셌는데 이 판은 센다. 안전 방향이 뒤집힌 것이 아니다:
-  //   여기서 도는 `git commit` 은 **진짜로 실행되는 진짜 커밋**이라 진전이 맞다. 워치독이
-  //   위험해지는 것은 **가짜**를 셀 때뿐이고, 그 자리는 바로 위 두 칸이 잠근다.
+  //   **이 입력에서는** 뒤 커밋이 실제로 실행된다. 다만 이 판정기는 셸 의미를 해석하지 않고
+  //   조각 선두가 `git … commit` 무늬인지만 보므로, "홑 `&` 뒤면 언제나 진짜 커밋"을 보장하지는
+  //   않는다(예: `git commit --dry-run` 은 아무것도 안 남기는데도 진전으로 세는데, 이건 홑 `&`
+  //   와 무관한 기존 성질이다). 워치독이 위험해지는 것은 **가짜**를 셀 때뿐이고, 그 자리는 바로
+  //   위 두 칸이 잠근다.
   assert.equal(commit("true & git commit -m x"), true,
     "홑 `&` 뒤의 진짜 커밋은 진전으로 센다(옛 판은 못 셌다)");
 });
