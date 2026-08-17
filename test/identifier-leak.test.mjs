@@ -96,24 +96,32 @@ export function opaqueIdPaths(parsed) {
 // (실측: 이 범위 안 JSON 에서 이 무늬가 잡던 것은 배포되던 견본 사본 3개뿐이었고, 그 셋을 지웠다.)
 const OPAQUE_ALLOW = new Map();
 
+// 검사 범위가 실제로 무엇을 읽어야 하는지는 **여기 따로 적는다** - SCAN_ROOTS 정규식에서
+// 뽑아내지 않는다. 검사 대상 자체에서 기대값을 뽑으면 둘이 함께 틀려도 초록이 된다.
+const EXPECTED_ROOTS = ["src", "dist", "test/golden"];
+
 test("배포되는 JSON 에 긴 무작위 식별자가 없다(견본에 실환경 값을 적어 두는 것 방지)", () => {
   const hits = [];
-  let parsedCount = 0;
+  const parsedByRoot = Object.fromEntries(EXPECTED_ROOTS.map((r) => [r, 0]));
   for (const rel of trackedFiles()) {
     if (!rel.endsWith(".json") || !SCAN_ROOTS.test(rel)) continue;
     if (OPAQUE_ALLOW.has(rel)) continue;
     let parsed;
     try { parsed = JSON.parse(readFileSync(join(ROOT, rel), "utf8")); } catch (_) { continue; }
-    parsedCount++;
+    const root = EXPECTED_ROOTS.find((r) => rel.startsWith(r + "/"));
+    if (root) parsedByRoot[root]++;
     for (const where of opaqueIdPaths(parsed)) hits.push(`${rel}: ${where}`);
   }
-  // 🛑 이 칸은 항상 0건이라, 검사 범위(SCAN_ROOTS)가 폴더 이름을 박고 있다 — 폴더가 옮겨지거나
-  //   이름이 바뀌면 파일을 0개 읽고도 계속 초록이 된다. 그래서 실제로 읽은(파싱에 성공한)
-  //   파일 수에 바닥을 둔다(실측 12개, 여유를 두어 8). hits 단언보다 먼저 둬야 둘 다 실패할 때
+  // 🛑 이 칸은 항상 0건이라, 검사 범위(SCAN_ROOTS)가 폴더 이름을 박고 있다 — 뿌리 하나가 통째로
+  //   빠지거나 이름이 바뀌면 그 뿌리만 0개를 읽고도 계속 초록이 될 수 있다. 그래서 **뿌리별로**
+  //   최소 1개는 읽었는지 잰다 - 개수 총합(예: 바닥 8)으로 재면 한 뿌리가 통째로 사라지고 다른
+  //   뿌리가 그만큼 늘어도 총합은 그대로라 못 잡는다. hits 단언보다 먼저 둬야 둘 다 실패할 때
   //   "아무것도 안 읽었다"는 근본 원인이 먼저 보인다.
-  assert.ok(parsedCount >= 8,
-    `이 검사가 실제로 읽은(JSON.parse 성공한) 파일이 ${parsedCount}개뿐이다 - SCAN_ROOTS 범위가 좁아졌거나 ` +
-    "죽었을 수 있다(폴더 이름이 바뀌면 0개를 읽고도 계속 초록이 되는 것을 막는 칸).");
+  for (const root of EXPECTED_ROOTS) {
+    assert.ok(parsedByRoot[root] >= 1,
+      `이 검사가 '${root}' 뿌리에서 실제로 읽은(JSON.parse 성공한) 파일이 0개다 - SCAN_ROOTS 범위가 ` +
+      "좁아졌거나 죽었을 수 있다, 또는 OPAQUE_ALLOW 면제가 늘어 이 뿌리 파일을 전부 건너뛰었을 수 있다.");
+  }
   assert.deepEqual(hits, [],
     "배포되는 JSON 에 20자 이상 연속된 소문자·숫자 식별자가 있다. 견본이면 값을 지우고 자리표시로 바꿔라.\n" +
     "(위반한 값은 여기 안 적는다 — 아래는 파일과 그 값이 있는 칸 이름뿐이다.)\n" + hits.join("\n"));
@@ -123,8 +131,8 @@ test("배포되는 JSON 에 긴 무작위 식별자가 없다(견본에 실환�
 //   런타임에 조립하는 이유는 "리터럴을 적으면 이 파일 자신이 자기 스캔에 걸려서"가 아니다 —
 //   위 JSON 검사는 `.json` 파일만 읽고 이 파일은 `.mjs` 라 지금은 안 걸린다. 진짜 이유는 둘이다:
 //   (1) 이 파일 맨 위(19~23행)가 정한 규칙과 같은 모양을 지킨다(금지 식별자를 리터럴로 안 적는다).
-//   (2) 나중에 검사 범위가 `.json` 밖으로 넓어지면 그때 리터럴이 바로 자기 스캔에 걸린다 —
-//   지금 안 걸린다는 것이 앞으로도 안 걸린다는 뜻은 아니다.
+//   (2) 나중에 검사가 JSON 파싱 대신 **글자 그대로 훑는 방식**으로 넓어지면 그때 리터럴이 바로
+//   자기 스캔에 걸린다 — 지금 안 걸린다는 것이 앞으로도 안 걸린다는 뜻은 아니다.
 test("긴 식별자 판정이 살아 있다(런타임 조립 표본으로 확인)", () => {
   const twenty = "abcde".repeat(4);                 // 20자 순수 소문자 — 실제로 샌 값과 같은 모양
   assert.equal(twenty.length, 20, "표본이 문턱과 같은 길이여야 이 칸이 문턱을 잰다");
@@ -142,4 +150,6 @@ test("면제가 실재하고 최소로 유지된다(면제가 조용히 늘어�
   assert.ok(ALLOW.size <= 1, "면제 파일은 1개까지 — 늘리려면 그 파일이 왜 실명을 담아야 하는지 주석으로 남겨라");
   // 이 파일 자신은 면제 목록에 없어야 한다 — 자기 면제가 곧 확장 시점의 사각이다.
   assert.equal(ALLOW.has("test/identifier-leak.test.mjs"), false, "자기 면제는 두지 않는다(조각 분리로 해결한다)");
+  assert.ok(OPAQUE_ALLOW.size <= 1,
+    "OPAQUE_ALLOW 면제 파일은 1개까지 — 늘리려면 그 파일이 왜 긴 식별자를 담아야 하는지 주석으로 남겨라");
 });
