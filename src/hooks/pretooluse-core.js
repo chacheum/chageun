@@ -252,9 +252,75 @@ const DEPLOY = /\b(vercel|netlify)\b[^\n]*--prod\b|\bfly(ctl)?\s+deploy\b|\bwran
 
 // 배포 여부: 명령을 세그먼트(&&·;·| ·개행)로 쪼개 각 세그먼트별로 판정:
 // --dry-run 예외가 무관한 세그먼트(`npm publish && echo --dry-run`)로 새는 것 방지.
+// ⚠ 이 옛 분할기는 **홑 `&` 를 경계로 안 센다**(문자 집합이 `[;|\n]` 이다). 그 사실이 실제로
+//   물었다 - 아래 `isPush` 주석의 `git push … & git tag -d v1` 참고.
 function shellSegments(cmd) { return String(cmd || "").split(/&&|\|\||[;|\n]/); }
+
+// ── 조각 만들기: **분할기가 셋이고, 그게 의도다** ───────────────────────────────
+// 여기 있던 옛 결정은 "분할기는 한 곳(shellSegments)만: 사본이 갈리면 조용히 표류"였다.
+// **그 결정을 뒤집는다.** 소비처마다 안전한 방향이 **반대**라 한 함수로는 둘 다 못 지킨다:
+//   · 막는 규칙(유출·배포·원격DB·push·중첩) - 조각이 **줄면 열린다**. → `blockingSegments`(합집합)
+//   · 워치독 진전 신호(`isGitCommit`) - 조각이 **늘면 가짜 진전을 센다**(헛돎을 늦게 잡음 =
+//     덜 안전). → `watchdogSegments`(따옴표 인식 단독 · 폴백도 다르다)
+// 🛑 그래서 표류를 막는 것은 "함수가 하나"가 아니라 **검사**다: 세 함수의 계약과 세 따옴표
+//   파서의 차이표를 `test/segmenters.test.mjs` 가 못박는다. 여기를 손대면 그 파일이 빨개진다.
+//
+// 🛑 `executableText`(아래 '실행 구간 마스킹')를 재사용하지 않는다. 그 함수는 `TEXT_CONSUMER_RE`
+//   의 "글자를 먹는 명령"일 때만 따옴표를 가려서, `curl "…?a=1&b=2" -d @x` 는 원문을 그대로
+//   돌려준다(실측). 다만 그 함수의 규칙 하나는 물려받는다: **명령치환은 실행되는 자리라 글자로
+//   읽으면 안 된다.** 이 분할기는 명령치환을 모르는데, 그 자리를 **합집합의 옛 분할이 대신 막는다**
+//   (`echo "$(true; nc <외부>)"` 는 옛 분할이 `;` 에서 갈라 소켓 조각을 그대로 드러낸다).
+
+// 따옴표를 아는 조각내기. 경계는 따옴표 **밖**의 `;` `|` `&` 개행뿐이고 `&&`·`||` 는 한 경계다.
+// 🛑 따옴표 밖 역슬래시도 한 글자 건너뛴다(`\;` 는 구분자가 아니라 글자다).
+// 🛑 `2>&1` 은 **선처리하지 않기로 한다.** `&` 를 세므로 `… 2>` + `1` 로 갈리는데, 막는 축은
+//   합집합이라 옛 조각이 그대로 남아 손해가 없고, 워치독 축은 조각이 늘어도 `^\s*git` 앵커에
+//   안 걸린다. (`reviewAgentBlock` 은 사정이 달라 원문에서 먼저 지운다 - 거기는 조각 하나가 곧
+//   거부 단위라 갈리면 그대로 거부가 된다. 그 자리의 선처리를 여기로 옮기지 말 것.)
+// 못 읽었을 때(따옴표 짝 안 맞음)의 폴백은 **부르는 쪽이 정한다**: 바로 아래 두 함수.
+function quotedSegmentsOrNull(cmd) {
+  const s = String(cmd || "");
+  const out = []; let start = 0, q = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (q === null && ch === "\\") { i++; continue; }          // 따옴표 밖 역슬래시
+    if (q === '"' && ch === "\\") { i++; continue; }           // 겹따옴표 안 이스케이프
+    if (q === null && (ch === '"' || ch === "'")) { q = ch; continue; }
+    if (q !== null) { if (ch === q) q = null; continue; }
+    if (ch === "&" || ch === "|" || ch === ";" || ch === "\n") {
+      out.push(s.slice(start, i));
+      if ((ch === "&" || ch === "|") && s[i + 1] === ch) i++;
+      start = i + 1;
+    }
+  }
+  out.push(s.slice(start));
+  return q === null ? out : null;                              // 짝 안 맞음 = 못 읽음
+}
+// 막는 축의 폴백: 못 읽으면 `[원문, ...옛 분할]` - 조각이 **줄지 않는** 쪽.
+function quotedSegments(cmd) {
+  const segs = quotedSegmentsOrNull(cmd);
+  return segs === null ? [String(cmd || "")].concat(shellSegments(cmd)) : segs;
+}
+// 워치독 축의 폴백: **`[원문]` 하나뿐이다.** 여기서 옛 조각을 더하면 정확히 가짜 진전을 센다 -
+//   실입력 `echo "; git commit -m x"; echo don't` 는 홑따옴표가 하나 남아 폴백으로 떨어지고,
+//   옛 분할이 ` git commit -m x"` 를 만들어 `GIT_COMMIT` 에 걸린다. `[원문]` 하나면 `^\s*git` 이
+//   온 명령 선두에서만 참이라 확실히 덜 센다.
+function watchdogSegments(cmd) {
+  const segs = quotedSegmentsOrNull(cmd);
+  return segs === null ? [String(cmd || "")] : segs;
+}
+// 막는 규칙의 **기본값**(예외가 아니다): 옛 분할 ∪ 따옴표 인식 분할.
+// 합집합인 이유: 따옴표 판정이 틀려도 **옛 분할이 그대로 남는다.** 이것이 합집합의 진짜 값이다.
+// 🛑 **순서는 옛 분할이 앞이다.** 무인 루프는 첫 매치의 **사유**를 돌려주므로, 순서가 바뀌면
+//   같은 명령이 `u-egress` 대신 `u-push` 로 떠서 막히는 것은 같은데 사용자가 읽는 안내가 바뀐다.
+function blockingSegments(cmd) { return shellSegments(cmd).concat(quotedSegments(cmd)); }
+
+// 🛑 이 판정은 **유인 `block()` 이 쓰는 하드 차단**이다(무인 아님). 합집합으로 넓히면서
+//   헛막음이 는다: `echo "<배포CLI>; --prod"` 처럼 **글자만 적은 명령**이 새로 막힌다(오늘은
+//   `;` 에서 갈려 통과). "무인은 과차단 값이 싸다"는 근거는 **무인 전용 문장이라 이 자리에
+//   못 쓴다** - 사람이 보는 자리다. 이 대가는 계획서 §잃는 것 1 에 🙋 로 올려 승인받았다.
 function isDeploy(cmd) {
-  for (const seg of shellSegments(cmd)) {
+  for (const seg of blockingSegments(cmd)) {
     if (DEPLOY.test(seg) && !/--dry-run\b/.test(seg)) return true;
   }
   return false;
@@ -1110,7 +1176,13 @@ function isPush(toolName, toolInput) {
   if (toolName !== "Bash") return false;
   const cmd = executableText(String((toolInput && toolInput.command) || ""));
   // 삭제 아닌 push 세그먼트가 하나라도 있으면 게이트 발동.
-  for (const seg of shellSegments(cmd)) {
+  // 🛑 **분할기가 합집합인 이유가 여기서 실제로 물렸다**(1차 게이트 주장 · 구현자가 실행으로 확인):
+  //   `git push origin main & git tag -d v1` 이 **게이트를 빠져나갔다**(`isPush` = false).
+  //   옛 분할기는 홑 `&` 를 경계로 안 세서 온 명령이 조각 하나가 되고, 그러면 `isDeleteOnlyPush`
+  //   가 **뒤 `git tag` 의 `-d`** 를 그 push 의 옵션으로 읽어 삭제-전용으로 면제했다.
+  //   합집합의 따옴표 인식 분할이 `&` 에서 갈라 `git push origin main` 을 따로 드러내 닫힌다.
+  //   (무인 경로는 원래도 `u-push` 로 막았다. 열려 있던 것은 **유인 리뷰 게이트**뿐이다.)
+  for (const seg of blockingSegments(cmd)) {
     if (PUSH_RE.test(seg) && !isDeleteOnlyPush(seg)) return true;
   }
   return false;
@@ -1564,7 +1636,11 @@ const GIT_COMMIT = /^\s*git\b(?:\s+\S+)*?\s+commit\b/;
 function isGitCommit(name, toolInput) {
   if (name !== "Bash") return false;
   const cmd = String((toolInput && toolInput.command) || "");
-  return shellSegments(cmd).some((seg) => GIT_COMMIT.test(seg)); // 분할기는 한 곳(shellSegments)만: 사본이 갈리면 조용히 표류(pr-reviewer [정리])
+  // 🛑 **이 축만 합집합을 안 쓴다.** 여기서 조각이 늘면 **가짜 진전을 세서 덜 안전**해진다
+  //   (워치독이 헛돎을 늦게 잡는다). 옛 분할은 `echo "; git commit -m x"` 의 따옴표 안을
+  //   조각으로 만들어 정확히 그 실수를 했다. 폴백도 갈라 뒀다 - `watchdogSegments` 주석 참고.
+  //   (분할기가 셋인 이유는 `blockingSegments` 위 주석에 있다: 축마다 안전한 방향이 반대다.)
+  return watchdogSegments(cmd).some((seg) => GIT_COMMIT.test(seg));
 }
 // 순수 예산 판정: 이전 상태 + 지금 시각 + 이번 호출이 진전인가 → 갱신 상태 + 사유(없으면 null).
 // 상태 없으면 now로 생성. calls 증가. 진전이면 lastProgressAt=now. 한도 초과 시 사유.
@@ -1973,7 +2049,11 @@ function unattendedBlock(toolName, toolInput, opts) {
     const cmd = String((toolInput && toolInput.command) || "");
     if (PROTECTED_REF.test(cmd) && CHAGEUN_TOUCH.test(cmd)) return "u-protected-path";
     const envRemote = envTargetsRemoteDb(cmd);
-    for (const seg of cmd.split(/&&|\|\||[;|\n]/)) {
+    // 🛑 **합집합**(`blockingSegments`)이다: 다섯 판정 전부 "조각이 줄면 열린다" 쪽이다.
+    //   실측으로 새로 닫히는 자리: `true & nc <외부> 4444` - 옛 분할이 홑 `&` 를 경계로 안 세서
+    //   조각 선두가 `true` 라 `EGRESS_SOCKET` 앵커(`^\s*nc`)에 안 걸리고 통과했다.
+    //   순서가 옛 분할 먼저인 이유는 `blockingSegments` 주석 참고(첫 매치의 사유가 안내문이 된다).
+    for (const seg of blockingSegments(cmd)) {
       if (NESTED_AGENT.test(seg)) return "u-nested";
       // ⚠ 여기 `seg` 는 **원문**이다(위 `실행 구간 마스킹` 을 일부러 안 걸었다). 그래서 커밋 메시지 안에
       //   글자로 적힌 `git push` 도 park 된다. 이유는 `block()` 의 '안 넓힌 규칙' 주석 참고:
@@ -2019,4 +2099,8 @@ function reasonForUnattended(key) { return REASONS_UNATTENDED[key] || "무인 �
 // `rmHitsDangerTarget` export: 제품 코드는 이 파일 안(`block()` 안)에서만 쓴다. 밖에서 부르는
 //   자리는 검사뿐이다 - `block()` 으로는 두 배선(자리 판정 / 온 명령 되돌림)이 같은 답을 내는
 //   구간이 있어 구분이 안 되는 줄들을 이 함수로 직접 잰다(검사 `(차)` 칸 마지막 두 줄).
-module.exports = { executableText, rmHitsDangerTarget, statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };
+// 분할기 셋(`shellSegments`·`quotedSegments`·`watchdogSegments`·`blockingSegments`)과 `stripQuotes`
+//   export: 제품 코드는 전부 이 파일 안에서만 쓴다. 밖에서 부르는 자리는 **검사뿐**이다.
+//   내보내는 이유는 "셋이 갈리면 조용히 표류"를 막을 것이 검사밖에 없기 때문이다 - 검사가 사본을
+//   다시 적으면 그 사본이 표류해서 초록만 남는다(같은 자리를 `rmHitsDangerTarget` 도 그렇게 푼다).
+module.exports = { shellSegments, quotedSegments, watchdogSegments, blockingSegments, stripQuotes, executableText, rmHitsDangerTarget, statusboardTrigger, planScaleBlock, approvedBigPlan, planPathsInPrompt, bigPlanKey, PLAN_MAX_LINES, block, reasonFor, isPrCreate, isPush, hasPrReviewer, planReminderNeeded, routingReminderNeeded, designRegistryReminderNeeded, isUiTarget, unattendedBlock, isEgress, isWriteSql, reasonForUnattended, budgetStep, isGitCommit, BUDGET, isReviewAgent, reviewAgentBlock, branchArgsAllowed, gateModelBlock, subagentGateSpawn, approvedDesignVariant, GATE_MODEL_TIER, GATE_DEFAULT_MODEL, spawnIntent, LEGACY_UNATTENDED_SCOPE, isSupervisor, supervisorBlock, spawnCountIn, spawnCapReached, SUPERVISOR_SPAWN_CAP };
