@@ -91,8 +91,8 @@ export function opaqueIdPaths(parsed) {
   return hits;
 }
 
-// 제외는 위 `ALLOW` 와 **별도**다 — 그쪽은 `ALLOW.size <= 1` 로 잠겨 있어(아래 칸) 늘릴 수 없다.
-// 늘리려면 왜 그 파일이 긴 불투명 식별자를 담아야 하는지 값과 함께 여기 적는다.
+// 제외는 위 `ALLOW` 와 별도다. 둘 다 아래 칸에서 크기가 잠겨 있어 조용히 늘릴 수 없다.
+// 늘리려면 왜 그 파일이 긴 불투명 식별자를 담아야 하는지 여기 적고, 아래 크기 단언도 함께 고친다.
 // (실측: 이 범위 안 JSON 에서 이 무늬가 잡던 것은 배포되던 견본 사본 3개뿐이었고, 그 셋을 지웠다.)
 const OPAQUE_ALLOW = new Map();
 
@@ -101,6 +101,7 @@ const OPAQUE_ALLOW = new Map();
 const EXPECTED_ROOTS = ["src", "dist", "test/golden"];
 
 test("배포되는 JSON 에 긴 무작위 식별자가 없다(견본에 실환경 값을 적어 두는 것 방지)", () => {
+  assert.ok(EXPECTED_ROOTS.length >= 3, "EXPECTED_ROOTS 가 비면 아래 뿌리별 루프가 0회 돌아 초록이 된다");
   const hits = [];
   const parsedByRoot = Object.fromEntries(EXPECTED_ROOTS.map((r) => [r, 0]));
   for (const rel of trackedFiles()) {
@@ -109,30 +110,38 @@ test("배포되는 JSON 에 긴 무작위 식별자가 없다(견본에 실환�
     let parsed;
     try { parsed = JSON.parse(readFileSync(join(ROOT, rel), "utf8")); } catch (_) { continue; }
     const root = EXPECTED_ROOTS.find((r) => rel.startsWith(r + "/"));
-    if (root) parsedByRoot[root]++;
+    assert.ok(root, `${rel} 은 SCAN_ROOTS 에 걸렸는데 EXPECTED_ROOTS 어디에도 안 든다 - 두 목록이 어긋났다`);
+    parsedByRoot[root]++;
     for (const where of opaqueIdPaths(parsed)) hits.push(`${rel}: ${where}`);
   }
   // 🛑 이 칸은 항상 0건이라, 검사 범위(SCAN_ROOTS)가 폴더 이름을 박고 있다 — 뿌리 하나가 통째로
   //   빠지거나 이름이 바뀌면 그 뿌리만 0개를 읽고도 계속 초록이 될 수 있다. 그래서 **뿌리별로**
-  //   최소 1개는 읽었는지 잰다 - 개수 총합(예: 바닥 8)으로 재면 한 뿌리가 통째로 사라지고 다른
-  //   뿌리가 그만큼 늘어도 총합은 그대로라 못 잡는다. hits 단언보다 먼저 둬야 둘 다 실패할 때
-  //   "아무것도 안 읽었다"는 근본 원인이 먼저 보인다.
+  //   최소 1개는 읽었는지 잰다. hits 단언보다 먼저 둬야 둘 다 실패할 때 "아무것도 안 읽었다"는
+  //   근본 원인이 먼저 보인다.
   for (const root of EXPECTED_ROOTS) {
     assert.ok(parsedByRoot[root] >= 1,
       `이 검사가 '${root}' 뿌리에서 실제로 읽은(JSON.parse 성공한) 파일이 0개다 - SCAN_ROOTS 범위가 ` +
-      "좁아졌거나 죽었을 수 있다, 또는 OPAQUE_ALLOW 면제가 늘어 이 뿌리 파일을 전부 건너뛰었을 수 있다.");
+      "좁아졌거나 죽었을 수 있다, 그 뿌리의 .json 이 전부 지워졌거나 옮겨졌을 수 있다, " +
+      "또는 JSON 문법이 깨져 파싱에서 조용히 빠졌을 수 있다.");
   }
+  // 🛑 뿌리별 최소 1개와 이 총합 바닥은 **서로 다른 사고를 잡는 별개 그물**이다 - 대체가 아니라
+  //   둘 다 있어야 한다. 실측 12개가 4·4·4 라, 한 뿌리가 통째로 빠지면(보충 없이도) 총합이 딱
+  //   8이 되어 옛 바닥(8)을 그대로 넘겼다 - 뿌리별 검사가 없던 판에서 실제로 이렇게 뚫렸다.
+  //   그래서 여기서 다시 잰다: 파일 필터가 좁아져 12개가 그대로 4개로(뿌리마다 1개씩) 줄어도
+  //   위 뿌리별 검사만으로는 안 잡힌다.
+  const total = Object.values(parsedByRoot).reduce((a, b) => a + b, 0);
+  assert.ok(total >= 8,
+    `이 검사가 실제로 읽은 파일 총합이 ${total}개뿐이다(뿌리별로는 1개씩 있어도 통과였을 자리) - ` +
+    "읽는 파일이 통째로 줄었을 수 있다.");
   assert.deepEqual(hits, [],
     "배포되는 JSON 에 20자 이상 연속된 소문자·숫자 식별자가 있다. 견본이면 값을 지우고 자리표시로 바꿔라.\n" +
     "(위반한 값은 여기 안 적는다 — 아래는 파일과 그 값이 있는 칸 이름뿐이다.)\n" + hits.join("\n"));
 });
 
 // 🛑 위 칸은 지금 **걸릴 것이 0건**이라, 정규식이 깨져도 계속 초록이다. 살아 있는 양성 표본을 둔다.
-//   런타임에 조립하는 이유는 "리터럴을 적으면 이 파일 자신이 자기 스캔에 걸려서"가 아니다 —
-//   위 JSON 검사는 `.json` 파일만 읽고 이 파일은 `.mjs` 라 지금은 안 걸린다. 진짜 이유는 둘이다:
-//   (1) 이 파일 맨 위(19~23행)가 정한 규칙과 같은 모양을 지킨다(금지 식별자를 리터럴로 안 적는다).
-//   (2) 나중에 검사가 JSON 파싱 대신 **글자 그대로 훑는 방식**으로 넓어지면 그때 리터럴이 바로
-//   자기 스캔에 걸린다 — 지금 안 걸린다는 것이 앞으로도 안 걸린다는 뜻은 아니다.
+//   런타임에 조립하는 이유는 둘이다: (1) 이 파일 맨 위(19~23행)가 정한 규칙과 같은 모양을 지킨다
+//   (금지 식별자를 리터럴로 안 적는다). (2) 지금 안 걸리는 것은 지금의 검사 범위 때문이고, 범위는
+//   바뀔 수 있다.
 test("긴 식별자 판정이 살아 있다(런타임 조립 표본으로 확인)", () => {
   const twenty = "abcde".repeat(4);                 // 20자 순수 소문자 — 실제로 샌 값과 같은 모양
   assert.equal(twenty.length, 20, "표본이 문턱과 같은 길이여야 이 칸이 문턱을 잰다");
@@ -150,6 +159,6 @@ test("면제가 실재하고 최소로 유지된다(면제가 조용히 늘어�
   assert.ok(ALLOW.size <= 1, "면제 파일은 1개까지 — 늘리려면 그 파일이 왜 실명을 담아야 하는지 주석으로 남겨라");
   // 이 파일 자신은 면제 목록에 없어야 한다 — 자기 면제가 곧 확장 시점의 사각이다.
   assert.equal(ALLOW.has("test/identifier-leak.test.mjs"), false, "자기 면제는 두지 않는다(조각 분리로 해결한다)");
-  assert.ok(OPAQUE_ALLOW.size <= 1,
-    "OPAQUE_ALLOW 면제 파일은 1개까지 — 늘리려면 그 파일이 왜 긴 식별자를 담아야 하는지 주석으로 남겨라");
+  assert.equal(OPAQUE_ALLOW.size, 0,
+    "OPAQUE_ALLOW 는 지금 면제가 없다 — 늘리려면 이 단언을 함께 고치면서 왜 그 파일이 긴 식별자를 담아야 하는지 주석으로 남겨라");
 });
