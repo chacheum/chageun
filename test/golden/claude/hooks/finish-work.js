@@ -221,7 +221,8 @@ function assistantTurnSegments(objs, turns) {
 // 같은 게이트로 **이 세션에서 이미 되돌린 적이 있나**. 있으면 다시 막지 않는다(게이트당 세션 1회).
 // 지난 턴의 글은 고칠 수 없으므로, 창을 넓힌 채 반복 차단하면 영구 루프가 된다.
 // **판정은 문자열이 아니라 구조로 앵커한다**: 이 저장소는 차단 사유 문구를 소스·테스트에 담고 있어서
-// (REASON_SKILLGAP 여기 · "Stop hook feedback:" 리터럴이 retrospect-scan.mjs·test/finish-work.test.mjs)
+// (REASON_SKILLGAP 여기 · "Stop hook feedback:" 리터럴은 이 파일 밖으로는 test/finish-work.test.mjs
+//  한 곳뿐이다. 회고 스캐너에도 있었지만 그 기능은 걷혔다. dist/·test/golden/ 은 이 파일의 빌드 사본.)
 // 원시 부분문자열 검색으로 만들면 그 파일을 Read한 세션에서 **가드가 영구 침묵**한다.
 // detectNearMisses(retrospect-scan.mjs)가 이미 같은 함정을 밟고 구조 앵커로 해결한 전례가 있다. 4조건:
 //   1) role=user 레코드   2) content의 **text 블록만**(tool_result 블록 제외: 파일 읽은 결과가 거기 실린다)

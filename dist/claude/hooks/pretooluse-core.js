@@ -891,10 +891,10 @@ const SUPERVISOR_SPAWN_CAP = 6;
 //   거는 F-29 검사가 빨개진다. 그래서 **불투명 통로 스폰도 상한에 함께 들어간다**(그 갈래는
 //   subagentGateSpawn 이 먼저 막지만, 세는 규칙이 통로마다 갈리지 않는다).
 // 대상은 안 가린다: 상한은 "감독이 무엇을 띄웠나"가 아니라 "몇을 띄웠나"를 센다.
-// 자기 기록의 레코드 모양이 부모 기록과 같은 계열이라는 근거: 회고 스캐너가 agent 파일에 그대로
-//   hasRealContent 를 적용하고(src/skills/retrospect/retrospect-scan.mjs 의 :451), 그 함수가
-//   `(o.message || o).content[]` 안의 `type: "tool_use"` 를 본다(같은 파일 :358-368).
-//   착수 전 실측이 그것을 닫았다(2026-08-12 프로브 · 첫 스폰 시점 계수 1).
+// 자기 기록의 레코드 모양이 부모 기록과 같은 계열이라는 근거: **착수 전 실측이 그것을 닫았다.**
+//   바로 아래 spawnCountIn 은 `(record.message || record).content[]` 안의 `type: "tool_use"` 만
+//   보는데, 스폰을 0번 한 프로브의 **첫 스폰**에서 이 계수가 1 이 나왔다(2026-08-12 프로브).
+//   부모 기록용으로 쓰던 그 모양이 자기 기록에서도 그대로 맞았다는 뜻이다.
 function spawnCountIn(objs) {
   let n = 0;
   for (const record of Array.isArray(objs) ? objs : []) {

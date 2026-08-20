@@ -89,15 +89,14 @@ function readTranscriptIfMentions(transcriptPath, needle) {
 //    (이 진단을 docs/ 에만 두면 사람에게 안 닿는다: 이 저장소는 docs/ 를 커밋하지 않는다.
 //     그래서 같은 한 줄이 supervisor-cap-unreadable 문구에도 들어 있다.)
 // 🛑 그 구조는 한 겹이 아니다. 평면 `subagents/agent-*.jsonl` 과 각본 층
-//    `subagents/workflows/<wf_id>/agent-*.jsonl` 둘이고(단일 원본:
-//    src/skills/retrospect/retrospect-scan.mjs 의 walkAgentDir 주석), 이 조립은 **평면을 가정한다.**
+//    `subagents/workflows/<wf_id>/agent-*.jsonl` 둘이고, 이 조립은 **평면을 가정한다.**
+//    단일 원본은 바로 아래 `supervisorTranscriptPath` 다: 평면 경로를 실제로 조립하는 자리가
+//    거기 하나뿐이라, 구조가 의심되면 그 `path.join` 부터 본다.
 //    감독은 `Agent` 로 띄우므로 평면에 떨어진다(2026-08-12 프로브 실측: layer=flat).
 //    각본(Workflow)으로 띄우면 이 가정이 깨지고 첫 스폰부터 supervisor-cap-unreadable 로 선다
 //: 조용히 틀리는 대신 시끄럽게 서는 쪽이다.
-// 🛑 구조가 바뀌면 **고칠 곳은 여기 하나가 아니라 둘이다**: 여기와 회고 스캐너
-//    (retrospect-scan.mjs 의 listAgentFiles·walkAgentDir). 훅은 시끄럽게 서지만 **회고는 조용히
-//    죽는다**(readdirSync 가 실패하면 그대로 종료). 그래서 훅이 서는 것을 **회고가 굶고 있다는
-//    경보로도 읽는다.**
+// 🛑 구조가 바뀌면 **고칠 곳은 아래 `supervisorTranscriptPath` 하나다.** 한때 회고 스캐너가 같은
+//    구조를 따로 읽어 고칠 곳이 둘이었지만, 회고 기능을 걷어낸 뒤로 이 조립이 유일한 소비처다.
 function supervisorTranscriptPath(input) {
   const parent = input && input.transcript_path;
   const sid = input && input.session_id;
