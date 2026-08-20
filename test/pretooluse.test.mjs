@@ -1631,7 +1631,7 @@ test("§4.7 디자인 레지스트리 리마인더: 메인에는 뜨고(가) 서
     message: { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Read",
       input: { file_path: "src/util.js" } }] },
   }) + "\n");
-  // cwd 는 빈 임시 폴더다: 디자인 규칙 파일이 없어 §4.8 색 하드 차단이 안 걸린다(soft 만 잰다).
+  // cwd 는 빈 임시 폴더다: 디자인 규칙 파일이 없어 §4.6 색 하드 차단이 안 걸린다(soft 만 잰다).
   const write = (extra) => spawnSync(process.execPath, [HOOK], {
     input: JSON.stringify({
       tool_name: "Write",
