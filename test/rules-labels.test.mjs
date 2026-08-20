@@ -72,18 +72,24 @@ test("스킬 로드 강제 포인터 6문장 유지(Skill tool + 스킬 ID)", ()
 });
 
 // M2(v0.66.0): 디버깅은 **포인터 문투를 안 쓴다**(위 검사가 안 덮는다) — 새 기능 입구에만 강제
-//   포인터를 두기로 한 의도된 비대칭이다. 그래서 '작업 유형별 진행' 절의 'Bug / failing test' 줄에서
-//   `chageun:debugging` 이 통째로 빠져도 잡는 칸이 하나도 없었다. 크기 밴드는 재핀하면 초록이
-//   되므로(core-size.test.mjs 의 `CEILING_BYTES` 재핀 방식) 그쪽은 방어가 아니다. 이 한 줄이 그 축의 전부다.
+//   포인터를 두기로 한 의도된 비대칭이다. 그래서 위 포인터 검사가 이 이름을 안 덮는다.
+//   크기 밴드는 재핀하면 초록이 되므로(core-size.test.mjs 의 `CEILING_BYTES` 재핀 방식) 그쪽도 방어가 아니다.
+// 🛑 그렇다고 이 칸이 그 축의 전부는 아니다 — 겹이 하나 더 있다.
+//   test/debugging-skill.test.mjs 의 `WIRED` 첫 항목이 `rules/operating-rules.md` 다.
+//   그 검사는 코어에 `chageun:debugging` 이 있는지와 옛 이름 `systematic-debugging` 이 안 남았는지를 잰다.
+//   코어를 줄이는 사람이 그 `WIRED` 목록에서 코어 항목을 빼면 겹 하나가 조용히 사라진다.
 test("코어 '작업 유형별 진행'이 `chageun:debugging` 을 가리킨다(포인터 문투 없는 축)", () => {
   assert.ok(RULES.includes("chageun:debugging"),
     "누락: chageun:debugging — 버그 경로가 가리킬 스킬 이름이 코어에서 사라졌다");
 });
 
 // v0.67.0: 테스트 설계도 같은 비대칭이다(강제 포인터를 안 붙였다 — 매번 본문을 대화에 실으면
-//   컨텍스트를 줄이려는 이 판의 목적과 반대다). 그래서 위 검사가 이 이름을 안 덮고,
-//   '작업 유형별 진행' 절의 'Bug / failing test' 줄에서 통째로 빠져도 잡는 칸이 없었다.
-//   크기 밴드는 재핀하면 초록이라 방어가 아니다.
+//   컨텍스트를 줄이려는 이 판의 목적과 반대다). 그래서 위 포인터 검사가 이 이름을 안 덮는다.
+//   크기 밴드는 재핀하면 초록이라 그쪽도 방어가 아니다.
+// 🛑 여기도 겹이 하나 더 있다.
+//   test/test-design-skill.test.mjs 의 `WIRED` 첫 항목이 `rules/operating-rules.md` 다.
+//   그 검사는 코어에 `chageun:test-design` 이 있는지와 옛 이름 `test-driven-development` 가 안 남았는지를 잰다.
+//   그 `WIRED` 목록에서 코어 항목을 빼면 여기도 겹이 하나 준다.
 test("코어 '작업 유형별 진행'이 `chageun:test-design` 을 가리킨다(포인터 문투 없는 축)", () => {
   assert.ok(RULES.includes("chageun:test-design"),
     "누락: chageun:test-design — 새 검사를 짜는 경로가 가리킬 스킬 이름이 코어에서 사라졌다");

@@ -478,9 +478,16 @@ test(`주입되는 규칙 소스 전체(${INJECTED.join(" + ")})가 상한 ${CEI
 // 세션에서 조용히 꺼진다(v0.42.0 = 읽는 쪽만 있어 2,941회 중 0회 발동 · finish-check 저발동 실측
 // = honclwd 제외 10개 프로젝트 중 1회). Codex 총면 상한이 주던 마찰의 대체물이다.
 //
-// 기존 커버리지(실측): 코어 본문을 앵커하는 테스트는 4개다 — rules-labels(SECTION_LABELS 15 +
+// 기존 커버리지(실측): 코어 본문을 앵커하는 **대표** 테스트는 rules-labels(SECTION_LABELS 15 +
 // HOOK_SEEDS 11 + MISC_LABELS 6 + 스킬 포인터 6) · gate-round-marker(회차 쓰기 규칙) ·
-// activate(주입 머리·지연로드 포인터) · unattended-loop-skill(질문 상한).
+// activate(주입 머리·지연로드 포인터) · unattended-loop-skill(질문 상한) 이다.
+// 🛑 이 넷은 대표이고 **전수가 아니다**. debugging-skill · test-design-skill · delegation-worktree 도
+// 코어 본문을 앵커한다(앞 둘은 `chageun:debugging`·`chageun:test-design`, 뒤 하나는 위임 A줄·B줄).
+// 개수는 여기 적지 않는다 — 손으로 적은 수는 이 저장소에서 되풀이해 낡았고, 이 자리에 있던 `4개`도
+// 그렇게 낡아 있었다. 전수가 필요하면 그 자리에서 세라:
+//   git grep -l "operating-rules.md" -- test/ ':!test/golden'
+// 로 후보를 뽑고 하나씩 열어 본다. 함정 둘 — 제외를 안 붙이면 골든 사본이 같은 이름을 들고 섞이고,
+// 남은 목록에도 코어 본문이 아니라 파일 복사만 재는 것(build)이 있어 목록 자체는 답이 아니다.
 // (이 네 숫자는 test/rules-labels.test.mjs 의 배열을 그 자리에서 다시 세서 적어라: 가지 중간
 // 상태를 보고 적으면 틀린다. 실제로 한 번 그렇게 틀렸다: 2026-08-20 회차가 MISC_LABELS 를
 // 7로 적었는데, 그건 `Bug / failing test` 가 잠깐 MISC_LABELS 를 거쳐가던 중간 커밋을 보고
