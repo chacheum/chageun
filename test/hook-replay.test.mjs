@@ -97,12 +97,33 @@ test("F-29 무인 동작이 v0.65.0 전과 같다: 전수 재생 차단 0 · 예
     "넓힌 범위 호출이 무인 예산을 먹기 시작했다 — 무인 세션이 전보다 빨리 멈춘다");
 });
 
-test("F-29 비용: 재생 벽시계 ÷ 세션 수가 2초 미만", () => {
+// 성능은 재야 하지만 **안전 신호와 같은 칸에서 재면 안 된다.** 아래 칸이 단언하는 `wall` 은 코드가
+//   맞는지가 아니라 **그 순간 기계가 얼마나 바빴는지**다. 문턱 2초에 실측이 1.59초·1.70초라
+//   여유가 15~21% 뿐이고, 옆에서 다른 작업이 돌면 코드를 한 글자도 안 바꾸고 빨개진다
+//   (실측: 같은 커밋으로 세 판 돌려 그중 한 판이 빨갰다).
+//   🛑 값나가는 곳은 그 빨간불 자체가 아니라 **다음 번**이다: 이 저장소는 "전 칸 초록"을 안전
+//   신호로 쓰는데, 혼자 흔들리는 칸이 섞여 있으면 빨간불을 "또 그거겠지" 하고 다시 돌리는 버릇이
+//   붙는다. 그 버릇이 붙은 뒤 **가끔만 빨개지는 진짜 결함**이 들어오면 똑같이 넘어간다.
+// 그래서 문턱을 올리는 대신(얼마로 올려도 "기계가 얼마나 바쁘냐"에 계속 매달린다) 기본 실행에서
+//   뺐다 — 성능을 재고 싶을 때만 켠다.
+// ▶ 켜는 법: `CHAGEUN_PERF=1 npm test`
+//   (이 파일만: `CHAGEUN_PERF=1 node --test test/hook-replay.test.mjs`)
+//   이름을 `CHAGEUN_` 으로 시작하게 둔 이유: 위 CLEAN_ENV 가 이 접두어를 지워 훅에 안 넘긴다 =
+//   재는 스위치가 재는 대상을 바꾸지 못한다.
+// ⚠ 꺼도 **조용히 죽지는 않는다** — 아래 사유가 `# SKIP` 로 출력에 찍히고 `# skipped` 에 센다.
+//   일부러 끈 것과 사라진 것을 눈으로 구분할 수 있어야 이 칸이 잊히지 않는다.
+const PERF = process.env.CHAGEUN_PERF === "1";
+
+test("F-29 비용: 재생 벽시계 ÷ 세션 수가 2초 미만", {
+  skip: PERF ? false : "성능 칸 — 기계 부하에 흔들려 안전 신호에서 뺐다. 켜려면 CHAGEUN_PERF=1",
+}, () => {
   // 넘으면 층3 의 비용 규율(파일도 트랜스크립트도 안 읽는다)이 깨진 것이다.
-  assert.ok(attended, "앞 칸이 먼저 돌아야 한다");
-  const perSession = attended.wall / FX.sessions / 1000;
+  // 앞 칸이 이미 쟀으면 그 값을 쓰고, 이 칸만 골라 돌렸으면 여기서 잰다 — "앞 칸이 먼저 돌아야
+  //   한다"는 순서 의존을 없앤다. 순서에 기대면 칸을 골라 돌릴 때 성능이 멀쩡한데도 빨개진다.
+  const m = attended ?? replay(CLEAN_ENV, tmpDir("replay-perf-"));
+  const perSession = m.wall / FX.sessions / 1000;
   assert.ok(perSession < 2,
     `세션당 ${perSession.toFixed(2)}초 — 층3 이 흔한 경로에서 파일이나 트랜스크립트를 읽고 있지 않은지 보라`);
-  console.log(`  [비용] ${FX.calls.length}건 ${(attended.wall / 1000).toFixed(1)}초 `
-    + `= ${(attended.wall / attended.replayed).toFixed(1)}ms/건 · 세션당 ${perSession.toFixed(2)}초`);
+  console.log(`  [비용] ${FX.calls.length}건 ${(m.wall / 1000).toFixed(1)}초 `
+    + `= ${(m.wall / m.replayed).toFixed(1)}ms/건 · 세션당 ${perSession.toFixed(2)}초`);
 });
