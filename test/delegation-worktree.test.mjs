@@ -285,7 +285,9 @@ test("짝 2: 라우팅 표에서 인라인 행이 사라지고 크기 하한 없
 
 // ── 5. 안전이 걸린 두 행과 값싼 두 행이 **담당 일꾼**을 그대로 가리킨다 ─────────
 // 나머지 두 행(여러 파일 통합·디버깅 · 여러 바퀴 supervisor)은 안 잰다 - 앞 행 괄호는 `독립성·명확성·안전성이 애매` 행과 `코어의 안전 tie-break가 이 표보다 항상 우선한다` 산문이 이미 덮는다.
-// supervisor 행은 그 칸이 모델 등급이 아니라 에이전트 이름이라 값싼 쪽으로 내려갈 칸이 아니고, 안전이 걸린 일은 `보안·판단·권한·동시성·아키텍처·애매·복잡` 행이 먼저 가져간다.
+// supervisor 행은 대신할 값싼 짝이 없어서 안 잰다(안전 바닥·fail-safe 행처럼 `deep-implementer` ↔
+// `code-implementer` 로 등급을 오르내리는 짝이 아니라 역할 이름 하나뿐이다) - 그리고 안전이 걸린
+// 일은 `보안·판단·권한·동시성·아키텍처·애매·복잡` 행이 먼저 가져간다.
 // 🛑 이 파일에서 가장 값나가는 칸이다. 위 4번은 행의 **이름표**(`안전 바닥`·`fail-safe`)까지만
 //    쟀는데, 이름표는 괄호 안 설명에 있어서 **담당 일꾼 이름을 갈아 끼워도 그대로 남는다.**
 //    다음 판이 비용을 아끼려 안전 바닥 행의 `deep-implementer` 를 `code-implementer` 로 바꿔도
@@ -329,12 +331,24 @@ test("라우팅 표의 안전이 걸린 두 행과 값싼 두 행이 담당 일�
 //    따라간다. 이름을 여기서도 손으로 적으면 이름을 바꿀 때 고칠 곳이 셋(스킬 주석 · 이 검사 ·
 //    가리켜지는 test 이름)이 되어 또 낡는다(이 자리가 이 갈래에서만 세 번째로 낡았다).
 test("표 위 되짚기 주석이 가리키는 검사 이름이 이 파일에 실제로 있다", () => {
-  const match = ROUTING.match(
-    /<!--[\s\S]*?test\/delegation-worktree\.test\.mjs[\s\S]*?"([^"]+)"[\s\S]*?-->/);
-  assert.ok(match,
+  // 🛑 주석을 먼저 통째로(`<!-- ... -->` 단위) 쪼갠 뒤 그중 이 파일을 인용하는 것만 남긴다.
+  //    한 정규식으로 "인용 구절 ~ 따옴표"를 한 번에 잡으면 `[\s\S]*?` 가 `-->` 경계를
+  //    넘어가 **다른 주석의 따옴표**를 집어 올 수 있다 - 주석이 둘 이상이면 인용한 주석과
+  //    뽑힌 이름이 서로 다른 주석에서 올 수 있다는 뜻이다. `match()`(global 아님)도 첫
+  //    매치 하나만 보므로 같은 경로를 인용하는 주석이 하나 더 생기면 그 주석은 영영
+  //    무검사가 된다. 그래서 여기서는 모든 주석을 자르고 각각을 따로 돈다.
+  const comments = ROUTING.match(/<!--[\s\S]*?-->/g) ?? [];
+  const cites = comments.filter((c) => c.includes("test/delegation-worktree.test.mjs"));
+  assert.ok(cites.length > 0,
     "라우팅 스킬에서 test/delegation-worktree.test.mjs 를 인용하는 HTML 주석을 못 찾았다 - " +
     "주석이 지워졌거나 이 파일을 더 이상 안 가리킨다");
-  const quotedName = match[1];
-  assert.ok(SOURCE.includes(`test("${quotedName}"`),
-    `스킬 주석이 없는 검사를 가리킨다 - 뽑은 이름: "${quotedName}"`);
+  for (const c of cites) {
+    const inner = c.match(/"([^"]+)"/);
+    assert.ok(inner,
+      `이 파일을 인용하는 주석에 따옴표로 감싼 검사 이름이 없다 - 이름을 못 뽑은 것을 ` +
+      `통과로 치지 않는다: ${c}`);
+    const quotedName = inner[1];
+    assert.ok(SOURCE.includes(`test("${quotedName}"`),
+      `스킬 주석이 없는 검사를 가리킨다 - 뽑은 이름: "${quotedName}"`);
+  }
 });
