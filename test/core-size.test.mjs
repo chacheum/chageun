@@ -479,8 +479,12 @@ test(`주입되는 규칙 소스 전체(${INJECTED.join(" + ")})가 상한 ${CEI
 // = honclwd 제외 10개 프로젝트 중 1회). Codex 총면 상한이 주던 마찰의 대체물이다.
 //
 // 기존 커버리지(실측): 코어 본문을 앵커하는 테스트는 4개다 — rules-labels(SECTION_LABELS 15 +
-// HOOK_SEEDS 11 + MISC_LABELS 7 + 스킬 포인터 6) · gate-round-marker(회차 쓰기 규칙) ·
+// HOOK_SEEDS 11 + MISC_LABELS 6 + 스킬 포인터 6) · gate-round-marker(회차 쓰기 규칙) ·
 // activate(주입 머리·지연로드 포인터) · unattended-loop-skill(질문 상한).
+// (이 네 숫자는 test/rules-labels.test.mjs 의 배열을 그 자리에서 다시 세서 적어라: 가지 중간
+// 상태를 보고 적으면 틀린다. 실제로 한 번 그렇게 틀렸다: 2026-08-20 회차가 MISC_LABELS 를
+// 7로 적었는데, 그건 `Bug / failing test` 가 잠깐 MISC_LABELS 를 거쳐가던 중간 커밋을 보고
+// 적은 값이었고 그 항목은 이후 SECTION_LABELS 로 옮겨져 MISC_LABELS 는 다시 6이 됐다.)
 // ⚠ 코어 최상위 절은 **16개**, SECTION_LABELS 중 절 제목인 것은 14개다(3회차 검수에서
 // `Bug / failing test`를 MISC_LABELS에서 옮겨와 배열 길이는 15가 됐지만, 이건 절 제목이 아니라
 // '작업 유형별 진행' 절 안의 한 줄이라 이 셈에는 안 넣는다). 안 덮이는 절 = 파일 제목 ·
