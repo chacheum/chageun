@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluate } from "../src/scripts/preflight.mjs";
+import { backupReasons } from "../src/scripts/db-backup.mjs";
 
 // 🛑 이것은 **픽스처를 만드는 함수이지 기댓값을 만드는 함수가 아니다.** 백업 축의 판정은
 //    test/unattended-1b1-config.test.mjs 가 따로 문다. 여기서는 아래 8칸이 재던 것(샌드박스·시크릿)을
@@ -13,6 +14,16 @@ const bk = (o) => o.dbUrl
   : { mode: "none", why: "이 시험은 백업 축을 안 잰다" };
 const cfg = (o) => ({ sandbox: o, backup: bk(o) });
 const alive = () => true, dead = () => false;
+
+// 🛑 아래 8칸은 **샌드박스·시크릿 축**을 잰다. bk() 가 언젠가 백업 규칙에 걸리게 되면 그 칸들은
+//    엉뚱한 축(백업)으로 빨개지거나, 반대로 "거부"를 기대하는 칸이 **다른 이유로** 초록이 된다.
+//    그래서 픽스처 자체가 백업 축에서 조용한지를 여기서 먼저 못박는다.
+test("픽스처 자체가 백업 규칙에 안 걸린다(위 8칸이 백업 축으로 새지 않게)", () => {
+  for (const o of [{ container: "supabase_db" }, { dbUrl: "postgres://localhost:5432/db" }]) {
+    assert.deepEqual(backupReasons(cfg(o)), [],
+      `bk() 픽스처가 백업 규칙에 걸린다(${o.dbUrl ? "docker-exec" : "none"} 갈래) — 이 파일의 8칸이 다른 축으로 판정된다`);
+  }
+});
 
 test("샌드박스 살아있고 위험 없음 → ok", () => {
   const r = evaluate(cfg({ container: "supabase_db" }), alive, {});

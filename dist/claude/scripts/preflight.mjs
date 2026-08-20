@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { backupReasons } from "./db-backup.mjs";
+import { backupReasons, hostFromUrl } from "./db-backup.mjs";
 
 const LOCAL_HOST = /(^|@|\/\/)(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/;
 const SECRET_ENV = /(SECRET|TOKEN|PASSWORD|PRIVATE_KEY|CREDENTIALS|_KEY)$/i;
@@ -17,7 +17,12 @@ export function evaluate(config, isAlive, env) {
     reasons.push("샌드박스 미정의: .chageun/unattended.json에 sandbox.container 또는 sandbox.dbUrl 필요");
   } else {
     if (sb.container && !isAlive(sb.container)) reasons.push(`샌드박스 container 응답 없음: ${sb.container}`);
-    if (sb.dbUrl && !LOCAL_HOST.test(sb.dbUrl)) reasons.push(`dbUrl이 localhost/일회용 아님(운영 위험): ${sb.dbUrl}`);
+    if (sb.dbUrl && !LOCAL_HOST.test(sb.dbUrl)) {
+      // 🛑 주소를 통째로 찍으면 그 안의 **비밀번호가 화면·로그에 남는다** - 호스트 이름만 보여준다.
+      //    못 읽었을 때도 원본을 대신 찍지 않는다(그 갈래가 바로 이상한 주소라 더 위험하다).
+      const host = hostFromUrl(sb.dbUrl);
+      reasons.push(`dbUrl이 localhost/일회용 아님(운영 위험): ${host === null ? "주소를 못 읽었습니다" : host}`);
+    }
   }
   for (const r of backupReasons(config)) reasons.push(r);
   for (const [k, v] of Object.entries(env || {})) {

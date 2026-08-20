@@ -28,18 +28,30 @@ const MAX_TIMEOUT_MS = 3600000;           // 60분
 const NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 const isName = (v) => typeof v === "string" && NAME_RE.test(v);
 const filled = (v) => typeof v === "string" && v.trim() !== "";
+// 칸이 **아예 비었나**(없음·null·빈 글자·공백만). !filled 와 다르다 - 값이 있는데 모양이 틀린 것
+// (숫자·참거짓 등)은 여기서 "비었다"고 하지 않고 3-5 무늬 검사가 따로 잡는다(사유가 겹치지 않게).
+const missing = (v) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
 
 // 거부 사유 문장의 **단일 원본**(계획서 §3). 검사가 이 글자를 문다 - 문장을 고치면 검사가 먼저 빨개진다.
 const MSG = {
-  noBackup: "백업 설정이 없습니다. `.chageun/unattended.json` 에 이 모양으로 적으세요: " +
+  // 🛑 세 토막으로 줄바꿈한다(무엇이 문제 / 이렇게 적으세요 / DB 가 정말 없다면). 한 줄로 300자를
+  //    쏟으면 좁은 터미널에서 뭉개져, 정답을 알려주려고 길게 적은 문장이 오히려 안 읽힌다.
+  //    🛑 검사가 무는 낱말("백업 설정이 없습니다"·"이 모양으로 적으세요")은 줄바꿈을 걸치면 안 된다.
+  noBackup: "백업 설정이 없습니다(`.chageun/unattended.json` 의 backup 칸).\n" +
+    "이 모양으로 적으세요: " +
     '`{"sandbox":{"dbUrl":"postgres://…@localhost:5432/<DB이름>"},"backup":{"mode":"docker-exec",' +
-    '"container":"<DB 컨테이너 이름>","tool":"pg_dump","user":"postgres","database":"<DB이름>"}}`' +
-    ' (이 프로젝트에 DB 가 정말 없으면 backup 을 `{"mode":"none","why":"<확인한 이유>"}` 로)',
+    '"container":"<DB 컨테이너 이름>","tool":"pg_dump","user":"postgres","database":"<DB이름>"}}`\n' +
+    'DB 가 정말 없는 프로젝트면 backup 을 `{"mode":"none","why":"<확인한 이유>"}` 로 적으세요.',
   badMode: "backup.mode 는 docker-exec 또는 none 만 됩니다",
   noneWhy: "backup.mode 가 none 이면 why 에 사람이 확인한 이유를 적으세요",
   noneConflict: "sandbox.dbUrl 을 적고 backup 을 none 으로 둘 수 없습니다" +
     "(DB 가 있다는 선언과 없다는 선언이 부딪힙니다)",
   noContainer: "backup.container 에 DB 컨테이너 이름을 적으세요",
+  noUser: "backup.user 에 DB 계정 이름을 적으세요(도커 안에서 백업을 돌릴 계정)",
+  noDatabase: "backup.database 에 백업할 DB 이름을 적으세요",
+  // 🛑 칸을 **빠뜨린** 사람과 **안 되는 도구를 적은** 사람은 다른 말을 들어야 한다 -
+  //    앞사람은 한 칸만 채우면 되는데 "지원 안 합니다"를 읽으면 그냥 포기한다.
+  noTool: "backup.tool 에 pg_dump 라고 적으세요",
   onlyPg: "지금 판은 도커 컨테이너 안의 Postgres(pg_dump)만 지원합니다. " +
     "다른 데이터베이스나 도커 밖 Postgres 는 아직 무인을 켤 수 없습니다(다음 판)",
   badName: "container·user·database 는 영문·숫자·밑줄로 시작하고 마침표·붙임표·밑줄만 쓸 수 있습니다",
@@ -70,6 +82,21 @@ export function dbNameFromUrl(url) {
 }
 
 /**
+ * dbUrl 에서 **호스트 이름만** 뽑는다 - 계정·비밀번호·포트·경로는 어디에도 안 담는다.
+ * 🛑 dbNameFromUrl 과 같은 계약이다: 어떤 입력에도 예외를 밖으로 안 던지고, 못 읽으면 null.
+ * 왜 있나: 거부 문구에 주소를 통째로 찍으면 그 안의 **비밀번호가 화면·로그에 그대로 남는다**.
+ */
+export function hostFromUrl(url) {
+  let host;
+  try {
+    host = new URL(String(url)).hostname; // hostname 은 계정·비밀번호·포트를 안 담는다
+  } catch (_) {
+    return null;
+  }
+  return host === "" ? null : host;
+}
+
+/**
  * 설정 파일(.chageun/unattended.json) 모양·짝맞춤을 잰다. 🛑 도커를 안 부른다.
  * 거부 사유 배열을 돌려준다(빈 배열 = 통과).
  */
@@ -96,9 +123,13 @@ export function backupReasons(config) {
     if (!filled(backup.why)) reasons.push(MSG.noneWhy);
     if (sandbox.dbUrl) reasons.push(MSG.noneConflict);
   } else {
-    // 3-4
-    if (!backup.container) reasons.push(MSG.noContainer);
-    if (backup.tool !== "pg_dump") reasons.push(MSG.onlyPg);
+    // 3-4: 네 칸이 다 있어야 한다. 🛑 user·database 는 나중에 docker 인자가 되는 자리인데,
+    //      "값이 있을 때만" 재는 3-5 무늬 검사는 **안 적은 칸**을 그냥 건너뛴다(존재는 여기서 잰다).
+    if (missing(backup.container)) reasons.push(MSG.noContainer);
+    if (missing(backup.user)) reasons.push(MSG.noUser);
+    if (missing(backup.database)) reasons.push(MSG.noDatabase);
+    if (missing(backup.tool)) reasons.push(MSG.noTool);
+    else if (backup.tool !== "pg_dump") reasons.push(MSG.onlyPg);
     // 3-6: dbUrl 이 있어야 3-7 대조가 **항상** 돈다(조건부 대조는 2회차 blocker 였다).
     if (!sandbox.dbUrl) reasons.push(MSG.noDbUrl);
     else {
@@ -106,7 +137,9 @@ export function backupReasons(config) {
       // 3-7b: 못 읽었으면 건너뛰지 않고 사유를 낸다(조용한 통과 금지).
       if (name === null) reasons.push(MSG.badDbUrl);
       // 3-7: 어긋나면 백업은 성공하고 아침 되살리기가 손대지도 않은 DB 를 지운다.
-      else if (name !== backup.database) reasons.push(MSG.dbMismatch);
+      //      🛑 database 를 **안 적은** 사람에게 "다릅니다"라고 말하지 않는다 - 그 갈래의 사유는
+      //      noDatabase 하나뿐이다(두 사유가 함께 나오면 무엇을 고쳐야 할지 흐려진다).
+      else if (!missing(backup.database) && name !== backup.database) reasons.push(MSG.dbMismatch);
     }
   }
 
@@ -126,12 +159,19 @@ export function backupReasons(config) {
 
 /**
  * docker 에 넘길 인자를 **코드가** 조립한다. 🛑 사람이 준 인자 배열은 쓰지 않는다.
- * 부르기 전에 backupReasons 가 초록이어야 한다(허용목록 밖 도구면 여기서 던진다).
+ * 부르기 전에 backupReasons 가 초록이어야 하지만 **그것에 기대지 않는다** - 도구 허용목록도
+ * 이름 무늬도 여기서 다시 재고, 어긋나면 던진다(주석이 아니라 기계로 막는다).
  */
 export function dumpArgv(config) {
   const backup = ((config && config.backup) || {});
   const spec = TOOLS[backup.tool];
   if (!spec) throw new Error(`허용되지 않은 백업 도구: ${backup.tool}`);
+  // 🛑 이름이 `-` 로 시작하면 docker 가 그것을 **옵션으로** 먹는다. 다른 경로(1b-2)가 판정을
+  //    안 거치고 여기로 들어올 수 있으므로 3-5 와 같은 잣대를 이 자리에서 다시 잰다.
+  //    🛑 사유에 값을 안 찍는다 - 그 값 자체가 명령 조각일 수 있다.
+  for (const k of ["container", "user", "database"]) {
+    if (!isName(backup[k])) throw new Error(`백업 설정 이름이 규격 밖이다: backup.${k}`);
+  }
   return ["exec", backup.container, backup.tool, ...spec.buildArgs(backup)];
 }
 
@@ -151,11 +191,15 @@ export function verdict({ status, signal, error, bytes, tail, timeoutMs } = {}) 
 function failReason({ status, signal, error, size, text, timeoutMs, marker }) {
   if (error && error.code === "ENOENT") return "도커를 못 찾았다(docker 가 깔려 있는지 확인)";
   if (error) return "도커를 못 돌렸다(권한·경로 확인)";
-  if (signal != null) {
+  // 🛑 신호를 뭉뚱그려 "시간 초과"라고 적으면, 메모리 부족으로 커널이 죽인(SIGKILL) 사람이
+  //    timeoutMs 만 계속 늘리며 원인을 영영 못 찾는다. **우리가 보낸 신호일 때만** 시간 초과다.
+  if (signal === "SIGTERM") {
     const ms = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS;
     // 🛑 "10분" 을 고정으로 적으면 손잡이를 30분으로 준 사람이 원인을 못 찾는다 - 적용된 값을 적는다.
     return `시간 초과: ${Math.round(ms / 60000)}분 안에 안 끝났다(backup.timeoutMs 로 늘릴 수 있다)`;
   }
+  if (signal != null) return `밖에서 강제 종료됐다(신호 ${signal}) - 메모리가 모자라 커널이 죽였을 수 있다`;
+  // 🛑 이 사유에는 pg_dump 가 박혀 있다 - 1b-2 가 도구를 늘리면 이 줄도 tool 이름을 받아 적어야 한다.
   if (status === 127) return "그 이미지에 pg_dump 도구가 없다";
   if (size === 0) return "덤프가 한 바이트도 안 나왔다(컨테이너·계정 확인)";
   if (status !== 0) return "중간에 끊겼다(부분 덤프라 되살리기에 못 쓴다)";

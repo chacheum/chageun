@@ -19,12 +19,15 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { backupReasons, dumpArgv, verdict, dbNameFromUrl, TOOLS } from "../src/scripts/db-backup.mjs";
+import { backupReasons, dumpArgv, verdict, dbNameFromUrl, hostFromUrl, TOOLS } from "../src/scripts/db-backup.mjs";
 import { evaluate } from "../src/scripts/preflight.mjs";
 import { tmpDir } from "./support-tmpdir.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const alive = () => true;
+// 🛑 명백히 시험용인 글자만 쓴다(진짜처럼 보이는 비밀번호를 검사 파일에 적지 않는다).
+//    아래 단언들은 실패 메시지에도 이 값을 안 찍는다 - 진짜/가짜를 가리는 일 자체가 누출 경로다.
+const FAKE_PW = "pw-not-real-xyz";
 
 // 기본 픽스처. 각 칸은 여기서 **한 칸만** 바꾼다(부르는 쪽마다 새 객체를 받아 서로 안 섞인다).
 const OK = () => ({
@@ -43,7 +46,7 @@ const passes = (config, label) => {
   assert.deepEqual(rs, [], `${label}: 통과해야 하는데 거부됐다 — ${rs.join(" | ")}`);
 };
 
-// ───────────────────────── (가) 설정 판정 16칸 ─────────────────────────
+// ───────────────────────── (가) 설정 판정 19칸 ─────────────────────────
 
 test("(가)1 backup 칸이 없으면 거부하고, 무엇을 적어야 하는지 통째로 알려준다", () => {
   const c = { sandbox: { dbUrl: "postgres://localhost:5432/db" } };
@@ -149,7 +152,30 @@ test("(가)16 dbUrl 에서 DB 이름을 못 읽으면 거부하고, 사유에 �
   }
 });
 
-// ───────────────────────── (나) 조립·결과 판정 12칸 ─────────────────────────
+test("(가)17 user 칸을 빠뜨리면 거부(그 값이 나중에 docker 인자가 된다)", () => {
+  const c = OK(); delete c.backup.user;
+  rejects(c, "DB 계정 이름을", "(가)17");
+});
+
+test("(가)18 database 칸을 빠뜨리면 '없다'고 말한다 — '다르다'가 아니다", () => {
+  const c = OK(); delete c.backup.database;
+  rejects(c, "백업할 DB 이름을 적으세요", "(가)18");
+  // 🛑 겹침 금지: 안 적은 사람에게 "밤이 쓸 DB 이름이 다릅니다"라고 말하면 없는 값을 고치러 간다.
+  const rs = backupReasons(c);
+  assert.ok(!rs.some((x) => x.includes("밤이 쓸 DB 이름이 다릅니다")),
+    `(가)18: 안 적은 칸을 두고 "다릅니다"라고 말했다 — 실제 사유: ${rs.join(" | ")}`);
+});
+
+test("(가)19 tool 칸만 빠뜨린 사람에게 '지원 안 합니다'라고 말하지 않는다", () => {
+  const c = OK(); delete c.backup.tool;
+  rejects(c, "backup.tool 에", "(가)19");
+  // 🛑 도커 안 Postgres 를 쓰는 사람이 한 칸을 빠뜨렸을 뿐인데 "다음 판을 기다리라"를 읽으면 포기한다.
+  const rs = backupReasons(c);
+  assert.ok(!rs.some((x) => x.includes("도커 컨테이너 안의")),
+    `(가)19: 빈 칸에 "지원 안 합니다"를 붙였다 — 실제 사유: ${rs.join(" | ")}`);
+});
+
+// ───────────────────────── (나) 조립·결과 판정 15칸 ─────────────────────────
 
 const MARKER = "-- PostgreSQL database dump complete";
 
@@ -233,7 +259,45 @@ test("(나)12 dbNameFromUrl 은 이름만 돌려주고 던지지 않는다", () 
   }
 });
 
-// ───────────────────────── (다) preflight 연동 4칸 ─────────────────────────
+test("(나)13 dumpArgv 는 스스로 이름 무늬를 다시 잰다(판정을 안 거치고 들어와도)", () => {
+  // 🛑 주석("부르기 전에 backupReasons 가 초록이어야 한다")은 1b-2 의 다른 호출 경로를 못 막는다.
+  for (const [k, bad] of [["container", "--privileged"], ["user", "-h evil.example"], ["database", ".shell rm -rf /"]]) {
+    const c = OK(); c.backup[k] = bad;
+    assert.throws(() => dumpArgv(c), `(나)13 ${k}: 규격 밖 이름인데 argv 가 조립됐다`);
+  }
+  assert.deepEqual(dumpArgv(OK()), ["exec", "c", "pg_dump", "-U", "postgres", "-d", "db"], "정상 설정은 그대로 조립돼야 한다");
+});
+
+test("(나)14 SIGKILL 로 죽은 것을 '시간 초과'라고 말하지 않는다", () => {
+  const r = verdict({ signal: "SIGKILL", timeoutMs: 1800000 });
+  assert.equal(r.ok, false);
+  assert.ok(!r.reason.includes("시간 초과"),
+    `메모리 부족(SIGKILL)인데 timeoutMs 만 늘리게 만든다 — 사유: ${r.reason}`);
+  assert.ok(r.reason.includes("SIGKILL"), `어떤 신호였는지 안 알려준다 — 사유: ${r.reason}`);
+  assert.ok(r.reason.includes("메모리"), `원인 힌트가 없다 — 사유: ${r.reason}`);
+  // 우리가 보낸 신호(SIGTERM)일 때만 시간 초과다 — (나)6 과 짝이다.
+  assert.ok(verdict({ signal: "SIGTERM", timeoutMs: 1800000 }).reason.includes("시간 초과"));
+});
+
+test("(나)15 hostFromUrl 은 호스트만 돌려주고 던지지 않는다(비밀번호를 안 담는다)", () => {
+  const cases = [
+    [`postgres://u:${FAKE_PW}@prod.example.com:5432/db`, "prod.example.com"],
+    [`postgres://u:${FAKE_PW}@localhost:5432/db`, "localhost"],
+    ["주소가 아닌 글자", null],
+    ["", null],
+  ];
+  for (const [url, want] of cases) {
+    let got;
+    assert.doesNotThrow(() => { got = hostFromUrl(url); }, "던지면 안 된다(판정기가 그 자리에서 죽는다)");
+    assert.equal(got, want, "호스트 이름만 돌려줘야 한다");
+    // 🛑 실패 메시지에도 값을 안 찍는다 — 진짜인지 가짜인지 가리는 일 자체가 누출 경로다.
+    assert.ok(!String(got).includes(FAKE_PW), "반환값에 비밀번호가 새어 나왔다");
+    assert.ok(!String(got).includes("u:"), "반환값에 계정이 새어 나왔다");
+    assert.ok(!String(got).includes("5432"), "반환값에 포트가 새어 나왔다");
+  }
+});
+
+// ───────────────────────── (다) preflight 연동 5칸 ─────────────────────────
 
 test("(다)1 샌드박스가 정상이어도 백업 칸이 없으면 무인이 거부된다", () => {
   const r = evaluate({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }, alive, {});
@@ -265,7 +329,22 @@ test("(다)4 설정 파일이 깨졌으면 '샌드박스 미정의'가 아니라
   assert.ok(!out.includes("샌드박스 미정의"), `엉뚱한 데를 고치게 만드는 사유가 섞였다 — 출력: ${out}`);
 });
 
-// ───────────────────────── (라) 견본 유출 방지·자백 2칸 ─────────────────────────
+test("(다)5 운영 dbUrl 거부 문구에 비밀번호가 안 나온다(호스트만)", () => {
+  const c = OK(); c.sandbox = { dbUrl: `postgres://u:${FAKE_PW}@prod.example.com:5432/db` };
+  const r = evaluate(c, alive, {});
+  assert.equal(r.ok, false, "운영 주소인데 통과했다");
+  const joined = r.reasons.join(" | ");
+  // 🛑 값을 실패 메시지에도 안 찍는다.
+  assert.ok(!joined.includes(FAKE_PW), "거부 문구에 비밀번호가 통째로 찍혔다");
+  assert.ok(joined.includes("prod.example.com"), "무엇이 문제인지 알 수 있게 호스트는 보여야 한다");
+  // 주소를 아예 못 읽는 갈래에서도 원본을 대신 찍지 않는다.
+  const broken = OK(); broken.sandbox = { dbUrl: `이건 주소가 아니다 ${FAKE_PW}` };
+  const rb = evaluate(broken, alive, {}).reasons.join(" | ");
+  assert.ok(!rb.includes(FAKE_PW), "못 읽은 주소를 원본 그대로 찍었다");
+  assert.ok(rb.includes("주소를 못 읽었습니다"), `못 읽었다는 말이 없다 — 사유: ${rb}`);
+});
+
+// ───────────────────────── (라) 견본 유출 방지·자백 3칸 ─────────────────────────
 
 test("(라)1 src/scripts 에 견본 설정 JSON 이 없다(2026-08-17 사고 재현 방지)", () => {
   const files = readdirSync(join(ROOT, "src", "scripts")).filter((f) => f.endsWith(".json"));
@@ -276,4 +355,14 @@ test("(라)2 db-backup.mjs 맨 위에 '못 재는 것' 자백이 그대로 있�
   const src = readFileSync(join(ROOT, "src", "scripts", "db-backup.mjs"), "utf8");
   assert.ok(src.includes("컨테이너 축은 아직 안 잰다"), "컨테이너 축 자백 줄이 사라졌다");
   assert.ok(src.includes("그 말이 참인지도 아직 안 잰다"), "mode:none 거짓말 자백 줄이 사라졌다");
+});
+test("(라)3 부록이 backup 칸을 함께 안내한다(문서와 기계가 다른 말을 하면 안 된다)", () => {
+  // 🛑 이 판이 backup 칸을 필수로 만들었다. 부록이 옛 안내(샌드박스 두 칸)만 남으면
+  //    그 글을 그대로 따라 적은 설정이 100% 거부된다.
+  const apx = readFileSync(join(ROOT, "src", "rules", "unattended-appendix.md"), "utf8");
+  const line = apx.split("\n").find((l) => l.includes("에 1회 설정"));
+  assert.ok(line, "부록에서 설정 안내 줄을 못 찾았다");
+  for (const key of ["backup", "mode", "container", "tool", "user", "database", "none"]) {
+    assert.ok(line.includes(key), `부록 안내에 필수 칸 "${key}" 가 없다`);
+  }
 });
