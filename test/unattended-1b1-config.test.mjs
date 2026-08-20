@@ -193,12 +193,23 @@ test("(나)8 되살리기 힌트에 ON_ERROR_STOP 이 있다(조용한 실패 �
   assert.equal(TOOLS.pg_dump.restore, "psql");
 });
 
-test("(나)9 표에 없는 종료코드도 거부(fail-closed)", () => {
-  assert.equal(verdict({ status: 125, bytes: 0 }).ok, false);
+test("(나)9 어떤 사유 갈래에도 안 걸리는 모양도 거부(fail-closed)", () => {
+  // 🛑 이 칸이 fail-closed 를 재는 **유일한** 칸이다. 사유 표 일곱 줄은 빈틈이 없어서,
+  //    "표에 없는 종료코드"(옛 입력 {status:125,bytes:0})는 언제나 앞줄이 먼저 잡는다 - 그건 fail-closed 가 아니다.
+  //    마지막 갈래에 닿는 유일한 길은 **어떤 규칙에도 안 걸리면서 통과 조건에는 미달하는** 모양이고,
+  //    음수 바이트가 바로 그것이다: 사유 표는 `size === 0` 만 보고 통과 조건은 `size > 0` 을 본다.
+  const r = verdict({ status: 0, bytes: -5, tail: MARKER + "\n" });
+  assert.equal(r.ok, false, "통과 조건 다섯을 못 채웠는데 통과했다 — fail-closed 가 깨졌다");
+  assert.ok(String(r.reason).includes("알 수 없는 이유로 실패"),
+    `마지막 갈래(fail-closed 보증)에 안 닿았다 — 사유: ${r.reason}`);
 });
 
 test("(나)10 ENOENT 가 아닌 스폰 실패도 거부", () => {
-  assert.equal(verdict({ error: { code: "EACCES" }, bytes: 0 }).ok, false);
+  // 🛑 이 칸은 fail-closed 가 아니라 **ENOENT 아닌 스폰 실패** 갈래를 잰다(그 줄이 먼저 잡는다).
+  const r = verdict({ error: { code: "EACCES" }, bytes: 0 });
+  assert.equal(r.ok, false);
+  assert.ok(String(r.reason).includes("도커를 못 돌렸다"),
+    `ENOENT 아닌 스폰 실패 줄에 안 닿았다 — 사유: ${r.reason}`);
 });
 
 test("(나)11 설정에 인자 배열을 몰래 넣어도 argv 에 안 실린다", () => {
