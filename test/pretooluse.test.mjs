@@ -1553,6 +1553,63 @@ test("H-2 서브에이전트는 게이트를 띄우지 못한다(메인은 그�
   assert.equal(call("chageun:code-implementer", SUB).status, 0, "게이트가 아닌 스폰은 이 규칙 밖(기계 차단은 게이트만)");
 });
 
+// ── 한 파일 안에서 두 규칙이 부딪히던 자리(0-M · 2026-08-20) ──────────────────
+//
+// 증상: 계획서를 **한 번도 안 쓴** 서브에이전트가 편집할 때마다 "지금 게이트를 먼저 실행하세요"를
+//   받았다(일꾼 둘이 실제로 보고 · 한 명은 5회). 시키는 대로 게이트를 띄우면 바로 위 검사가
+//   증명하는 그 차단에 걸린다 - **따를 수 없는 지시**였다.
+// 원인: P1 리마인더가 읽는 `transcript_path` 는 서브에이전트에서 **부모(메인) 기록**이다
+//   (F-28 주석의 2026-08-12 실측). 그래서 "이 일꾼이 계획서를 썼나"가 아니라 "메인이 계획서를
+//   고쳤나"를 물었고, 메인이 `docs/plans/` 를 고친 세션의 모든 일꾼에게 알림이 갔다.
+//
+// 🛑 **두 칸을 짝으로 읽는다.** (가) 대조군이 빠지면 리마인더를 통째로 죽여도 초록이고,
+//   (나) 처치군이 빠지면 고쳐졌는지를 아무도 못 잰다. 이 저장소는 한쪽만 재는 검사로 여러 번
+//   조용히 틀렸다(위 rm 짝 검사와 같은 규율).
+test("0-M P1 리마인더: 메인에는 뜨고(가) 서브에이전트에는 안 뜬다(나)", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = tmpDir("plan-reminder-subagent-");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  // 메인 세션 기록: 계획서를 고쳤고 plan-validator 는 안 띄웠다 = 리마인더가 **무장된** 상태.
+  const tpath = join(dir, "main.jsonl");
+  writeFileSync(tpath, JSON.stringify({
+    message: { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Edit",
+      input: { file_path: "docs/plans/2026-08-20-x.md", old_string: "a", new_string: "b" } }] },
+  }) + "\n");
+  const edit = (extra) => spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({
+      tool_name: "Edit", tool_input: { file_path: "src/app.js", old_string: "x", new_string: "y" },
+      transcript_path: tpath, ...extra,
+    }), env, encoding: "utf8",
+  });
+  const fired = (r) => /지금 게이트를 먼저 실행하세요/.test(r.stdout || "");
+
+  // (가) 대조군: 메인 세션에는 그대로 뜬다. 이 칸이 초록이어야 픽스처가 리마인더를 실제로 무장시켰다는
+  //   뜻이고, 그래야 아래 (나)의 침묵이 "고쳐서 조용한 것"임을 알 수 있다.
+  const main = edit({});
+  assert.ok(fired(main), "메인 세션의 계획 리마인더까지 죽이면 안 된다(이 절의 본래 임무)");
+
+  // (나) 처치군: 같은 기록·같은 편집인데 서브에이전트에는 안 뜬다.
+  //   🛑 **감독(supervisor)은 이 목록에 넣지 않는다.** 감독의 편집은 F-28 쓰기 금지가 이 절보다
+  //   훨씬 앞에서 exit 2 로 세운다(확인함) - 리마인더 자리에 **도달조차 안 한다.** 넣으면 이 수정을
+  //   통째로 되돌려도 그 칸만은 초록이라, 고쳐졌다는 잘못된 증거가 된다.
+  for (const agent_type of ["chageun:deep-implementer", "chageun:code-implementer"]) {
+    const sub = edit({ agent_type });
+    assert.ok(!fired(sub), agent_type + ": 계획서를 안 쓴 일꾼이 메인의 계획서 때문에 알림을 받았다");
+    assert.equal(sub.status, 0, agent_type + ": 리마인더를 끄는 일이 차단이 되면 안 된다");
+  }
+
+  // 부딪히던 반대쪽을 같은 칸에 못박는다: 그 안내가 시키는 일은 서브에이전트가 **할 수 없다**.
+  //   이 단언이 없으면 다음 사람이 "알림만 되살리면 되지"로 되돌리고 같은 모순이 다시 선다.
+  const spawnGate = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({
+      agent_type: "chageun:deep-implementer", tool_name: "Task",
+      tool_input: { subagent_type: "chageun:plan-validator", prompt: "검토해줘" }, transcript_path: tpath,
+    }), env, encoding: "utf8",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(spawnGate.status, 2, "안내를 따를 길이 열려 있으면 이 수정의 전제가 바뀐 것이다");
+});
+
 // ── F-28(v0.65.0) 감독 에이전트: 좁은 문 · 쓰기 금지 · 스폰 상한 ─────────────
 // 이 셋은 판정기 **하나**(isSupervisor)를 공유한다. 이름을 정규식 세 군데에 박으면 한쪽만
 // 고쳐져 조용히 갈라진다(이 저장소에서 두 번 난 사고). 셋 다 **좁은 판정**인 것이 이 저장소의
