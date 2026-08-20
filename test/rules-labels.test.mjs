@@ -25,6 +25,13 @@ const SECTION_LABELS = [
   // v0.51.0: 출력 스타일 절. 앵커가 없으면 절 하나가 통째로 사라져도 전 테스트가 초록이다
   // (골든은 복사 재생성이고, 상한 밴드는 재핀하면 누적이 리셋된다).
   "출력 스타일",
+  // MISC_LABELS 가 아니라 여기다: 나머지 MISC_LABELS 항목은 전부 한국어라 성격이 안 맞았다
+  // (이 검사는 "절 제목 + 소실 방지 앵커"라 영어 앵커가 자연스럽다).
+  // 코어의 이 줄이 빠지면 '작업 유형별 진행' 절에서 `chageun:debugging` 으로 가는,
+  // 코어 안의 유일한 입구가 사라진다.
+  // 아래 "코어 '작업 유형별 진행'이 `chageun:debugging` 을 가리킨다" 검사와 한 벌이다:
+  // 그 검사는 스킬 이름이 빠지는 갈래를 잡고, 이 항목은 이름은 남고 라벨 문구만 바뀌는 갈래를 잡는다.
+  "Bug / failing test",
 ];
 
 const MISC_LABELS = ["위험 없음", "달라진 것 N건", "진행 보고", "🙋 확인 필요", "별도 심판 게이트 없음", "동작 검증 안 됨"];
@@ -65,9 +72,9 @@ test("스킬 로드 강제 포인터 6문장 유지(Skill tool + 스킬 ID)", ()
 });
 
 // M2(v0.66.0): 디버깅은 **포인터 문투를 안 쓴다**(위 검사가 안 덮는다) — 새 기능 입구에만 강제
-//   포인터를 두기로 한 의도된 비대칭이다. 그래서 79행에서 `chageun:debugging` 이 통째로 빠져도
-//   잡는 칸이 하나도 없었다. 크기 밴드는 재핀하면 초록이 되므로(core-size.test.mjs:252) 그쪽은
-//   방어가 아니다. 이 한 줄이 그 축의 전부다.
+//   포인터를 두기로 한 의도된 비대칭이다. 그래서 '작업 유형별 진행' 절의 'Bug / failing test' 줄에서
+//   `chageun:debugging` 이 통째로 빠져도 잡는 칸이 하나도 없었다. 크기 밴드는 재핀하면 초록이
+//   되므로(core-size.test.mjs 의 `CEILING_BYTES` 재핀 방식) 그쪽은 방어가 아니다. 이 한 줄이 그 축의 전부다.
 test("코어 '작업 유형별 진행'이 `chageun:debugging` 을 가리킨다(포인터 문투 없는 축)", () => {
   assert.ok(RULES.includes("chageun:debugging"),
     "누락: chageun:debugging — 버그 경로가 가리킬 스킬 이름이 코어에서 사라졌다");
@@ -75,7 +82,8 @@ test("코어 '작업 유형별 진행'이 `chageun:debugging` 을 가리킨다(�
 
 // v0.67.0: 테스트 설계도 같은 비대칭이다(강제 포인터를 안 붙였다 — 매번 본문을 대화에 실으면
 //   컨텍스트를 줄이려는 이 판의 목적과 반대다). 그래서 위 검사가 이 이름을 안 덮고,
-//   79행에서 통째로 빠져도 잡는 칸이 없었다. 크기 밴드는 재핀하면 초록이라 방어가 아니다.
+//   '작업 유형별 진행' 절의 'Bug / failing test' 줄에서 통째로 빠져도 잡는 칸이 없었다.
+//   크기 밴드는 재핀하면 초록이라 방어가 아니다.
 test("코어 '작업 유형별 진행'이 `chageun:test-design` 을 가리킨다(포인터 문투 없는 축)", () => {
   assert.ok(RULES.includes("chageun:test-design"),
     "누락: chageun:test-design — 새 검사를 짜는 경로가 가리킬 스킬 이름이 코어에서 사라졌다");
@@ -85,8 +93,9 @@ test("코어 '작업 유형별 진행'이 `chageun:test-design` 을 가리킨다
 
 // pr-reviewer 재리뷰 2회차 medium: 이 판에서 걷어낸 남의 스킬 이름은 넷인데(test-driven-development ·
 //   executing-plans · using-git-worktrees · writing-skills), 되살아남을 막는 검사는 위 하나뿐이었다.
-//   나머지 셋은 코어(RULES)에 그물이 없어, 되살아나면 `:82`(=위 두 검사 옆)가 "차근을 재설치하라"고
-//   안내하는데 그 이름은 차근에 없으니 몇 번 재설치해도 안 고쳐지는 막다른 길이 조용히 배포된다.
+//   나머지 셋은 코어(RULES)에 그물이 없어, 되살아나면 '작업 유형별 진행' 절의 '> **Important:**' 재설치
+//   안내문(=위 두 검사 옆)이 "차근을 재설치하라"고 안내하는데 그 이름은 차근에 없으니 몇 번
+//   재설치해도 안 고쳐지는 막다른 길이 조용히 배포된다.
 const RETIRED_SUPERPOWERS_NAMES_REST = ["executing-plans", "using-git-worktrees", "writing-skills"];
 
 test("코어에 걷어낸 옛 이름 셋(executing-plans·using-git-worktrees·writing-skills)이 안 남았다", () => {
@@ -96,9 +105,12 @@ test("코어에 걷어낸 옛 이름 셋(executing-plans·using-git-worktrees·w
 });
 
 // 위 두 검사는 RULES(코어 한 파일)만 훑는다. 그런데 `using-git-worktrees` 는 코어가 아니라
-//   src/skills/routing/SKILL.md:61 에 있던 이름이라 코어만 훑으면 안 걸린다 — 스킬 본문까지
-//   훑어야 한다. 훑는 범위 = src/rules/*.md + src/skills/*/SKILL.md + src/agents/*.md.
-//   NOTICE 파일은 **일부러 안 읽는다**: src/skills/test-design/NOTICE:12 가
+//   src/skills/routing/SKILL.md 의 '병렬 위임' 절(오늘의 '같은 파일 동시 수정 금지' 항목,
+//   그 절 제목이 아니라 그 항목의 본문)에 있던 이름이라 코어만 훑으면 안 걸린다.
+//   그 당시엔 '작업방에서 굴린다' 절이 아직 없었다 —
+//   스킬 본문까지 훑어야 한다. 훑는 범위 = src/rules/*.md + src/skills/*/SKILL.md + src/agents/*.md.
+//   NOTICE 파일은 **일부러 안 읽는다**: src/skills/test-design/NOTICE 의
+//   "1. test-driven-development (Superpowers)" 줄이
 //   `test-driven-development` 를 MIT 저작권 표시로 정당하게 들고 있다(라이선스 고지) — 그것까지
 //   잡으면 저작권 표기를 지우라는 잘못된 압력이 생긴다. 이 함수는 SKILL.md 파일명만 지목해서
 //   읽으므로 같은 폴더의 NOTICE 는 애초에 대상이 아니다.

@@ -478,12 +478,18 @@ test(`주입되는 규칙 소스 전체(${INJECTED.join(" + ")})가 상한 ${CEI
 // 세션에서 조용히 꺼진다(v0.42.0 = 읽는 쪽만 있어 2,941회 중 0회 발동 · finish-check 저발동 실측
 // = honclwd 제외 10개 프로젝트 중 1회). Codex 총면 상한이 주던 마찰의 대체물이다.
 //
-// 기존 커버리지(실측): 코어 본문을 앵커하는 테스트는 4개다 — rules-labels(SECTION_LABELS 14 +
-// HOOK_SEEDS 11 + MISC_LABELS 6 + 스킬 포인터 5) · gate-round-marker(회차 쓰기 규칙) ·
+// 기존 커버리지(실측): 코어 본문을 앵커하는 테스트는 4개다 — rules-labels(SECTION_LABELS 15 +
+// HOOK_SEEDS 11 + MISC_LABELS 6 + 스킬 포인터 6) · gate-round-marker(회차 쓰기 규칙) ·
 // activate(주입 머리·지연로드 포인터) · unattended-loop-skill(질문 상한).
-// ⚠ 코어 최상위 절은 **16개**, SECTION_LABELS는 14개다. 안 덮이는 절 = 파일 제목 ·
+// (이 네 숫자는 test/rules-labels.test.mjs 의 배열을 그 자리에서 다시 세서 적어라: 가지 중간
+// 상태를 보고 적으면 틀린다. 실제로 한 번 그렇게 틀렸다: 2026-08-20 회차가 MISC_LABELS 를
+// 7로 적었는데, 그건 `Bug / failing test` 가 잠깐 MISC_LABELS 를 거쳐가던 중간 커밋을 보고
+// 적은 값이었고 그 항목은 이후 SECTION_LABELS 로 옮겨져 MISC_LABELS 는 다시 6이 됐다.)
+// ⚠ 코어 최상위 절은 **16개**, SECTION_LABELS 중 절 제목인 것은 14개다(3회차 검수에서
+// `Bug / failing test`를 MISC_LABELS에서 옮겨와 배열 길이는 15가 됐지만, 이건 절 제목이 아니라
+// '작업 유형별 진행' 절 안의 한 줄이라 이 셈에는 안 넣는다). 안 덮이는 절 = 파일 제목 ·
 // `# User context · response language`(전수 확인). 단 16−14=2라는 뺄셈은 우연히 맞은 값이다 —
-// SECTION_LABELS 14개 중 `게이트 판정 ↔ 멈춤`은 하위 절이고, `# Finish check` 절은 HOOK_SEEDS의
+// 절 제목 14개 중 `게이트 판정 ↔ 멈춤`은 하위 절이고, `# Finish check` 절은 HOOK_SEEDS의
 // "끝 점검"이 덮는다(두 어긋남이 상쇄). 커버리지는 **네 목록을 합쳐서** 봐야 한다(pr-reviewer low). 즉 "절 제목이 빠지면 잡는다"가 아니라 **"라벨에 오른
 // 문자열이 빠지면 잡는다"**가 맞다. 어떤 테스트도 못 잡던 건 **절 안의 문단만 떼어 가는 경우**다.
 //
