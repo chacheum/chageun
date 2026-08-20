@@ -90,13 +90,19 @@ function readTranscriptIfMentions(transcriptPath, needle) {
 //     그래서 같은 한 줄이 supervisor-cap-unreadable 문구에도 들어 있다.)
 // 🛑 그 구조는 한 겹이 아니다. 평면 `subagents/agent-*.jsonl` 과 각본 층
 //    `subagents/workflows/<wf_id>/agent-*.jsonl` 둘이고, 이 조립은 **평면을 가정한다.**
-//    단일 원본은 바로 아래 `supervisorTranscriptPath` 다: 평면 경로를 실제로 조립하는 자리가
-//    거기 하나뿐이라, 구조가 의심되면 그 `path.join` 부터 본다.
+//    (두 겹이라는 이 사실 자체는 2026-08-12 프로브 실측 하나가 출처다. 한때 그걸 따로 적어 두던
+//    회고 스캐너는 걷혔고, 지금은 이 주석이 유일한 기록이다.)
+//    평면 경로를 실제로 조립하는 자리가 바로 아래 `supervisorTranscriptPath` 하나뿐이라,
+//    구조가 의심되면 그 `path.join` 부터 본다.
 //    감독은 `Agent` 로 띄우므로 평면에 떨어진다(2026-08-12 프로브 실측: layer=flat).
 //    각본(Workflow)으로 띄우면 이 가정이 깨지고 첫 스폰부터 supervisor-cap-unreadable 로 선다
 //: 조용히 틀리는 대신 시끄럽게 서는 쪽이다.
 // 🛑 구조가 바뀌면 **고칠 곳은 아래 `supervisorTranscriptPath` 하나다.** 한때 회고 스캐너가 같은
 //    구조를 따로 읽어 고칠 곳이 둘이었지만, 회고 기능을 걷어낸 뒤로 이 조립이 유일한 소비처다.
+//    단 `test/pretooluse.test.mjs` 의 F-28 픽스처가 같은 경로를 **일부러 리터럴로** 한 번 더
+//    짓는다(제품 조립기를 부르면 조립기가 바뀌어도 검사가 함께 따라가 초록이 되어 버리기 때문이고,
+//    그 이유가 그 픽스처 바로 위에 적혀 있다). 구조가 바뀌면 그 픽스처도 함께 고친다
+//    - 안 고치면 검사가 빨개져 알려 준다.
 function supervisorTranscriptPath(input) {
   const parent = input && input.transcript_path;
   const sid = input && input.session_id;
