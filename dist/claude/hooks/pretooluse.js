@@ -789,8 +789,11 @@ process.stdin.on("end", () => {
     //   늘 틀리는 안내를 남겨 두면 일꾼이 훅 출력을 통째로 무시하게 되고, 그 통로로 **진짜 차단
     //   안내**까지 함께 지나간다. 그래서 침묵 쪽으로 닫는다(형제 절들과 같은 `!IS_SUBAGENT` 모양).
     //
-    // ⚠ (1)의 사정은 이 절만의 것이 아니다: 아래 디자인 레지스트리 리마인더와 routing 리마인더도
-    //   같은 부모 기록을 읽는데 이 갈래가 없다. 이번 판은 실제 보고가 있는 이 절만 고친다(범위).
+    // ⚠ (1)의 사정은 이 절만의 것이 아니었다: 아래 디자인 레지스트리 리마인더(§4.7)도 같은 부모
+    //   기록을 읽어 같은 병을 앓았고, **v0.72.4 에서 함께 닫았다**(사유는 그 절 주석). 남은 것은
+    //   routing 리마인더(§4.5) 하나뿐인데, 그 절은 **위임(Agent 스폰) 자리에서만** 켜지고
+    //   서브에이전트는 서브에이전트를 안 띄운다(두 구현 에이전트 계약) - 도달 자체가 계약상 없어
+    //   미뤄도 구멍이 안 생긴다. 그 계약이 무너지면 이 절·§4.7 과 같은 갈래를 그때 단다.
     if (!IS_SUBAGENT && EDIT_RE.test(String(name || ""))) {
       try {
         const objs = readTranscriptIfMentions(input.transcript_path, "plan");
@@ -809,7 +812,16 @@ process.stdin.on("end", () => {
     // 4.7) 디자인 레지스트리 조회 리마인더(soft, Claude 전용): UI 파일 첫 수정인데 이번 세션에
     //    design-system 레지스트리 조회 흔적이 없으면 1회 주입. P1이 이미 주입했으면 침묵(JSON 단일 write).
     //    파싱 전 isUiTarget으로 걸러 비UI 편집은 전체 파싱 안 함(비용). 자체 try/catch로 격리(무인 fail-closed로 안 샘).
-    if (!reminderEmitted && EDIT_RE.test(String(name || "")) && isUiTarget(ti.file_path || ti.notebook_path)) {
+    //    🛑 **서브에이전트에는 안 띄운다**(`!IS_SUBAGENT` · §4 와 같은 모양 · v0.72.4). 침묵 조건
+    //    둘(레지스트리를 조회했다 / UI 파일을 이미 고쳤다)을 `designRegistryReminderNeeded` 가
+    //    **부모(메인) 기록에서만** 찾는데, 일꾼이 `docs/design-system.md` 를 방금 읽어도 그 흔적은
+    //    자기 기록에만 남는다 = 일꾼은 침묵 조건을 **영영 못 채우고** 편집할 때마다 같은 안내를
+    //    받는다(§4 가 앓던 그 병이다).
+    //    ⚠ 다음 사람에게: "UI 규칙이 일꾼에게 안 뜬다"는 버그가 아니라 이 결정이다. 되돌리면 늘
+    //    틀리는 안내가 돌아오고, 그것을 무시하는 버릇이 **진짜 차단 안내**까지 함께 지나가게 한다.
+    //    (v0.72.4 전에는 §4 가 뜬 세션에서만 그 절의 `reminderEmitted` 가 이 절을 가려 줬다 -
+    //     §4 를 닫자 가림막이 걷혀 서브에이전트에 도달하기 시작했고, 이 갈래가 그 자리를 메운다.)
+    if (!IS_SUBAGENT && !reminderEmitted && EDIT_RE.test(String(name || "")) && isUiTarget(ti.file_path || ti.notebook_path)) {
       try {
         const objs = readTranscriptIfMentions(input.transcript_path, "");
         if (objs && designRegistryReminderNeeded(objs, name, ti)) {

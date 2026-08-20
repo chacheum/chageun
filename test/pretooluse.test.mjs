@@ -1606,8 +1606,53 @@ test("0-M P1 리마인더: 메인에는 뜨고(가) 서브에이전트에는 안
       tool_input: { subagent_type: "chageun:plan-validator", prompt: "검토해줘" }, transcript_path: tpath,
     }), env, encoding: "utf8",
   });
-  rmSync(dir, { recursive: true, force: true });
   assert.equal(spawnGate.status, 2, "안내를 따를 길이 열려 있으면 이 수정의 전제가 바뀐 것이다");
+});
+
+// ── 0-M 이 걷어낸 가림막(§4.7 · v0.72.4) ────────────────────────────────────────
+//
+// 위 0-M 이 §4 를 서브에이전트에서 끄자 **§4.7 이 새로 도달하기 시작했다.** §4 는 뜰 때
+//   `reminderEmitted` 를 세워 뒤 절들을 가렸는데, 그 갈래를 닫으면서 가림막이 걷혔다.
+// 그리고 §4.7 은 §4 와 **똑같은 병**을 앓는다: 침묵 조건 둘(레지스트리 조회함 / UI 파일 이미 고침)을
+//   `designRegistryReminderNeeded` 가 부모(메인) 기록에서만 찾으므로, 일꾼이 `docs/design-system.md`
+//   를 방금 읽어도 그 흔적은 자기 기록에만 남아 조건을 **영영 못 채운다** = 편집마다 같은 안내.
+// 🛑 여기도 **두 칸을 짝으로** 읽는다(위 0-M 과 같은 규율): (가) 대조군이 빠지면 이 리마인더를
+//   통째로 죽여도 초록이라, 고쳐졌다는 잘못된 증거가 된다.
+test("§4.7 디자인 레지스트리 리마인더: 메인에는 뜨고(가) 서브에이전트에는 안 뜬다(나)", () => {
+  const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "pretooluse.js");
+  const dir = tmpDir("design-reminder-subagent-");
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (k.startsWith("CHAGEUN_")) delete env[k];
+  // 리마인더를 **무장시키는** 기록: 레지스트리 조회도 UI 편집도 없다(둘 다 침묵 조건).
+  //   ⚠ 이 기록에 `plan` 이라는 낱말이 없어야 한다. 있으면 §4 가 먼저 stdout 을 물고
+  //   `reminderEmitted` 를 세워, 이 칸이 재려는 §4.7 이 **도달조차 안 한다**(그 가림막이 이 칸의
+  //   존재 이유다 - 여기서 다시 밟으면 §4.7 을 안 고쳐도 초록이 된다).
+  const tpath = join(dir, "main.jsonl");
+  writeFileSync(tpath, JSON.stringify({
+    message: { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Read",
+      input: { file_path: "src/util.js" } }] },
+  }) + "\n");
+  // cwd 는 빈 임시 폴더다: 디자인 규칙 파일이 없어 §4.8 색 하드 차단이 안 걸린다(soft 만 잰다).
+  const write = (extra) => spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({
+      tool_name: "Write",
+      tool_input: { file_path: "web/App.tsx", content: "export const A = () => null;\n" },
+      transcript_path: tpath, cwd: dir, ...extra,
+    }), env, encoding: "utf8",
+  });
+  const fired = (r) => /design-system 레지스트리/.test(r.stdout || "");
+
+  // (가) 대조군: 메인 세션에는 그대로 뜬다 = 픽스처가 리마인더를 실제로 무장시켰다는 증거.
+  const main = write({});
+  assert.ok(fired(main), "메인 세션의 디자인 레지스트리 리마인더까지 죽이면 안 된다(이 절의 본래 임무)");
+
+  // (나) 처치군: 같은 기록·같은 편집인데 서브에이전트에는 안 뜬다.
+  //   🛑 감독(supervisor)은 여기에도 넣지 않는다 - F-28 쓰기 금지가 훨씬 앞에서 exit 2 로 세워
+  //   이 절에 도달조차 안 한다(위 0-M 과 같은 사정).
+  for (const agent_type of ["chageun:deep-implementer", "chageun:code-implementer"]) {
+    const sub = write({ agent_type });
+    assert.ok(!fired(sub), agent_type + ": 일꾼이 채울 수 없는 침묵 조건 때문에 편집마다 같은 안내를 받는다");
+    assert.equal(sub.status, 0, agent_type + ": 리마인더를 끄는 일이 차단이 되면 안 된다");
+  }
 });
 
 // ── F-28(v0.65.0) 감독 에이전트: 좁은 문 · 쓰기 금지 · 스폰 상한 ─────────────
