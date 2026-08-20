@@ -343,12 +343,20 @@ test("표 위 되짚기 주석이 가리키는 검사 이름이 이 파일에 �
     "라우팅 스킬에서 test/delegation-worktree.test.mjs 를 인용하는 HTML 주석을 못 찾았다 - " +
     "주석이 지워졌거나 이 파일을 더 이상 안 가리킨다");
   for (const c of cites) {
-    const inner = c.match(/"([^"]+)"/);
-    assert.ok(inner,
+    // 🛑 위 문단이 경고한 함정(`match()` 는 global 이 아니라 첫 매치 하나만 본다)을 바로 이
+    //    아래서 그대로 반복하고 있었다 - 주석 안에 인용이 하나 더 생기면 뒤엣것은 영영
+    //    무검사였다. `matchAll` 로 따옴표 쌍을 **전부** 뽑아 **하나하나 다** 검증한다.
+    const quoted = [...c.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(quoted.length > 0,
       `이 파일을 인용하는 주석에 따옴표로 감싼 검사 이름이 없다 - 이름을 못 뽑은 것을 ` +
       `통과로 치지 않는다: ${c}`);
-    const quotedName = inner[1];
-    assert.ok(SOURCE.includes(`test("${quotedName}"`),
-      `스킬 주석이 없는 검사를 가리킨다 - 뽑은 이름: "${quotedName}"`);
+    // 🛑 판정 방향은 **하나라도 실재하면 통과**가 아니라 **전부 실재해야 통과**다.
+    //    치르는 값 - 이 주석에 검사 이름이 아닌 인용구를 따옴표로 적으면 헛경보가 난다.
+    //    그래도 이쪽을 고른다: 헛경보는 시끄럽고 놓침은 조용하다.
+    //    헛경보가 나면 그 인용구를 따옴표 말고 백틱으로 적거나, 이 단언을 먼저 다시 설계해라.
+    const missing = quoted.filter((n) => !SOURCE.includes(`test("${n}"`));
+    assert.equal(missing.length, 0,
+      `스킬 주석이 없는 검사를 가리킨다 - 뽑은 이름 전부: ${quoted.join(" · ")} / ` +
+      `그중 이 파일에 없는 것: ${missing.join(" · ")}`);
   }
 });
