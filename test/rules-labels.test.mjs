@@ -25,9 +25,14 @@ const SECTION_LABELS = [
   // v0.51.0: 출력 스타일 절. 앵커가 없으면 절 하나가 통째로 사라져도 전 테스트가 초록이다
   // (골든은 복사 재생성이고, 상한 밴드는 재핀하면 누적이 리셋된다).
   "출력 스타일",
+  // 3회차 검수: MISC_LABELS에서 옮김. 나머지 MISC_LABELS 항목은 전부 한국어라 성격이 안 맞았다
+  // (이 검사는 "절 제목 + 소실 방지 앵커"라 영어 앵커가 자연스럽다). 이 줄이 빠지면
+  // '작업 유형별 진행' 절의 'Bug / failing test' 줄에서 `chageun:debugging`으로 가는
+  // 유일한 입구가 사라진다(위 71번째 줄 검사와 같은 축, 문자열 자체를 별도로도 잡는다).
+  "Bug / failing test",
 ];
 
-const MISC_LABELS = ["위험 없음", "달라진 것 N건", "진행 보고", "🙋 확인 필요", "별도 심판 게이트 없음", "동작 검증 안 됨", "Bug / failing test"];
+const MISC_LABELS = ["위험 없음", "달라진 것 N건", "진행 보고", "🙋 확인 필요", "별도 심판 게이트 없음", "동작 검증 안 됨"];
 
 // 안전 tie-break 의 두 축을 각각 앵커한다. 제목 앵커(SECTION_LABELS)는 절이 통째로 사라져야만
 // 반응해서, 문장 안의 안전 조각이 조용히 빠지는 것을 못 잡는다(v0.64.0 이 이 문장을 고치며 발견).
@@ -99,8 +104,8 @@ test("코어에 걷어낸 옛 이름 셋(executing-plans·using-git-worktrees·w
 
 // 위 두 검사는 RULES(코어 한 파일)만 훑는다. 그런데 `using-git-worktrees` 는 코어가 아니라
 //   src/skills/routing/SKILL.md 의 '병렬 위임' 절(오늘의 '같은 파일 동시 수정 금지' 항목,
-//   그 절 제목이 아니라 그 항목의 본문. 그 당시엔 '작업방에서 굴린다' 절이 아직 없었다)에
-//   있던 이름이라 코어만 훑으면 안 걸린다 —
+//   그 절 제목이 아니라 그 항목의 본문)에 있던 이름이라 코어만 훑으면 안 걸린다.
+//   그 당시엔 '작업방에서 굴린다' 절이 아직 없었다 —
 //   스킬 본문까지 훑어야 한다. 훑는 범위 = src/rules/*.md + src/skills/*/SKILL.md + src/agents/*.md.
 //   NOTICE 파일은 **일부러 안 읽는다**: src/skills/test-design/NOTICE 의
 //   "1. test-driven-development (Superpowers)" 줄이
