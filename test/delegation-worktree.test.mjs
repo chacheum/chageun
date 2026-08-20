@@ -20,13 +20,16 @@ const core = require("../src/hooks/activate-core.js");
 
 const RULES = readFileSync(join(SRC, "rules", "operating-rules.md"), "utf8");
 const ROUTING = readFileSync(join(SRC, "skills", "routing", "SKILL.md"), "utf8");
+// 이 파일 자신의 소스 - 6번 검사가 스킬 주석이 가리키는 검사 이름이 이 파일에 실제로
+// 있는지 재는 데 쓴다(이름을 코드에 다시 박지 않고 자기 소스에서 찾는다).
+const SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
 
 // 라우팅 표를 **행 단위로** 집는 자리. 조건 칸의 한 조각으로 그 줄을 찾아 온다.
 // 한 번만 쪼개는 이유 = 같은 분해를 여러 벌 들고 있으면 나중에 한 벌만 고쳐져 칸마다 다른 것을
 // 재게 된다(아래 4·5번이 같은 표를 본다).
 const ROUTING_LINES = ROUTING.split("\n");
 // 🛑 표 앞에 같은 낱말(`deep-implementer`·안전 바닥·fail-safe)을 쓰는 되짚기 주석이 있다
-//    (표 바로 위, HTML 주석 `<!-- -->`). `startsWith("|")` 없이 파일 전체를 훑으면, 다음
+//    (표 바로 위, HTML 주석 `<!-- -->`). `trim().startsWith("|")` 없이 파일 전체를 훑으면, 다음
 //    개정이 그 주석에 조건 문구까지 적을 때 표 대신 주석 줄을 집어 온다 - 그러면 표의
 //    담당 일꾼을 값싼 일꾼으로 내려도, 이 함수는 여전히 주석 속 `deep-implementer` 를
 //    돌려줘 있음 단언도 없음 단언도 둘 다 통과한다(재검수 medium).
@@ -282,6 +285,7 @@ test("짝 2: 라우팅 표에서 인라인 행이 사라지고 크기 하한 없
 
 // ── 5. 안전이 걸린 두 행과 값싼 두 행이 **담당 일꾼**을 그대로 가리킨다 ─────────
 // 나머지 두 행(여러 파일 통합·디버깅 · 여러 바퀴 supervisor)은 안 잰다 - 앞 행 괄호는 `독립성·명확성·안전성이 애매` 행과 `코어의 안전 tie-break가 이 표보다 항상 우선한다` 산문이 이미 덮는다.
+// supervisor 행은 그 칸이 모델 등급이 아니라 에이전트 이름이라 값싼 쪽으로 내려갈 칸이 아니고, 안전이 걸린 일은 `보안·판단·권한·동시성·아키텍처·애매·복잡` 행이 먼저 가져간다.
 // 🛑 이 파일에서 가장 값나가는 칸이다. 위 4번은 행의 **이름표**(`안전 바닥`·`fail-safe`)까지만
 //    쟀는데, 이름표는 괄호 안 설명에 있어서 **담당 일꾼 이름을 갈아 끼워도 그대로 남는다.**
 //    다음 판이 비용을 아끼려 안전 바닥 행의 `deep-implementer` 를 `code-implementer` 로 바꿔도
@@ -318,4 +322,19 @@ test("라우팅 표의 안전이 걸린 두 행과 값싼 두 행이 담당 일�
       `${name} 행에 값싼 일꾼 \`code-implementer\` 가 함께 적혔다 - 안전이 걸린 행에 값싼 길을 ` +
       `나란히 두면 읽는 쪽이 편한 쪽을 고른다: ${routingRow(condition)}`);
   }
+});
+
+// ── 6. 표 위 되짚기 주석이 가리키는 검사 이름이 실제로 이 파일에 있다 ─────────
+// 🛑 이름을 여기 코드에 다시 박지 않는다 - 스킬 주석이 원본이고 이 검사는 그것을 그대로
+//    따라간다. 이름을 여기서도 손으로 적으면 이름을 바꿀 때 고칠 곳이 셋(스킬 주석 · 이 검사 ·
+//    가리켜지는 test 이름)이 되어 또 낡는다(이 자리가 이 갈래에서만 세 번째로 낡았다).
+test("표 위 되짚기 주석이 가리키는 검사 이름이 이 파일에 실제로 있다", () => {
+  const match = ROUTING.match(
+    /<!--[\s\S]*?test\/delegation-worktree\.test\.mjs[\s\S]*?"([^"]+)"[\s\S]*?-->/);
+  assert.ok(match,
+    "라우팅 스킬에서 test/delegation-worktree.test.mjs 를 인용하는 HTML 주석을 못 찾았다 - " +
+    "주석이 지워졌거나 이 파일을 더 이상 안 가리킨다");
+  const quotedName = match[1];
+  assert.ok(SOURCE.includes(`test("${quotedName}"`),
+    `스킬 주석이 없는 검사를 가리킨다 - 뽑은 이름: "${quotedName}"`);
 });
