@@ -46,7 +46,7 @@ const passes = (config, label) => {
   assert.deepEqual(rs, [], `${label}: 통과해야 하는데 거부됐다 — ${rs.join(" | ")}`);
 };
 
-// ───────────────────────── (가) 설정 판정 19칸 ─────────────────────────
+// ───────────────────────── (가) 설정 판정 22칸 ─────────────────────────
 
 test("(가)1 backup 칸이 없으면 거부하고, 무엇을 적어야 하는지 통째로 알려준다", () => {
   const c = { sandbox: { dbUrl: "postgres://localhost:5432/db" } };
@@ -175,7 +175,41 @@ test("(가)19 tool 칸만 빠뜨린 사람에게 '지원 안 합니다'라고 �
     `(가)19: 빈 칸에 "지원 안 합니다"를 붙였다 — 실제 사유: ${rs.join(" | ")}`);
 });
 
-// ───────────────────────── (나) 조립·결과 판정 15칸 ─────────────────────────
+test("(가)20 계정·비밀번호를 적어 둔 주소도 판정은 그대로 통과한다(안내만 바꿨다)", () => {
+  // 🛑 안내 견본에서 비밀번호를 뺀 것은 **문구 변경**이다. 이미 그렇게 적어 둔 사람을 막으면
+  //    판정을 바꾼 것이 되고, 그건 이 판의 경계 밖이다.
+  const c = OK(); c.sandbox = { dbUrl: `postgres://postgres:${FAKE_PW}@localhost:5432/db` };
+  passes(c, "(가)20");
+});
+
+test("(가)21 안내 문장이 안 써도 되는 비밀번호를 적으라고 시키지 않는다", () => {
+  // 🛑 이 판은 dbUrl 에서 **DB 이름 하나만** 읽는다. 그런데도 안내가 비밀번호 자리표를 보여 주면,
+  //    시키는 대로 적은 비밀번호가 사용자 저장소의 `.chageun/unattended.json` 에 평문으로 남고
+  //    다음 커밋에 이력으로 들어간다 - 나중에 지워도 이력에서는 안 사라진다.
+  const noBackup = backupReasons({ sandbox: { dbUrl: "postgres://localhost:5432/db" } })[0];
+  const broken = OK(); broken.sandbox = { dbUrl: "주소가 아닌 글자" };
+  const badDbUrl = backupReasons(broken).find((x) => x.includes("DB 이름을 못 읽었습니다"));
+  for (const [label, msg] of [["noBackup", noBackup], ["badDbUrl", badDbUrl]]) {
+    assert.ok(msg, `${label}: 안내 문장을 못 찾았다`);
+    // 견본이 살아 있어야 아래 단언이 공허해지지 않는다(안내를 통째로 지워도 초록이 되는 것 방지).
+    assert.ok(msg.includes("postgres://"), `${label}: 주소 견본이 아예 사라졌다`);
+    assert.ok(!msg.includes("비밀번호>"), `${label}: 안내가 비밀번호 자리표를 적으라고 시킨다`);
+    assert.ok(!msg.includes("@"), `${label}: 견본에 계정·비밀번호 구분자(@)가 남아 있다`);
+    assert.ok(msg.includes("DB 이름만 읽습니다"), `${label}: 비밀번호가 필요 없다는 말이 없다`);
+  }
+});
+
+test("(가)22 공백만 든 값은 '안 적었다' 하나로만 말한다(사유가 겹치지 않게)", () => {
+  // 🛑 3-5 무늬 검사의 건너뛰기 잣대가 3-4 와 다르면(`v === ""` 만 보면) 공백만 든 값이
+  //    "안 적었다"와 "무늬가 틀렸다"에 둘 다 걸려, 사용자가 무엇을 고칠지 흐려진다.
+  const c = OK(); c.backup.user = "   ";
+  rejects(c, "DB 계정 이름을", "(가)22");
+  const rs = backupReasons(c);
+  assert.ok(!rs.some((x) => x.includes("밑줄로 시작하고")),
+    `(가)22: 빈 칸에 무늬 사유까지 겹쳐 나왔다 — 실제 사유: ${rs.join(" | ")}`);
+});
+
+// ───────────────────────── (나) 조립·결과 판정 17칸 ─────────────────────────
 
 const MARKER = "-- PostgreSQL database dump complete";
 
@@ -297,6 +331,35 @@ test("(나)15 hostFromUrl 은 호스트만 돌려주고 던지지 않는다(비�
   }
 });
 
+test("(나)16 진짜 시간 초과(ETIMEDOUT+SIGTERM)를 '도커를 못 돌렸다'로 말하지 않는다", () => {
+  // 🛑 실측(2026-08-20): spawnSync("sleep",["5"],{timeout:300}) 은 error.code="ETIMEDOUT" 과
+  //    signal="SIGTERM" 을 **함께** 채운다. error 를 먼저 반환하는 순서면 SIGTERM 갈래에 영영
+  //    안 닿아, 진짜 시간 초과가 권한·경로 문제로 둔갑한다 - 사람은 timeoutMs 는 손도 안 대고
+  //    docker 권한을 뒤진다. (나)6·(나)14 는 error 를 같이 안 넣어 이 모양을 한 번도 안 잰다.
+  const r = verdict({ error: { code: "ETIMEDOUT" }, signal: "SIGTERM", timeoutMs: 1800000 });
+  assert.equal(r.ok, false);
+  assert.ok(r.reason.includes("시간 초과"), `시간 초과라고 안 한다 — 사유: ${r.reason}`);
+  assert.ok(r.reason.includes("30분"), `적용된 값이 안 찍힌다 — 사유: ${r.reason}`);
+  assert.ok(!r.reason.includes("도커를 못 돌렸다"), `권한·경로 문제로 둔갑했다 — 사유: ${r.reason}`);
+  // 🛑 새 갈래가 이웃을 삼키면 안 된다: 다른 스폰 실패는 그대로((나)10 과 짝) ·
+  //    우리가 안 보낸 신호(SIGKILL)는 여전히 시간 초과가 아니다((나)14 와 짝).
+  assert.ok(verdict({ error: { code: "EACCES" }, bytes: 0 }).reason.includes("도커를 못 돌렸다"),
+    "ETIMEDOUT 갈래가 다른 스폰 실패까지 삼켰다");
+  assert.ok(!verdict({ signal: "SIGKILL", timeoutMs: 1800000 }).reason.includes("시간 초과"),
+    "SIGKILL 이 시간 초과로 둔갑했다");
+});
+
+test("(나)17 프로토타입 키를 허용목록으로 오인하지 않는다", () => {
+  // 🛑 `TOOLS[backup.tool]` 이 truthy 인지만 보면 constructor·toString 이 허용목록을 지나가고,
+  //    그 뒤 알아볼 수 없는 내부 오류로 죽는다(거부이긴 하나 사람이 읽고 고칠 수 있는 말이 아니다).
+  for (const tool of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+    const c = OK(); c.backup.tool = tool;
+    assert.throws(() => dumpArgv(c), /허용되지 않은 백업 도구/, `(나)17 ${tool}: 허용목록을 그냥 지나갔다`);
+  }
+  assert.deepEqual(dumpArgv(OK()), ["exec", "c", "pg_dump", "-U", "postgres", "-d", "db"],
+    "정상 도구는 그대로 조립돼야 한다");
+});
+
 // ───────────────────────── (다) preflight 연동 5칸 ─────────────────────────
 
 test("(다)1 샌드박스가 정상이어도 백업 칸이 없으면 무인이 거부된다", () => {
@@ -356,13 +419,21 @@ test("(라)2 db-backup.mjs 맨 위에 '못 재는 것' 자백이 그대로 있�
   assert.ok(src.includes("컨테이너 축은 아직 안 잰다"), "컨테이너 축 자백 줄이 사라졌다");
   assert.ok(src.includes("그 말이 참인지도 아직 안 잰다"), "mode:none 거짓말 자백 줄이 사라졌다");
 });
-test("(라)3 부록이 backup 칸을 함께 안내한다(문서와 기계가 다른 말을 하면 안 된다)", () => {
+test("(라)3 부록이 backup 칸과 dbUrl 필수 조건을 함께 안내한다(문서와 기계가 다른 말을 하면 안 된다)", () => {
   // 🛑 이 판이 backup 칸을 필수로 만들었다. 부록이 옛 안내(샌드박스 두 칸)만 남으면
   //    그 글을 그대로 따라 적은 설정이 100% 거부된다.
+  // 🛑 앵커는 **그 줄에서 유일한 글자**여야 한다. 앞 판의 `container`·`backup` 은 죽은 앵커였다 —
+  //    그 줄에 이미 `sandbox.container` 가 있어, backup 안내가 통째로 사라져도 절대 안 빨개졌다.
+  //    아래 목록은 backup 안내가 없어지면 그 줄에서 함께 사라지는 글자만 담는다.
   const apx = readFileSync(join(ROOT, "src", "rules", "unattended-appendix.md"), "utf8");
   const line = apx.split("\n").find((l) => l.includes("에 1회 설정"));
   assert.ok(line, "부록에서 설정 안내 줄을 못 찾았다");
-  for (const key of ["backup", "mode", "container", "tool", "user", "database", "none"]) {
-    assert.ok(line.includes(key), `부록 안내에 필수 칸 "${key}" 가 없다`);
+  for (const key of [
+    "backup 칸",                              // backup 안내 전체가 사라지면 이 글자도 사라진다
+    "mode·container·tool·user·database",      // 필수 칸 다섯을 한 덩어리로(가운뎃점은 이 자리에만 있다)
+    "none",                                   // DB 가 정말 없을 때의 갈래
+    "docker-exec 백업이면 sandbox.dbUrl 필수", // 규칙 3-6. 앞 판의 "또는" 은 절반이 거짓이었다
+  ]) {
+    assert.ok(line.includes(key), `부록 안내에 "${key}" 가 없다 — 문서가 기계와 다른 말을 한다`);
   }
 });

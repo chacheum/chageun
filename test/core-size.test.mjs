@@ -41,7 +41,7 @@ function injectedBytes() {
 //    아래 FILE_CEILINGS 의 합 = CEILING_BYTES 라는 단언이 두 장부가 따로 놀지 못하게 묶는다.
 const FILE_CEILINGS = {
   "operating-rules.md": 22019,     // v0.69.0 작업방 위임 두 줄 + 재리뷰 2회 반영 실측(헤드룸 0 · 사유는 아래 장부 맨 끝)
-  "unattended-appendix.md": 6193,  // 2026-08-20 1b-1 부록 안내문 수리 실측(헤드룸 0 · 사유는 아래 장부 맨 끝)
+  "unattended-appendix.md": 6242,  // 2026-08-20 1b-1 부록 "또는" 이 거짓이던 자리 수리 실측(헤드룸 0 · 사유는 아래 장부 맨 끝)
   "statusboard-appendix.md": 698,  // v0.65.0 실측(등록부에 처음 오름 · T7·v0.69.0 에서 무변경)
 };
 
@@ -439,7 +439,24 @@ const FILE_CEILINGS = {
 //     안내하는지 문다(문서와 기계가 다시 갈라지면 그 칸이 빨개진다).
 //   🛑 이 값도 **작업 트리에서 normBytes 잣대로** 잰 것이다(`git ls-tree -l` 은 옛 값을 준다).
 //   다음 델타는 28910 기준으로 계산한다.
-const CEILING_BYTES = 28910;
+// 2026-08-20 +49 (28910 → 28959): **부록의 "또는" 이 절반만 참이던 자리 수리**(1b-1 검수 2회차 medium).
+//   코어는 한 글자도 안 늘었다(operating-rules.md 22019 그대로 · statusboard-appendix.md 698 그대로).
+//   unattended-appendix.md 6193 → 6242 (+49). 고친 자리는 하나뿐이다:
+//     `:11` +49 — "(sandbox.container 또는 sandbox.dbUrl)" 뒤에 " · docker-exec 백업이면
+//       sandbox.dbUrl 필수"를 넣었다. 앞 커밋이 이 줄 **뒤쪽**에 backup 칸 안내만 덧붙이고
+//       **앞쪽 "또는" 은 그대로 뒀는데**, 이 판의 규칙 3-6 아래에서 `mode:"docker-exec"` 이면
+//       `sandbox.dbUrl` 이 **반드시** 있어야 한다. 즉 그 문장은 절반이 거짓이었고, 그 글대로
+//       container 만 적은 사람은 "밤이 쓸 DB 주소를 적으세요"로 거부된다.
+//   회수: **0이다.** 문서가 기계보다 덜 말하던 자리를 채우는 변경이라 뺄 문장이 없었다.
+//   🛑 이 판도 **규칙을 푸는 문장을 한 줄도 안 넣었다** - 덧붙인 것은 조이는 쪽(필수 조건 명시)이다.
+//   🛑 **재핀 횟수: 이번이 20번째다.** 바로 위 항목(19번째)의 규약대로 셌다 - 앞 커밋보다 올라간 것만.
+//   발동률 근거: 해당 없다(부록 본문을 고쳤다 · 코어에서 스킬로 옮긴 것이 아니다).
+//     받는 쪽 그물 = test/unattended-1b1-config.test.mjs (라)3 — 그 줄의 필수 낱말 목록에
+//     "docker-exec 백업이면 sandbox.dbUrl 필수"를 앵커로 넣었다. 같은 칸에서 죽은 앵커
+//     `container`(그 줄에 이미 `sandbox.container` 로 있어 절대 못 실패했다)도 함께 살렸다.
+//   🛑 이 값도 **작업 트리에서 normBytes 잣대로** 잰 것이다(`git ls-tree -l` 은 옛 값을 준다).
+//   다음 델타는 28959 기준으로 계산한다.
+const CEILING_BYTES = 28959;
 // 밴드 폭. 선언을 여기 두는 이유 = 위 상한 테스트의 실패 메시지가 이 값을 참조하는데,
 // 그 메시지는 콜백 실행마다 평가되므로 선언이 아래 있으면 러너의 실행 시점 규약에 의존하게 된다.
 const BAND_BYTES = 64;

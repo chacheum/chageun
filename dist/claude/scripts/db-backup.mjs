@@ -34,13 +34,19 @@ const missing = (v) => v === undefined || v === null || (typeof v === "string" &
 
 // 거부 사유 문장의 **단일 원본**(계획서 §3). 검사가 이 글자를 문다 - 문장을 고치면 검사가 먼저 빨개진다.
 const MSG = {
-  // 🛑 세 토막으로 줄바꿈한다(무엇이 문제 / 이렇게 적으세요 / DB 가 정말 없다면). 한 줄로 300자를
-  //    쏟으면 좁은 터미널에서 뭉개져, 정답을 알려주려고 길게 적은 문장이 오히려 안 읽힌다.
+  // 🛑 네 토막으로 줄바꿈한다(무엇이 문제 / 이렇게 적으세요 / 비밀번호는 안 적어도 된다 /
+  //    DB 가 정말 없다면). 한 줄로 300자를 쏟으면 좁은 터미널에서 뭉개져, 정답을 알려주려고
+  //    길게 적은 문장이 오히려 안 읽힌다.
   //    🛑 검사가 무는 낱말("백업 설정이 없습니다"·"이 모양으로 적으세요")은 줄바꿈을 걸치면 안 된다.
+  // 🛑 견본에 계정·비밀번호를 넣지 않는다(안내가 시키는 대로 적으면 비밀번호가 사용자 저장소의
+  //    `.chageun/unattended.json` 에 평문으로 남고 다음 커밋에 이력으로 들어간다 - 지워도 이력에 남는다).
+  //    이 판이 dbUrl 에서 읽는 것은 **DB 이름 하나뿐**이라 애초에 필요가 없다(dbNameFromUrl).
+  //    🛑 판정은 안 바꾼다 - 이미 계정·비밀번호를 적어 둔 주소도 그대로 통과한다(안내만 바꾼 것이다).
   noBackup: "백업 설정이 없습니다(`.chageun/unattended.json` 의 backup 칸).\n" +
     "이 모양으로 적으세요: " +
-    '`{"sandbox":{"dbUrl":"postgres://…@localhost:5432/<DB이름>"},"backup":{"mode":"docker-exec",' +
+    '`{"sandbox":{"dbUrl":"postgres://localhost:5432/<DB이름>"},"backup":{"mode":"docker-exec",' +
     '"container":"<DB 컨테이너 이름>","tool":"pg_dump","user":"postgres","database":"<DB이름>"}}`\n' +
+    "비밀번호는 이 파일에 안 적어도 됩니다(여기서는 DB 이름만 읽습니다).\n" +
     'DB 가 정말 없는 프로젝트면 backup 을 `{"mode":"none","why":"<확인한 이유>"}` 로 적으세요.',
   badMode: "backup.mode 는 docker-exec 또는 none 만 됩니다",
   noneWhy: "backup.mode 가 none 이면 why 에 사람이 확인한 이유를 적으세요",
@@ -58,8 +64,11 @@ const MSG = {
   noDbUrl: "backup.mode 가 docker-exec 이면 sandbox.dbUrl 에 밤이 쓸 DB 주소를 적으세요" +
     "(백업 대상이 맞는지 대조합니다)",
   dbMismatch: "백업할 DB 이름과 밤이 쓸 DB 이름이 다릅니다",
+  // 🛑 noBackup 과 같은 이유로 견본에서 계정·비밀번호를 뺐다 - 안 써도 되는 값을 적으라고 시키면
+  //    그 값이 저장소 이력에 남는다. 계정·비밀번호를 붙여 적은 주소도 판정은 그대로 통과한다.
   badDbUrl: "sandbox.dbUrl 에서 DB 이름을 못 읽었습니다. " +
-    "`postgres://<계정>:<비밀번호>@<호스트>:<포트>/<DB이름>` 모양으로 적으세요",
+    "`postgres://<호스트>:<포트>/<DB이름>` 모양으로 적으세요" +
+    "(계정·비밀번호는 선택입니다 - 여기서는 DB 이름만 읽습니다)",
   containerMismatch: "backup.container 와 sandbox.container 가 다릅니다. 정말 다르면 mismatchWhy 에 이유를 적으세요",
   badTimeout: "backup.timeoutMs 는 1분에서 60분 사이여야 합니다",
 };
@@ -112,9 +121,12 @@ export function backupReasons(config) {
   if (backup.mode !== "docker-exec" && backup.mode !== "none") return [MSG.badMode];
 
   // 3-5: **값이 있을 때만** 무늬를 잰다(필수 여부는 3-4 가 따로 정한다).
+  // 🛑 건너뛰기 잣대는 아래 3-4 가 쓰는 것과 **같은 missing()** 이어야 한다. `v === ""` 만 보면
+  //    공백만 든 값("   ")이 3-4 의 "안 적었다"와 3-5 의 "무늬가 틀렸다"에 **둘 다** 걸려,
+  //    사유가 겹치지 않게 하려던 위 규약이 그 자리에서 깨진다.
   for (const k of ["container", "user", "database"]) {
     const v = backup[k];
-    if (v === undefined || v === null || v === "") continue;
+    if (missing(v)) continue;
     if (!isName(v)) { reasons.push(MSG.badName); break; }
   }
 
@@ -164,8 +176,13 @@ export function backupReasons(config) {
  */
 export function dumpArgv(config) {
   const backup = ((config && config.backup) || {});
+  // 🛑 `TOOLS[backup.tool]` 이 truthy 인지만 보면 안 된다 - `constructor`·`toString` 같은
+  //    **프로토타입 키**가 truthy 라 허용목록을 그대로 지나가고, 그 뒤 알아볼 수 없는 내부 오류로
+  //    죽는다(결과는 여전히 거부지만 사람이 읽고 고칠 수 있는 말이 아니다). 제 칸에 있는 키만 연다.
+  if (!Object.prototype.hasOwnProperty.call(TOOLS, backup.tool)) {
+    throw new Error(`허용되지 않은 백업 도구: ${backup.tool}`);
+  }
   const spec = TOOLS[backup.tool];
-  if (!spec) throw new Error(`허용되지 않은 백업 도구: ${backup.tool}`);
   // 🛑 이름이 `-` 로 시작하면 docker 가 그것을 **옵션으로** 먹는다. 다른 경로(1b-2)가 판정을
   //    안 거치고 여기로 들어올 수 있으므로 3-5 와 같은 잣대를 이 자리에서 다시 잰다.
   //    🛑 사유에 값을 안 찍는다 - 그 값 자체가 명령 조각일 수 있다.
@@ -190,14 +207,20 @@ export function verdict({ status, signal, error, bytes, tail, timeoutMs } = {}) 
 
 function failReason({ status, signal, error, size, text, timeoutMs, marker }) {
   if (error && error.code === "ENOENT") return "도커를 못 찾았다(docker 가 깔려 있는지 확인)";
-  if (error) return "도커를 못 돌렸다(권한·경로 확인)";
   // 🛑 신호를 뭉뚱그려 "시간 초과"라고 적으면, 메모리 부족으로 커널이 죽인(SIGKILL) 사람이
   //    timeoutMs 만 계속 늘리며 원인을 영영 못 찾는다. **우리가 보낸 신호일 때만** 시간 초과다.
-  if (signal === "SIGTERM") {
+  // 🛑 그런데 spawnSync 의 timeout 은 `error.code = "ETIMEDOUT"` 과 `signal = "SIGTERM"` 을
+  //    **함께** 채운다(2026-08-20 실측: spawnSync("sleep",["5"],{timeout:300})). 그래서 `if (error)`
+  //    를 먼저 반환하면 이 갈래에 **영영 안 닿고**, 진짜 시간 초과가 "도커를 못 돌렸다"로 나와
+  //    사람이 권한·경로를 뒤진다. 두 신호 중 하나만 봐도 시간 초과로 받는다.
+  //    (SIGKILL 갈래는 아래에 그대로 살아 있다 - 우리가 안 보낸 신호는 여기서 안 잡힌다.)
+  const timedOut = (error && error.code === "ETIMEDOUT") || (error == null && signal === "SIGTERM");
+  if (timedOut) {
     const ms = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS;
     // 🛑 "10분" 을 고정으로 적으면 손잡이를 30분으로 준 사람이 원인을 못 찾는다 - 적용된 값을 적는다.
     return `시간 초과: ${Math.round(ms / 60000)}분 안에 안 끝났다(backup.timeoutMs 로 늘릴 수 있다)`;
   }
+  if (error) return "도커를 못 돌렸다(권한·경로 확인)";
   if (signal != null) return `밖에서 강제 종료됐다(신호 ${signal}) - 메모리가 모자라 커널이 죽였을 수 있다`;
   // 🛑 이 사유에는 pg_dump 가 박혀 있다 - 1b-2 가 도구를 늘리면 이 줄도 tool 이름을 받아 적어야 한다.
   if (status === 127) return "그 이미지에 pg_dump 도구가 없다";

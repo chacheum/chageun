@@ -15,31 +15,40 @@ const bk = (o) => o.dbUrl
 const cfg = (o) => ({ sandbox: o, backup: bk(o) });
 const alive = () => true, dead = () => false;
 
+// 🛑 아래 8칸이 쓰는 sandbox 모양은 **이 목록이 전부**다. 가드가 목록을 손으로 베끼면 새 모양이
+//    생겼을 때 가드만 옛 사본을 보고 조용히 초록이 된다(앞 판이 그랬다 — 넷 중 둘만 봤고,
+//    안 덮인 하나가 하필 **거부를 기대하는 칸**(운영 주소)이었다). 그래서 칸과 가드가 같은 목록을 읽는다.
+const SB_SUPABASE = { container: "supabase_db" };
+const SB_C = { container: "c" };
+const SB_LOCAL_URL = { dbUrl: "postgres://localhost:5432/db" };
+const SB_PROD_URL = { dbUrl: "postgres://prod.example.com/db" };
+const SANDBOXES = [SB_SUPABASE, SB_C, SB_LOCAL_URL, SB_PROD_URL];
+
 // 🛑 아래 8칸은 **샌드박스·시크릿 축**을 잰다. bk() 가 언젠가 백업 규칙에 걸리게 되면 그 칸들은
 //    엉뚱한 축(백업)으로 빨개지거나, 반대로 "거부"를 기대하는 칸이 **다른 이유로** 초록이 된다.
 //    그래서 픽스처 자체가 백업 축에서 조용한지를 여기서 먼저 못박는다.
-test("픽스처 자체가 백업 규칙에 안 걸린다(위 8칸이 백업 축으로 새지 않게)", () => {
-  for (const o of [{ container: "supabase_db" }, { dbUrl: "postgres://localhost:5432/db" }]) {
+test("픽스처 자체가 백업 규칙에 안 걸린다(아래 8칸이 백업 축으로 새지 않게)", () => {
+  for (const o of SANDBOXES) {
     assert.deepEqual(backupReasons(cfg(o)), [],
       `bk() 픽스처가 백업 규칙에 걸린다(${o.dbUrl ? "docker-exec" : "none"} 갈래) — 이 파일의 8칸이 다른 축으로 판정된다`);
   }
 });
 
 test("샌드박스 살아있고 위험 없음 → ok", () => {
-  const r = evaluate(cfg({ container: "supabase_db" }), alive, {});
+  const r = evaluate(cfg(SB_SUPABASE), alive, {});
   assert.equal(r.ok, true);
 });
 test("컨테이너 죽어있음 → 거부", () => {
-  const r = evaluate(cfg({ container: "supabase_db" }), dead, {});
+  const r = evaluate(cfg(SB_SUPABASE), dead, {});
   assert.equal(r.ok, false);
   assert.ok(r.reasons.some((x) => /샌드박스|container/.test(x)));
 });
 test("dbUrl이 localhost 아니면 거부", () => {
-  assert.equal(evaluate(cfg({ dbUrl: "postgres://prod.example.com/db" }), alive, {}).ok, false);
-  assert.equal(evaluate(cfg({ dbUrl: "postgres://localhost:5432/db" }), alive, {}).ok, true);
+  assert.equal(evaluate(cfg(SB_PROD_URL), alive, {}).ok, false);
+  assert.equal(evaluate(cfg(SB_LOCAL_URL), alive, {}).ok, true);
 });
 test("env에 시크릿/유료키 보이면 거부", () => {
-  const r = evaluate(cfg({ container: "c" }), alive, { STRIPE_SECRET_KEY: "sk_live_x" });
+  const r = evaluate(cfg(SB_C), alive, { STRIPE_SECRET_KEY: "sk_live_x" });
   assert.equal(r.ok, false);
   assert.ok(r.reasons.some((x) => /시크릿|secret|키/.test(x)));
 });
@@ -47,15 +56,15 @@ test("설정 없음 → 거부(샌드박스 미정의)", () => {
   assert.equal(evaluate({}, alive, {}).ok, false);
 });
 test("env의 외부 DB 연결문자열(비번 포함) → 거부", () => {
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { DATABASE_URL: "postgresql://postgres:pw@db.prod.supabase.co:5432/postgres" }).ok, false);
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { REDIS_URL: "redis://:hunter2@prod-redis.example.com:6379" }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { DATABASE_URL: "postgresql://postgres:pw@db.prod.supabase.co:5432/postgres" }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { REDIS_URL: "redis://:hunter2@prod-redis.example.com:6379" }).ok, false);
 });
 test("로컬 DB 연결문자열(비번 포함)은 통과", () => {
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { DATABASE_URL: "postgres://postgres:postgres@localhost:54322/postgres" }).ok, true);
+  assert.equal(evaluate(cfg(SB_C), alive, { DATABASE_URL: "postgres://postgres:postgres@localhost:54322/postgres" }).ok, true);
 });
 test("GCP credentials·private_key 감지 → 거부", () => {
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { GOOGLE_APPLICATION_CREDENTIALS: "/x/sa.json" }).ok, false);
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { SA_BLOB: '{"private_key":"-----BEGIN PRIVATE KEY-----"}' }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { GOOGLE_APPLICATION_CREDENTIALS: "/x/sa.json" }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { SA_BLOB: '{"private_key":"-----BEGIN PRIVATE KEY-----"}' }).ok, false);
 });
 
 import { spawnSync, execFileSync } from "node:child_process";
