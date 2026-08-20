@@ -4,7 +4,14 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluate } from "../src/scripts/preflight.mjs";
 
-const cfg = (o) => ({ sandbox: o });
+// 🛑 이것은 **픽스처를 만드는 함수이지 기댓값을 만드는 함수가 아니다.** 백업 축의 판정은
+//    test/unattended-1b1-config.test.mjs 가 따로 문다. 여기서는 아래 8칸이 재던 것(샌드박스·시크릿)을
+//    그대로 재도록, 백업 규칙에 안 걸리는 최소 설정을 sandbox 모양에서 이끌어 낼 뿐이다.
+//    상수 하나로는 안 된다 — dbUrl 이 있으면 none 이 거부되고(3-3), 없으면 docker-exec 이 거부된다(3-6).
+const bk = (o) => o.dbUrl
+  ? { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" }
+  : { mode: "none", why: "이 시험은 백업 축을 안 잰다" };
+const cfg = (o) => ({ sandbox: o, backup: bk(o) });
 const alive = () => true, dead = () => false;
 
 test("샌드박스 살아있고 위험 없음 → ok", () => {
@@ -58,7 +65,7 @@ test("런처 go: 시동 산출물(task.md/criteria.md) 없으면 거부(무인 �
   const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
   // preflight는 통과시키되(unattended.json 최소) task.md·criteria.md는 없음
   mkdirSync(join(dir, ".chageun"), { recursive: true });
-  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   // env를 청소해서 스폰 — 실행 머신의 GITHUB_TOKEN·*_KEY 등이 preflight 시크릿 스캔에 걸려
   // false-red 나는 것 방지(이 테스트는 preflight 통과 후 '산출물 없음→거부' 분기를 봐야 함).
   const r = spawnSync("bash", [script, "go"], { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH } });
@@ -71,7 +78,7 @@ test("런처 go: 옛 task/criteria가 남아도 신선 표식(setup-ready) 없�
   const dir = tmpDir("launch-stale-");
   const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
   mkdirSync(join(dir, ".chageun"), { recursive: true });
-  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   // 지난 작업의 산출물이 남아있음 — 그러나 setup-ready(신선 표식)는 없음
   writeFileSync(join(dir, ".chageun", "task.md"), "old task");
   writeFileSync(join(dir, ".chageun", "criteria.md"), "old criteria");
@@ -89,7 +96,7 @@ test("런처 go: 시작 시 clone의 runtime.json 리셋(claude stub로 exec 지
   writeFileSync(join(repo, ".gitignore"), ".chageun/\nbin/\n*.txt\n"); // 스캐폴딩 무시 → 트리 clean(실 repo와 동일)
   git(["add", "-A"]); git(["commit", "-qm", "init"]);
   mkdirSync(join(repo, ".chageun"), { recursive: true });
-  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(repo, ".chageun", "task.md"), "t");
   writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
   writeFileSync(join(repo, ".chageun", "setup-ready"), "");
@@ -119,7 +126,7 @@ test("런처 go: 격리 clone 생성 + origin 제거 + claude --strict-mcp-confi
   git(["remote", "add", "origin", "https://github.com/x/y.git"]);
   // 시동 산출물 + 통과 조건
   mkdirSync(join(repo, ".chageun"), { recursive: true });
-  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(repo, ".chageun", "task.md"), "t");
   writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
   writeFileSync(join(repo, ".chageun", "setup-ready"), "");
@@ -154,7 +161,7 @@ test("런처 go: 커밋 안 된 변경(WIP) 있으면 거부(clone은 커밋본�
   git(["add", "-A"]); git(["commit", "-qm", "init"]);
   // 통과 조건은 모두 갖추되, 추적 파일을 하나 고쳐 트리를 dirty로 만든다.
   mkdirSync(join(repo, ".chageun"), { recursive: true });
-  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(repo, ".chageun", "task.md"), "t");
   writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
   writeFileSync(join(repo, ".chageun", "setup-ready"), "");
@@ -169,7 +176,7 @@ test("런처 go: 커밋 안 된 변경(WIP) 있으면 거부(clone은 커밋본�
 test("런처 go: git 저장소가 아니면 친절히 거부(영문 fatal 절벽 방지)", () => {
   const dir = tmpDir("launch-nogit-");
   mkdirSync(join(dir, ".chageun"), { recursive: true });
-  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(dir, ".chageun", "task.md"), "t");
   writeFileSync(join(dir, ".chageun", "criteria.md"), "c");
   writeFileSync(join(dir, ".chageun", "setup-ready"), "");

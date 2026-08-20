@@ -15,12 +15,16 @@
 //    판정(ok/거부)만 보면 허용목록·무늬 검사를 통째로 지워도 다른 규칙이 먼저 거부해 초록이 된다.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { backupReasons, dumpArgv, verdict, dbNameFromUrl, TOOLS } from "../src/scripts/db-backup.mjs";
+import { evaluate } from "../src/scripts/preflight.mjs";
+import { tmpDir } from "./support-tmpdir.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const alive = () => true;
 
 // 기본 픽스처. 각 칸은 여기서 **한 칸만** 바꾼다(부르는 쪽마다 새 객체를 받아 서로 안 섞인다).
 const OK = () => ({
@@ -216,6 +220,38 @@ test("(나)12 dbNameFromUrl 은 이름만 돌려주고 던지지 않는다", () 
     assert.equal(got, want, `입력: ${url}`);
     assert.ok(!String(got).includes("pw"), `반환값에 비밀번호가 새어 나왔다: ${got}`);
   }
+});
+
+// ───────────────────────── (다) preflight 연동 4칸 ─────────────────────────
+
+test("(다)1 샌드박스가 정상이어도 백업 칸이 없으면 무인이 거부된다", () => {
+  const r = evaluate({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }, alive, {});
+  assert.equal(r.ok, false);
+  assert.ok(r.reasons.some((x) => x.includes("백업 설정이 없습니다")), `사유: ${r.reasons.join(" | ")}`);
+});
+
+test("(다)2 샌드박스도 백업도 정상이면 통과", () => {
+  assert.equal(evaluate(OK(), alive, {}).ok, true);
+});
+
+test("(다)3 🛑 안전 바닥 회귀: 백업이 정상이어도 샌드박스가 없으면 거부", () => {
+  // 이 판이 preflight.mjs 의 "샌드박스 미정의면 거부" 갈래를 안 건드렸다는 증거.
+  const r = evaluate({ backup: OK().backup }, alive, {});
+  assert.equal(r.ok, false);
+  assert.ok(r.reasons.some((x) => x.includes("샌드박스 미정의")), `사유: ${r.reasons.join(" | ")}`);
+});
+
+test("(다)4 설정 파일이 깨졌으면 '샌드박스 미정의'가 아니라 파일을 못 읽었다고 알린다", () => {
+  const dir = tmpDir("broken-json-");
+  mkdirSync(join(dir, ".chageun"), { recursive: true });
+  writeFileSync(join(dir, ".chageun", "unattended.json"), "{ 이건 JSON 이 아니다");
+  const script = join(ROOT, "src", "scripts", "chageun-unattended");
+  // env 를 청소해 스폰: 이 기계의 *_KEY 등이 preflight 시크릿 스캔에 걸려 엉뚱하게 빨개지는 것 방지.
+  const r = spawnSync("bash", [script, "--check"], { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH } });
+  const out = r.stdout + r.stderr;
+  assert.equal(r.status, 1, "깨진 설정이면 거부(exit 1)");
+  assert.ok(out.includes("설정 파일을 읽지 못했습니다"), `출력: ${out}`);
+  assert.ok(!out.includes("샌드박스 미정의"), `엉뚱한 데를 고치게 만드는 사유가 섞였다 — 출력: ${out}`);
 });
 
 // ───────────────────────── (라) 견본 유출 방지·자백 2칸 ─────────────────────────
