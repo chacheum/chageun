@@ -1,6 +1,6 @@
 {
   "name": "chageun-build",
-  "version": "0.72.5",
+  "version": "0.72.6",
   "private": true,
   "scripts": {
     "build": "node build/build.mjs",

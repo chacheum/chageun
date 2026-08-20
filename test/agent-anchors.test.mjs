@@ -291,15 +291,19 @@ test("두 구현 에이전트가 '검사는 앞에서 돌린다'를 글자까지
 });
 
 // UI 규칙은 **두 일꾼 정의서 말고는 갈 곳이 없다**(2026-08-20 실측 · 검수 medium):
-//   (1) 코어 운영 규칙의 "UI: read `design-system` rules first" 는 **메인 세션에만 주입된다**
-//       (두 정의서의 시크릿 항이 "이 규칙은 메인 세션에만 주입되므로 여기 적어 둔다"고 이미 증언한다).
+//   (1) 코어 운영 규칙의 UI 줄(`src/rules/operating-rules.md` 의 `# Proceeding by task type` 절
+//       "Bug / failing test" 줄 · v0.72.6 기준 :79)은 **메인 세션에만 주입된다**(두 정의서의
+//       시크릿 항이 "이 규칙은 메인 세션에만 주입되므로 여기 적어 둔다"고 이미 증언한다).
+//       ⚠ 그 줄을 여기 옮겨 적지 않는다 - 위 ⚠ 와 같은 병이다(굵게 표시를 빼고 베껴 검색 0건).
 //   (2) 그 자리를 메우던 훅 리마인더 §4.7 은 v0.72.4 에서 **서브에이전트에 안 뜨게** 닫혔다
 //       (늘 틀리는 안내였다 - 사유는 `src/hooks/pretooluse.js` 그 절 주석).
-//   (3) 기계 차단 둘(§4.6 색 하드코딩 · §4.8 공용 컴포넌트 경계)은 서브에이전트에도 물지만
-//       **색과 페이지 조립만** 본다. "기존 토큰·변형을 재사용하라"는 그 그물을 통과한다.
+//   (3) 기계 차단 둘(색 하드코딩 · 공용 컴포넌트 경계)은 `docs/design-system.md` 가 없는
+//       프로젝트에서는 **통째로 꺼진다** - 대신 믿을 자리가 아니다(`src/hooks/design-scan-core.js`
+//       의 `readDesignDoc` 머리 주석 · `src/hooks/pretooluse.js` 의 `runComponentBoundaryChannel`
+//       안 "비채택 프로젝트" 주석).
 //   그래서 위 두 규칙과 같은 모양으로 **글자까지 한 벌**로 묶는다: 한쪽만 손대면 조용히 갈리고,
 //   갈린 쪽에 위임된 UI 작업은 아무 층도 안 거친 채 지나간다.
-const DESIGN_SYSTEM_RULE = `**UI 파일(\`.tsx\`·\`.css\` 등)을 만들기 전 \`docs/design-system.md\`(또는 \`design-system\` 스킬)를 먼저 확인하고 기존 토큰·변형을 재사용한다.** 코어 운영 규칙의 "UI: read \`design-system\` rules first" 는 메인 세션에만 주입되고, 그 자리를 메우던 훅 리마인더(§4.7)도 v0.72.4 부터 서브에이전트에는 안 뜬다 - 이 줄이 없으면 위임된 UI 작업에 그 규칙을 말해 주는 층이 하나도 없다. 기계 차단 둘(색 하드코딩 · 공용 컴포넌트 경계)은 나에게도 물지만 색과 페이지 조립만 본다.`;
+const DESIGN_SYSTEM_RULE = `**UI 파일(\`.tsx\`·\`.css\` 등)을 만들기 전 \`docs/design-system.md\`(또는 \`design-system\` 스킬)를 먼저 확인하고 기존 토큰·변형을 재사용한다.**`;
 
 test("두 구현 에이전트가 'UI 는 디자인 레지스트리부터' 를 글자까지 같은 한 벌로 갖는다", () => {
   for (const [name, txt] of [["code-implementer", codeImplementer], ["deep-implementer", deepImplementer]]) {
