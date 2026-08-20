@@ -8,7 +8,7 @@
 
 **무인 중엔 병렬 위임을 쓰지 않는다 - 여러 에이전트를 동시에 띄우지 않는다:** 무인 루프는 계획→구현→검증→심판을 한 번에 한 단계, 한 에이전트씩 **차례로** 돈다(순차 게이트 호출은 정상 - 금지되는 건 '병렬 위임'(`chageun:routing`)식 동시 실행이다). 무인은 이미 자율성을 한 축 올린 상태라, 거기에 병렬(또 한 축)까지 겹치면 검증·되돌리기가 감당 못 한다: **한 번에 한 축만 올린다.**
 
-**무인 모드 켜는 법(사람):** `chageun-unattended` 런처로 시작한다 - preflight(샌드박스 살아있나·시크릿 없나)를 통과해야 통과표를 발급하고 `CHAGEUN_UNATTENDED=1`로 시작한다. 통과표 없이 raw로 `CHAGEUN_UNATTENDED=1`만 켜면 훅이 모든 작업을 park한다(안전). 샌드박스는 `.chageun/unattended.json`(sandbox.container 또는 sandbox.dbUrl)에 1회 설정. **정지:** 다른 터미널에서 **런처를 띄운 그 프로젝트 루트**(런처가 안내한 경로)에서 `touch .chageun/STOP` - 즉시 모든 도구 호출이 멈춘다. STOP·통과표 위치는 런처가 `CHAGEUN_ROOT`로 못 박으므로, 세션이 하위폴더나 전용 worktree로 옮겨 다녀도 그 루트의 STOP을 확실히 본다.
+**무인 모드 켜는 법(사람):** `chageun-unattended` 런처로 시작한다 - preflight(샌드박스 살아있나·시크릿 없나)를 통과해야 통과표를 발급하고 `CHAGEUN_UNATTENDED=1`로 시작한다. 통과표 없이 raw로 `CHAGEUN_UNATTENDED=1`만 켜면 훅이 모든 작업을 park한다(안전). 샌드박스는 `.chageun/unattended.json`(sandbox.container 또는 sandbox.dbUrl · docker-exec 백업이면 sandbox.dbUrl 필수)에 1회 설정 + **backup 칸(mode·container·tool·user·database)도 함께 있어야 시작된다**(DB 가 정말 없으면 mode:none·why). **정지:** 다른 터미널에서 **런처를 띄운 그 프로젝트 루트**(런처가 안내한 경로)에서 `touch .chageun/STOP` - 즉시 모든 도구 호출이 멈춘다. STOP·통과표 위치는 런처가 `CHAGEUN_ROOT`로 못 박으므로, 세션이 하위폴더나 전용 worktree로 옮겨 다녀도 그 루트의 STOP을 확실히 본다.
 
 **무인으로 일 맡기는 법(층2 걸음마):** (1) `chageun-unattended setup`으로 유인 시동 - 무인으로 맡길 일과 "다 됐다" 기준을 claude와 함께 `.chageun/task.md`·`.chageun/criteria.md`에 적고 확인한다. (2) 같은 폴더에서 `chageun-unattended`로 무인 시작: 세션이 `unattended-loop` 안내를 따라 계획→계획심판→구현→**localhost 실구동검증**→코드심판→통과 시 로컬 커밋을 한 바퀴 돈다. **배포·push는 무인 중 안 하고**, 복귀 후 사람이 localhost로 확인한 뒤 함께 넘긴다. 산출물은 "완성"이 아니라 **검증 대기 초안**이다. 기준(`criteria.md`)은 무인 시작과 동시에 `.chageun` 보호로 동결돼 루프가 못 바꾼다.
 

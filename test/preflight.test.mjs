@@ -3,25 +3,52 @@ import assert from "node:assert/strict";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluate } from "../src/scripts/preflight.mjs";
+import { backupReasons } from "../src/scripts/db-backup.mjs";
 
-const cfg = (o) => ({ sandbox: o });
+// 🛑 이것은 **픽스처를 만드는 함수이지 기댓값을 만드는 함수가 아니다.** 백업 축의 판정은
+//    test/unattended-1b1-config.test.mjs 가 따로 문다. 여기서는 아래 8칸이 재던 것(샌드박스·시크릿)을
+//    그대로 재도록, 백업 규칙에 안 걸리는 최소 설정을 sandbox 모양에서 이끌어 낼 뿐이다.
+//    상수 하나로는 안 된다 — dbUrl 이 있으면 none 이 거부되고(3-3), 없으면 docker-exec 이 거부된다(3-6).
+const bk = (o) => o.dbUrl
+  ? { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" }
+  : { mode: "none", why: "이 시험은 백업 축을 안 잰다" };
+const cfg = (o) => ({ sandbox: o, backup: bk(o) });
 const alive = () => true, dead = () => false;
 
+// 🛑 아래 8칸이 쓰는 sandbox 모양은 **이 목록이 전부**다. 가드가 목록을 손으로 베끼면 새 모양이
+//    생겼을 때 가드만 옛 사본을 보고 조용히 초록이 된다(앞 판이 그랬다 — 넷 중 둘만 봤고,
+//    안 덮인 하나가 하필 **거부를 기대하는 칸**(운영 주소)이었다). 그래서 칸과 가드가 같은 목록을 읽는다.
+const SB_SUPABASE = { container: "supabase_db" };
+const SB_C = { container: "c" };
+const SB_LOCAL_URL = { dbUrl: "postgres://localhost:5432/db" };
+const SB_PROD_URL = { dbUrl: "postgres://prod.example.com/db" };
+const SANDBOXES = [SB_SUPABASE, SB_C, SB_LOCAL_URL, SB_PROD_URL];
+
+// 🛑 아래 8칸은 **샌드박스·시크릿 축**을 잰다. bk() 가 언젠가 백업 규칙에 걸리게 되면 그 칸들은
+//    엉뚱한 축(백업)으로 빨개지거나, 반대로 "거부"를 기대하는 칸이 **다른 이유로** 초록이 된다.
+//    그래서 픽스처 자체가 백업 축에서 조용한지를 여기서 먼저 못박는다.
+test("픽스처 자체가 백업 규칙에 안 걸린다(아래 8칸이 백업 축으로 새지 않게)", () => {
+  for (const o of SANDBOXES) {
+    assert.deepEqual(backupReasons(cfg(o)), [],
+      `bk() 픽스처가 백업 규칙에 걸린다(${o.dbUrl ? "docker-exec" : "none"} 갈래) — 이 파일의 8칸이 다른 축으로 판정된다`);
+  }
+});
+
 test("샌드박스 살아있고 위험 없음 → ok", () => {
-  const r = evaluate(cfg({ container: "supabase_db" }), alive, {});
+  const r = evaluate(cfg(SB_SUPABASE), alive, {});
   assert.equal(r.ok, true);
 });
 test("컨테이너 죽어있음 → 거부", () => {
-  const r = evaluate(cfg({ container: "supabase_db" }), dead, {});
+  const r = evaluate(cfg(SB_SUPABASE), dead, {});
   assert.equal(r.ok, false);
   assert.ok(r.reasons.some((x) => /샌드박스|container/.test(x)));
 });
 test("dbUrl이 localhost 아니면 거부", () => {
-  assert.equal(evaluate(cfg({ dbUrl: "postgres://prod.example.com/db" }), alive, {}).ok, false);
-  assert.equal(evaluate(cfg({ dbUrl: "postgres://localhost:5432/db" }), alive, {}).ok, true);
+  assert.equal(evaluate(cfg(SB_PROD_URL), alive, {}).ok, false);
+  assert.equal(evaluate(cfg(SB_LOCAL_URL), alive, {}).ok, true);
 });
 test("env에 시크릿/유료키 보이면 거부", () => {
-  const r = evaluate(cfg({ container: "c" }), alive, { STRIPE_SECRET_KEY: "sk_live_x" });
+  const r = evaluate(cfg(SB_C), alive, { STRIPE_SECRET_KEY: "sk_live_x" });
   assert.equal(r.ok, false);
   assert.ok(r.reasons.some((x) => /시크릿|secret|키/.test(x)));
 });
@@ -29,15 +56,15 @@ test("설정 없음 → 거부(샌드박스 미정의)", () => {
   assert.equal(evaluate({}, alive, {}).ok, false);
 });
 test("env의 외부 DB 연결문자열(비번 포함) → 거부", () => {
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { DATABASE_URL: "postgresql://postgres:pw@db.prod.supabase.co:5432/postgres" }).ok, false);
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { REDIS_URL: "redis://:hunter2@prod-redis.example.com:6379" }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { DATABASE_URL: "postgresql://postgres:pw@db.prod.supabase.co:5432/postgres" }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { REDIS_URL: "redis://:hunter2@prod-redis.example.com:6379" }).ok, false);
 });
 test("로컬 DB 연결문자열(비번 포함)은 통과", () => {
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { DATABASE_URL: "postgres://postgres:postgres@localhost:54322/postgres" }).ok, true);
+  assert.equal(evaluate(cfg(SB_C), alive, { DATABASE_URL: "postgres://postgres:postgres@localhost:54322/postgres" }).ok, true);
 });
 test("GCP credentials·private_key 감지 → 거부", () => {
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { GOOGLE_APPLICATION_CREDENTIALS: "/x/sa.json" }).ok, false);
-  assert.equal(evaluate(cfg({ container: "c" }), alive, { SA_BLOB: '{"private_key":"-----BEGIN PRIVATE KEY-----"}' }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { GOOGLE_APPLICATION_CREDENTIALS: "/x/sa.json" }).ok, false);
+  assert.equal(evaluate(cfg(SB_C), alive, { SA_BLOB: '{"private_key":"-----BEGIN PRIVATE KEY-----"}' }).ok, false);
 });
 
 import { spawnSync, execFileSync } from "node:child_process";
@@ -58,7 +85,7 @@ test("런처 go: 시동 산출물(task.md/criteria.md) 없으면 거부(무인 �
   const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
   // preflight는 통과시키되(unattended.json 최소) task.md·criteria.md는 없음
   mkdirSync(join(dir, ".chageun"), { recursive: true });
-  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   // env를 청소해서 스폰 — 실행 머신의 GITHUB_TOKEN·*_KEY 등이 preflight 시크릿 스캔에 걸려
   // false-red 나는 것 방지(이 테스트는 preflight 통과 후 '산출물 없음→거부' 분기를 봐야 함).
   const r = spawnSync("bash", [script, "go"], { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH } });
@@ -71,7 +98,7 @@ test("런처 go: 옛 task/criteria가 남아도 신선 표식(setup-ready) 없�
   const dir = tmpDir("launch-stale-");
   const script = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "scripts", "chageun-unattended");
   mkdirSync(join(dir, ".chageun"), { recursive: true });
-  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   // 지난 작업의 산출물이 남아있음 — 그러나 setup-ready(신선 표식)는 없음
   writeFileSync(join(dir, ".chageun", "task.md"), "old task");
   writeFileSync(join(dir, ".chageun", "criteria.md"), "old criteria");
@@ -89,7 +116,7 @@ test("런처 go: 시작 시 clone의 runtime.json 리셋(claude stub로 exec 지
   writeFileSync(join(repo, ".gitignore"), ".chageun/\nbin/\n*.txt\n"); // 스캐폴딩 무시 → 트리 clean(실 repo와 동일)
   git(["add", "-A"]); git(["commit", "-qm", "init"]);
   mkdirSync(join(repo, ".chageun"), { recursive: true });
-  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(repo, ".chageun", "task.md"), "t");
   writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
   writeFileSync(join(repo, ".chageun", "setup-ready"), "");
@@ -119,7 +146,7 @@ test("런처 go: 격리 clone 생성 + origin 제거 + claude --strict-mcp-confi
   git(["remote", "add", "origin", "https://github.com/x/y.git"]);
   // 시동 산출물 + 통과 조건
   mkdirSync(join(repo, ".chageun"), { recursive: true });
-  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(repo, ".chageun", "task.md"), "t");
   writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
   writeFileSync(join(repo, ".chageun", "setup-ready"), "");
@@ -154,7 +181,7 @@ test("런처 go: 커밋 안 된 변경(WIP) 있으면 거부(clone은 커밋본�
   git(["add", "-A"]); git(["commit", "-qm", "init"]);
   // 통과 조건은 모두 갖추되, 추적 파일을 하나 고쳐 트리를 dirty로 만든다.
   mkdirSync(join(repo, ".chageun"), { recursive: true });
-  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(repo, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(repo, ".chageun", "task.md"), "t");
   writeFileSync(join(repo, ".chageun", "criteria.md"), "c");
   writeFileSync(join(repo, ".chageun", "setup-ready"), "");
@@ -169,7 +196,7 @@ test("런처 go: 커밋 안 된 변경(WIP) 있으면 거부(clone은 커밋본�
 test("런처 go: git 저장소가 아니면 친절히 거부(영문 fatal 절벽 방지)", () => {
   const dir = tmpDir("launch-nogit-");
   mkdirSync(join(dir, ".chageun"), { recursive: true });
-  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" } }));
+  writeFileSync(join(dir, ".chageun", "unattended.json"), JSON.stringify({ sandbox: { dbUrl: "postgres://localhost:5432/db" }, backup: { mode: "docker-exec", container: "c", tool: "pg_dump", user: "postgres", database: "db" } }));
   writeFileSync(join(dir, ".chageun", "task.md"), "t");
   writeFileSync(join(dir, ".chageun", "criteria.md"), "c");
   writeFileSync(join(dir, ".chageun", "setup-ready"), "");
