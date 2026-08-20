@@ -21,6 +21,35 @@ const core = require("../src/hooks/activate-core.js");
 const RULES = readFileSync(join(SRC, "rules", "operating-rules.md"), "utf8");
 const ROUTING = readFileSync(join(SRC, "skills", "routing", "SKILL.md"), "utf8");
 
+// 라우팅 표를 **행 단위로** 집는 자리. 조건 칸의 한 조각으로 그 줄을 찾아 온다.
+// 한 번만 쪼개는 이유 = 같은 분해를 여러 벌 들고 있으면 나중에 한 벌만 고쳐져 칸마다 다른 것을
+// 재게 된다(아래 4·5번이 같은 표를 본다).
+const ROUTING_LINES = ROUTING.split("\n");
+const routingRow = (condition) => ROUTING_LINES.find((l) => l.includes(condition));
+
+// 한 `##` 절 안의 번호 항목(`1. `·`2. `…)만 뽑는다. 개수를 주석에 손으로 적지 않으려고 두는
+// 자리다 - 손으로 적은 수는 절이 자라도 아무도 안 고쳐서 조용히 낡는다(이 파일에서 실제로 두 번).
+function numberedItems(heading) {
+  const start = ROUTING_LINES.findIndex((l) => l.trim() === heading);
+  assert.ok(start >= 0, `라우팅 스킬에서 절 제목을 못 찾았다: ${heading}`);
+  const rest = ROUTING_LINES.slice(start + 1);
+  const end = rest.findIndex((l) => l.startsWith("## "));
+  return (end < 0 ? rest : rest.slice(0, end)).filter((l) => /^[0-9]+\. /.test(l));
+}
+
+// 조건 칸으로 행을 찾고, 찾은 그 행 안에서 **이름표**까지 확인한다.
+// 두 자리(안전 바닥 · fail-safe)가 같은 실패 문장을 두 벌로 갖고 있어 한 벌만 고쳐지는 길이
+// 열려 있었다 - 한 곳으로 모은다.
+function rowWithLabel(condition, label) {
+  const row = routingRow(condition);
+  assert.ok(row,
+    `${label} 행의 조건 문구가 라우팅 표에서 사라졌다 - 위 주석의 \`${label} 행\`이 어느 행인지 ` +
+    "더 이상 찾을 수 없다");
+  assert.ok(row.includes(label),
+    `이름이 바뀌어 위 주석이 가리키는 행을 못 찾게 됐다 - \`${label}\`: ${row}`);
+  return row;
+}
+
 // ── 1. 규칙 두 줄이 코어에 글자 그대로 있다 ────────────────────────────────────
 // A줄은 의무가 셋이라(작업방 · 견줄 기준 · 환경) 조각마다 따로 잰다. 한 조각만 앵커하면
 // 나머지를 지우면서 앵커 조각만 남기는 길이 열린다.
@@ -86,8 +115,11 @@ test("위임 A줄·B줄이 같은 조각(3번)에 함께 실린다", () => {
 });
 
 // ── 3. 라우팅 절차의 핵심 구절 ────────────────────────────────────────────────
-// 성공 기준 2: 에이전트 파일만이 아니라 **라우팅 절도 채점한다.** 이 칸이 없으면 라우팅 절
-//   여덟 항목이 통째로 빠져도 나머지 기준이 전부 충족으로 채점된다.
+// 성공 기준 2: 에이전트 파일만이 아니라 **라우팅 절도 채점한다.** 이 칸이 없으면 라우팅 절이
+//   통째로 빠져도 나머지 기준이 전부 충족으로 채점된다.
+// 🛑 항목 수를 여기 손으로 적지 않는다. 적으면 절이 자라는 동안 **조용히 낡는다** - 이 줄은
+//    실제로 `여덟 항목`이라 적힌 채 열 항목이 됐고, 아래 합치기 주석도 `아홉 단계`에서 멈춰
+//    있었다. 개수를 세는 일은 이 파일 맨 아래 "작업방 절의 항목 수" 칸(기계)이 맡는다.
 const ROUTING_WORKTREE_PARTS = [
   "## 작업방에서 굴린다",
   // 견줄 기준(`...HEAD`). 이 판의 blocker 처방이 실제로 적힌 자리다.
@@ -121,7 +153,7 @@ const ROUTING_WORKTREE_PARTS = [
   //   `git add -A` 가 빈 칸 하나를 커밋에 넣는다. **순서**가 핵심이라 그 조각까지 잰다:
   //   방부터 만들면 오염이 이미 일어난 뒤다.
   "확인 전에는 방을 만들지 않는다",
-  // 🛑 합쳐 넣기(재리뷰 high). 라우팅 층의 짝이다. 이 항이 없으면 아홉 단계가 전부 방 안에서
+  // 🛑 합쳐 넣기(재리뷰 high). 라우팅 층의 짝이다. 이 항이 없으면 앞 단계가 전부 방 안에서
   //   끝나고 사용자의 파일에는 아무것도 안 닿는다. 정리 절차 10항 (가)·(나)가 "합치기가 이미
   //   일어났다"를 전제하는데, 그 합치기를 누가 언제 하라는 문장이 어디에도 없었다.
   "메인이 작업방 가지를 본 가지로 합친다",
@@ -156,6 +188,22 @@ const ROUTING_WORKTREE_PARTS = [
 test("라우팅 스킬에 작업방 절차의 핵심 구절이 살아 있다", () => {
   for (const s of ROUTING_WORKTREE_PARTS)
     assert.ok(ROUTING.includes(s), `routing/SKILL.md 에 누락: ${s}`);
+});
+
+// 🛑 위 목록은 **문구**를 하나씩 앵커한다. 그래서 문구가 하나도 안 걸린 항목이 생기면 그 항목은
+//    통째로 사라져도 위 칸이 초록이다(재는 시점 실측: 6번 `완료 보고에 작업방 경로와 브랜치를
+//    함께 받는다` 가 그런 자리다). 개수를 세는 칸을 따로 두어 **사라짐**을 잡는다.
+// ⚠ 항목을 늘리거나 줄이면 이 칸이 빨개진다. 그때 먼저 고칠 것은 이 숫자가 아니라 **위 앵커
+//    목록**이다: 새 항목의 핵심 문구를 거기 넣고, 그다음 이 숫자를 옮긴다. 숫자만 고치면
+//    앵커 없는 항목이 한 칸 더 늘 뿐이다.
+const WORKTREE_SECTION_ITEMS = 10;
+
+test("라우팅 '작업방에서 굴린다' 절의 항목 수가 그대로다", () => {
+  const items = numberedItems("## 작업방에서 굴린다");
+  assert.equal(items.length, WORKTREE_SECTION_ITEMS,
+    `'작업방에서 굴린다' 절의 번호 항목이 ${WORKTREE_SECTION_ITEMS}개에서 ${items.length}개로 바뀌었다 - ` +
+    "줄었으면 절차 한 칸이 사라진 것이고(위 앵커 목록이 안 잡는 항목이 있다), " +
+    `늘었으면 새 항목이 앵커 없이 들어온 것이다:\n${items.map((l) => l.slice(0, 40)).join("\n")}`);
 });
 
 // 🛑 라우팅은 **위임 직전**에 열리고 구동 검증은 여러 턴 뒤다. 그 시점에 실제로 열리는 것은
@@ -198,21 +246,9 @@ test("짝 2: 라우팅 표에서 인라인 행이 사라지고 크기 하한 없
   // 위 두 문단이 쓰는 행 이름(안전 바닥 행 · fail-safe 행)이 실제로 표에 있는지를 기계로 잰다.
   // 조건 칸으로 그 줄을 먼저 찾고, 찾은 그 줄 안에서 이름까지 확인한다(부재 확인만으로는
   // 부족하다 - 이름은 오른쪽 칸에 있어서, 조건 칸만 재면 이름이 조용히 바뀌어도 초록이 된다).
-  const safetyFloorRow = ROUTING.split("\n").find((l) =>
-    l.includes("보안·판단·권한·동시성·아키텍처·애매·복잡"));
-  assert.ok(safetyFloorRow,
-    "안전 바닥 행의 조건 문구가 라우팅 표에서 사라졌다 - 위 주석의 `안전 바닥 행`이 어느 행인지 " +
-    "더 이상 찾을 수 없다");
-  assert.ok(safetyFloorRow.includes("안전 바닥"),
-    `이름이 바뀌어 위 주석이 가리키는 행을 못 찾게 됐다 - \`안전 바닥\`: ${safetyFloorRow}`);
-  const failSafeRow = ROUTING.split("\n").find((l) =>
-    l.includes("독립성·명확성·안전성이 애매"));
-  assert.ok(failSafeRow,
-    "fail-safe 행의 조건 문구가 라우팅 표에서 사라졌다 - 위 주석의 `fail-safe 행`이 어느 행인지 " +
-    "더 이상 찾을 수 없다");
-  assert.ok(failSafeRow.includes("fail-safe"),
-    `이름이 바뀌어 위 주석이 가리키는 행을 못 찾게 됐다 - \`fail-safe\`: ${failSafeRow}`);
-  const row = ROUTING.split("\n").find((l) => l.includes("크기 하한 없음(한두 줄도 여기)"));
+  rowWithLabel("보안·판단·권한·동시성·아키텍처·애매·복잡", "안전 바닥");
+  rowWithLabel("독립성·명확성·안전성이 애매", "fail-safe");
+  const row = routingRow("크기 하한 없음(한두 줄도 여기)");
   assert.ok(row, "라우팅 표('GO 후 자동 결정')의 code-implementer 단일 행에 새 크기 조건 " +
     "`크기 하한 없음(한두 줄도 여기)` 이 없다");
   assert.ok(row.includes("보안·판단 무관"),
@@ -225,6 +261,48 @@ test("짝 2: 라우팅 표에서 인라인 행이 사라지고 크기 하한 없
   assert.ok(!ROUTING.includes("스폰 비용보다 이득일 때"),
     "옛 단서 `스폰 비용보다 이득일 때` 가 남았다 - 한두 줄짜리는 그 조건에 대체로 안 맞아 " +
     "읽는 쪽이 없앤 인라인 경로를 스스로 되살린다");
-  assert.ok(ROUTING.includes("인라인으로 되돌리지 않는다"),
-    "되돌리지 말라는 단서가 없다 - 없는 절차는 읽는 쪽이 스스로 만들어 낸다");
+  // 🛑 이 칸만 파일 전체를 훑고 있었다. 그러면 이 단서가 **다른 절로 새어 나가도** 초록이라,
+  //    정작 읽는 쪽이 이 행에 서 있을 때는 되돌리지 말라는 말이 안 보인다. 위 칸들과 잣대를
+  //    맞춰 이미 잡아 둔 `row` 안에서 잰다.
+  assert.ok(row.includes("인라인으로 되돌리지 않는다"),
+    `되돌리지 말라는 단서가 이 행에 없다 - 없는 절차는 읽는 쪽이 스스로 만들어 낸다: ${row}`);
+});
+
+// ── 5. 표의 각 행이 **담당 일꾼**을 그대로 가리킨다 ───────────────────────────
+// 🛑 이 파일에서 가장 값나가는 칸이다. 위 4번은 행의 **이름표**(`안전 바닥`·`fail-safe`)까지만
+//    쟀는데, 이름표는 괄호 안 설명에 있어서 **담당 일꾼 이름을 갈아 끼워도 그대로 남는다.**
+//    다음 판이 비용을 아끼려 안전 바닥 행의 `deep-implementer` 를 `code-implementer` 로 바꿔도
+//    `안전 바닥: 절대 Sonnet 아님` 이라는 이름표가 남아 검사가 **전부 초록**이었다.
+//    그러면 **보안·권한·동시성 걸린 일이 값싼 일꾼으로 샌다.** 산문 세 겹(코어 안전 tie-break ·
+//    표 아래 문단 · 에이전트 설명)이 전부 이 표를 근거로 삼는데, 기계는 아무도 이 칸을 안 봤다.
+// 🛑 값싼 두 행도 함께 못박는 이유 = **맞바꾸기**를 잡으려는 것이다. 안전 행만 재면 두 행의
+//    일꾼을 서로 바꿔치기했을 때 한 칸만 빨개지는데, 양쪽을 다 재면 두 칸이 함께 빨개져
+//    무슨 일이 일어났는지가 실패 보고에 그대로 드러난다.
+const ROW_WORKERS = [
+  ["보안·판단·권한·동시성·아키텍처·애매·복잡", "deep-implementer", "안전 바닥"],
+  ["독립성·명확성·안전성이 애매", "deep-implementer", "fail-safe"],
+  ["2개+ 독립·파일 분리", "Sonnet", "기계적·병렬"],
+  ["크기 하한 없음(한두 줄도 여기)", "code-implementer", "기계적·단일"],
+];
+
+test("라우팅 표의 각 행이 담당 일꾼을 그대로 가리킨다", () => {
+  for (const [condition, worker, name] of ROW_WORKERS) {
+    const row = routingRow(condition);
+    assert.ok(row,
+      `${name} 행을 조건 문구로 못 찾았다 - 표에서 사라졌거나 조건 칸이 바뀌었다: ${condition}`);
+    assert.ok(row.includes(worker),
+      `${name} 행이 담당 일꾼 \`${worker}\` 를 안 가리킨다. 이름표(괄호 안 설명)는 그대로 남으니 ` +
+      `그것만 보고 지나가면 안 된다 - 이 칸이 바뀌면 그 부류의 일이 통째로 다른 등급으로 간다: ${row}`);
+  }
+  // 🛑 갈아 끼우기만 잡으면 **덧붙이기**가 남는다: `deep-implementer 또는 code-implementer` 로
+  //    적으면 위 단언은 통과하는데 읽는 쪽에는 값싼 길이 그대로 열린다. 그래서 안전이 걸린
+  //    행에서는 값싼 일꾼 이름의 **부재**까지 함께 잰다(이 파일 4번의 양방향 규율과 같은 축).
+  //    ⚠ 안전 행을 "`code-implementer` 로 내려 부르지 않는다" 같은 부정 문장으로 고쳐 쓰면 이
+  //    칸이 빨개진다. 그때는 문장을 바꾸지 말고 이 단언을 먼저 다시 설계해라.
+  for (const [condition, worker, name] of ROW_WORKERS) {
+    if (worker !== "deep-implementer") continue;
+    assert.ok(!routingRow(condition).includes("code-implementer"),
+      `${name} 행에 값싼 일꾼 \`code-implementer\` 가 함께 적혔다 - 안전이 걸린 행에 값싼 길을 ` +
+      `나란히 두면 읽는 쪽이 편한 쪽을 고른다: ${routingRow(condition)}`);
+  }
 });
